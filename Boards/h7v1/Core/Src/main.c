@@ -26,7 +26,6 @@
 #include <dshot_ex.h>
 #include <string.h>
 #include <stdlib.h>
-#include <macro.h>
 
 /* USER CODE END Includes */
 
@@ -246,9 +245,9 @@ static char dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
 }
 
 static void handle_db_msg(uart_rx_t *msg) {
-    if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
-    	platform_receive_internal_message(msg->buffer, msg->payload_size);
-    }
+  if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
+  	platform_receive_internal_message(msg->buffer, msg->payload_size);
+  }
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {

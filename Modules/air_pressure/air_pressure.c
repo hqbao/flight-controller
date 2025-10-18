@@ -2,7 +2,6 @@
 #include <pubsub.h>
 #include <platform.h>
 #include "dps310.h"
-#include "main.h"
 
 #define ALT_SAMPLES 100
 

@@ -2,6 +2,7 @@
 #include <pubsub.h>
 #include <platform.h>
 #include <stdlib.h>
+#include <math.h>
 #include "icm42688p.h"
 
 #define IMU_FREQ 4000
@@ -59,9 +60,9 @@ static void calibrate(imu_t *imu) {
 
 	// Check motionless
 	char failed = 0;
-	if (abs(imu->gyro_accel[3] - imu->gyro_calibration_check[0]) > IMU_MOTION) failed = 1;
-	if (abs(imu->gyro_accel[4] - imu->gyro_calibration_check[1]) > IMU_MOTION) failed = 1;
-	if (abs(imu->gyro_accel[5] - imu->gyro_calibration_check[2]) > IMU_MOTION) failed = 1;
+	if (fabs(imu->gyro_accel[3] - imu->gyro_calibration_check[0]) > IMU_MOTION) failed = 1;
+	if (fabs(imu->gyro_accel[4] - imu->gyro_calibration_check[1]) > IMU_MOTION) failed = 1;
+	if (fabs(imu->gyro_accel[5] - imu->gyro_calibration_check[2]) > IMU_MOTION) failed = 1;
 	imu->gyro_calibration_check[0] = imu->gyro_accel[3];
 	imu->gyro_calibration_check[1] = imu->gyro_accel[4];
 	imu->gyro_calibration_check[2] = imu->gyro_accel[5];

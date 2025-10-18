@@ -1,21 +1,18 @@
 #include "dps310_platform.h"
-#include "main.h"
 
 // Sensor driver includes
 #include "dps310_errors.h"
 
-extern I2C_HandleTypeDef hi2c4;
-
 int8_t i2c4Recv(uint16_t addr, uint8_t *data, uint16_t size) {
-	return HAL_I2C_Master_Receive(&hi2c4, addr, data, size, 10);
+	return 0;
 }
 
 int8_t i2c4Trans(uint16_t addr, uint8_t *data, uint16_t size) {
-	return HAL_I2C_Master_Transmit(&hi2c4, addr, data, size, 100);
+	return 0;
 }
 
 void dps310_i2c_delay_ms(uint32_t delay) {
-  HAL_Delay(delay);
+
 }
 
 void dps310_i2c_init(void) {}
