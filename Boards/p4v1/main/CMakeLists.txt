@@ -17,6 +17,8 @@ idf_component_register(
   INCLUDE_DIRS "." ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR}
 )
 
+target_compile_definitions(${COMPONENT_TARGET} PUBLIC "ESP32")
+
 add_library(robotkit STATIC IMPORTED)
 set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "../../../Libs/robotkit/librobotkit-esp32p4.a")
 target_link_libraries(${COMPONENT_LIB} PUBLIC robotkit)

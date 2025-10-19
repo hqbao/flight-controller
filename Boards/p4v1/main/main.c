@@ -2,10 +2,13 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 #include <platform.h>
+#include <esp_log.h>
 
 #define TAG "main.c"
 
 #define MAX_UART_BUFFER_SIZE 128
+
+typedef void (*timer_callback_t)(void*);
 
 typedef struct {
   uint8_t byte;
@@ -117,7 +120,41 @@ static void handle_db_msg(uart_rx_t *msg) {
   }
 }
 
+static void timer_4khz(void*) { platform_scheduler_4khz(); }
+static void timer_2khz(void*) { platform_scheduler_2khz(); }
+static void timer_1khz(void*) { platform_scheduler_1khz(); }
+static void timer_500hz(void*) { platform_scheduler_500hz(); }
+static void timer_250hz(void*) { platform_scheduler_250hz(); }
+static void timer_100hz(void*) { platform_scheduler_100hz(); }
+static void timer_50hz(void*) { platform_scheduler_50hz(); }
+static void timer_25hz(void*) { platform_scheduler_25hz(); }
+static void timer_10hz(void*) { platform_scheduler_10hz(); }
+static void timer_5hz(void*) { platform_scheduler_5hz(); }
+static void timer_1hz(void*) { platform_scheduler_1hz(); }
+
+static void create_timer(timer_callback_t callback, uint64_t freq) {
+  const esp_timer_create_args_t timer_args = {
+    .callback = callback,
+    .name = "Timer"
+  };
+  esp_timer_handle_t timer_handler;
+  esp_timer_create(&timer_args, &timer_handler);
+  esp_timer_start_periodic(timer_handler, 1000000/freq);
+}
+
 void core0() {
+  create_timer(timer_4khz, 4000);
+  create_timer(timer_2khz, 2000);
+  create_timer(timer_1khz, 1000);
+  create_timer(timer_500hz, 500);
+  create_timer(timer_250hz, 250);
+  create_timer(timer_100hz, 100);
+  create_timer(timer_50hz, 50);
+  create_timer(timer_25hz, 25);
+  create_timer(timer_10hz, 10);
+  create_timer(timer_5hz, 5);
+  create_timer(timer_1hz, 1);
+
   while (1) { delay(1000); }
 }
 
@@ -126,6 +163,8 @@ void core1() {
 }
 
 void app_main(void) {
+  ESP_LOGI(TAG, "Start program");
+
   // Register platform functions
   platform_register_toggle_led(toggle_led);
   platform_register_time_ms(time_ms);
@@ -146,7 +185,11 @@ void app_main(void) {
   // Setup platform modules
   platform_setup();
 
-  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 10, &task_hangle_1, 0);
-  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 10, &task_hangle_2, 1);
-  while (1) { delay(1000); }
+  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
+  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
+
+  while (1) {
+    platform_loop();
+    delay(10);
+  }
 }
