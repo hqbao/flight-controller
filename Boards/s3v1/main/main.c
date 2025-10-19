@@ -3,6 +3,7 @@
 #include <esp_timer.h>
 #include <platform.h>
 #include <esp_log.h>
+#include <driver/spi_master.h>
 
 #define TAG "main.c"
 
@@ -21,6 +22,49 @@ typedef struct {
 
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
+
+// Initialize SPI
+// SPI Configuration
+#define SPI_HOST        SPI2_HOST
+#define PIN_NUM_MISO    8
+#define PIN_NUM_MOSI    9
+#define PIN_NUM_CLK     7
+#define PIN_NUM_CS      1
+
+static spi_device_handle_t spi;
+
+static void spi_init(void) {
+    esp_err_t ret;
+    
+    spi_bus_config_t buscfg = {
+        .miso_io_num = PIN_NUM_MISO,
+        .mosi_io_num = PIN_NUM_MOSI,
+        .sclk_io_num = PIN_NUM_CLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    
+    spi_device_interface_config_t devcfg = {
+        .clock_speed_hz = 1 * 1000 * 1000,  // 1 MHz
+        .mode = 3,                          // SPI mode 3 (CPOL=1, CPHA=1)
+        .spics_io_num = PIN_NUM_CS,
+        .queue_size = 7,
+        .command_bits = 0,                  // No command bits, we'll use full transactions
+        .address_bits = 0,                  // No address bits
+        .flags = 0,                         // Full duplex mode
+    };
+    
+    // Initialize SPI bus
+    ret = spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    ESP_ERROR_CHECK(ret);
+    
+    // Attach device to SPI bus
+    ret = spi_bus_add_device(SPI_HOST, &devcfg, &spi);
+    ESP_ERROR_CHECK(ret);
+    
+    ESP_LOGI(TAG, "SPI initialized");
+}
 
 void platform_toggle_led(char led) {
 
@@ -157,6 +201,7 @@ void app_main(void) {
   // Setup I2Cs
 
   // Setup SPIs
+  spi_init();
 
   // Setup UARTs
 

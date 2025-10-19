@@ -32,16 +32,16 @@ typedef struct {
 } imu_t;
 
 static imu_t g_imu1 = {
-		{{0}, I2C_PORT1},
-		{0, 0, 0, 0, 0, 0},
-		{0},
-		{0},
-		{0},
-		0,
-		init,
-		SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
-		SENSOR_IMU1_GYRO_UPDATE,
-		SENSOR_IMU1_ACCEL_UPDATE
+	{{0}, I2C_PORT1},
+	{0, 0, 0, 0, 0, 0},
+	{0},
+	{0},
+	{0},
+	0,
+	init,
+	SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
+	SENSOR_IMU1_GYRO_UPDATE,
+	SENSOR_IMU1_ACCEL_UPDATE
 };
 
 static void publish_data(imu_t *imu) {
@@ -118,7 +118,7 @@ static void imu1_data_udpate(uint8_t *data, size_t size) {
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
 			AFS_2G, GFS_2000DPS, AODR_500Hz, GODR_32kHz, aMode_LN, gMode_LN, 0);
-	subscribe(SCHEDULER_8KHZ, imu1_loop);
+	subscribe(SCHEDULER_4KHZ, imu1_loop);
 	subscribe(I2C_CALLBACK_UPDATE, imu1_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
 }
