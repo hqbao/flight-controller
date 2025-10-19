@@ -121,49 +121,49 @@ static dshot_ex_t g_dshot_exs[4];
 static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0};
 static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0};
 
-static void toggle_led(char led) {
+void platform_toggle_led(char led) {
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
 }
 
-static void delay(uint32_t ms) {
+void platform_delay(uint32_t ms) {
 	HAL_Delay(ms);
 }
 
-static uint32_t time_ms(void) {
+uint32_t platform_time_ms(void) {
 	return HAL_GetTick();
 }
 
-static char storage_read(uint16_t start, uint16_t size, uint8_t *data) {
+char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {
 	return 0;
 }
 
-static char storage_write(uint16_t start, uint16_t size, uint8_t *data) {
+char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
 	return 0;
 }
 
-static char i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
 		uint8_t *output, uint16_t output_size) {
 	return HAL_I2C_Mem_Read_DMA(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size);
 }
 
-static char i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
 		uint8_t *output, uint16_t output_size, uint32_t timeout) {
 	return HAL_I2C_Mem_Read(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size, timeout);
 }
 
-static char i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
+char platform_i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
 	return HAL_I2C_Master_Receive(i2c_ports[port], address, output, output_size, 1000);
 }
 
-static char i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
+char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
 	return HAL_I2C_Master_Transmit(i2c_ports[port], address, input, input_size, 1000);
 }
 
-static char uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
+char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
 	return HAL_UART_Transmit_IT(uart_ports[port], data, data_size);
 }
 
-static char pwm_init(pwm_port_t port) {
+char platform_pwm_init(pwm_port_t port) {
 	HAL_TIM_PWM_Start(g_pwm_timers[port], g_pwm_timer_channels[port]);
 	return 0;
 }
@@ -187,12 +187,12 @@ static void set_pwm(TIM_TypeDef *timer_base, uint32_t channel, uint32_t duty) {
 	}
 }
 
-static char pwm_send(pwm_port_t port, uint32_t data) {
+char platform_pwm_send(pwm_port_t port, uint32_t data) {
 	set_pwm(g_pwm_time_bases[port], g_pwm_timer_channels[port], data);
 	return 0;
 }
 
-static char _dshot_init(dshot_port_t port) {
+char platform_dshot_init(dshot_port_t port) {
 	switch (port) {
 	case DSHOT_PORT1:
 		dshot_init(&g_dshots[0], &htim1, TIM_CHANNEL_1, TIM_DMA_ID_CC1, (uint32_t)&((&htim1)->Instance->CCR1));
@@ -213,12 +213,12 @@ static char _dshot_init(dshot_port_t port) {
 	return 0;
 }
 
-static char dshot_send(dshot_port_t port, uint16_t data) {
+char platform_dshot_send(dshot_port_t port, uint16_t data) {
 	dshot_write(&g_dshots[port], data);
 	return 0;
 }
 
-static char _dshot_ex_init(dshot_ex_port_t port) {
+char platform_dshot_ex_init(dshot_ex_port_t port) {
 	switch (port) {
 	case DSHOT_EX_PORT1:
 		dshot_ex_init(&g_dshot_exs[0], &htim1, TIM_CHANNEL_1, TIM_DMA_ID_CC1, (uint32_t)&((&htim1)->Instance->CCR1));
@@ -239,9 +239,13 @@ static char _dshot_ex_init(dshot_ex_port_t port) {
 	return 0;
 }
 
-static char dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
+char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
 	dshot_ex_write(&g_dshot_exs[port], data);
 	return 0;
+}
+
+void platform_console(const char *format, ...) {
+
 }
 
 static void handle_db_msg(uart_rx_t *msg) {
@@ -452,23 +456,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   HAL_Delay(100);
-
-  // Register platform functions
-  platform_register_toggle_led(toggle_led);
-  platform_register_time_ms(time_ms);
-  platform_register_delay(delay);
-  platform_register_storage(storage_read, storage_write);
-  platform_register_io_functions(
-  		i2c_write_read_dma,
-		i2c_write_read,
-		i2c_read, i2c_write,
-		uart_send,
-		pwm_init,
-		pwm_send,
-		_dshot_init,
-		dshot_send,
-		_dshot_ex_init,
-		dshot_ex_send);
 
   // Setup platform modules
   platform_setup();

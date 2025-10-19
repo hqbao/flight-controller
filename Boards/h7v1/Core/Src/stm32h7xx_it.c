@@ -350,26 +350,26 @@ void TIM8_UP_TIM13_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM8_UP_TIM13_IRQn 0 */
 
-	platform_scheduler_1khz();
+	platform_scheduler_1khz(NULL);
 
 	static int counter_for_100hz = 0;
 	if (counter_for_100hz >= 10) {
 		counter_for_100hz = 0;
-		platform_scheduler_100hz();
+		platform_scheduler_100hz(NULL);
 	}
 	counter_for_100hz++;
 
 	static int counter_for_25hz = 0;
 	if (counter_for_25hz >= 40) {
 		counter_for_25hz = 0;
-		platform_scheduler_25hz();
+		platform_scheduler_25hz(NULL);
 	}
 	counter_for_25hz++;
 
 	static int counter_for_1hz = 0;
 	if (counter_for_1hz >= 1000) {
 		counter_for_1hz = 0;
-		platform_scheduler_1hz();
+		platform_scheduler_1hz(NULL);
 	}
 	counter_for_1hz++;
 
@@ -387,7 +387,7 @@ void TIM8_TRG_COM_TIM14_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM8_TRG_COM_TIM14_IRQn 0 */
 
-	platform_scheduler_8khz();
+	platform_scheduler_8khz(NULL);
 
   /* USER CODE END TIM8_TRG_COM_TIM14_IRQn 0 */
   HAL_TIM_IRQHandler(&htim14);
@@ -417,7 +417,7 @@ void TIM6_DAC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
 
-	platform_scheduler_4khz();
+	platform_scheduler_4khz(NULL);
 
   /* USER CODE END TIM6_DAC_IRQn 0 */
   HAL_TIM_IRQHandler(&htim6);
@@ -433,7 +433,7 @@ void TIM7_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM7_IRQn 0 */
 
-	platform_scheduler_2khz();
+	platform_scheduler_2khz(NULL);
 
   /* USER CODE END TIM7_IRQn 0 */
   HAL_TIM_IRQHandler(&htim7);

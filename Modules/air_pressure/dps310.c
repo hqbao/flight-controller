@@ -47,7 +47,7 @@ static void flash(uint8_t count) {
 	platform_delay(250);
 
 	for (int i = 0; i < count; i++) {
-		platform_register_toggle_led(0);
+		platform_toggle_led(0);
 		platform_delay(250);
 	}
 

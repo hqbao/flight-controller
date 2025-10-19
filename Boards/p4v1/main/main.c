@@ -22,57 +22,57 @@ typedef struct {
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
 
-static void toggle_led(char led) {
+void platform_toggle_led(char led) {
 
 }
 
-static void delay(uint32_t ms) {
+void platform_delay(uint32_t ms) {
   vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
-static uint32_t time_ms(void) {
+uint32_t platform_time_ms(void) {
   return esp_timer_get_time();
 }
 
-static char storage_read(uint16_t start, uint16_t size, uint8_t *data) {
+char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {
   return 0;
 }
 
-static char storage_write(uint16_t start, uint16_t size, uint8_t *data) {
+char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
   return 0;
 }
 
-static char i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size) {
-  return ESP_OK;;
+  return ESP_OK;
 }
 
-static char i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size, uint32_t timeout) {
   return ESP_OK;
 }
 
-static char i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
+char platform_i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
   return ESP_OK;
 }
 
-static char i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
+char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
   return ESP_OK;
 }
 
-static char uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
+char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
   return ESP_OK;
 }
 
-static char pwm_init(pwm_port_t port) {
+char platform_pwm_init(pwm_port_t port) {
   return 0;
 }
 
-static char pwm_send(pwm_port_t port, uint32_t data) {
+char platform_pwm_send(pwm_port_t port, uint32_t data) {
   return 0;
 }
 
-static char _dshot_init(dshot_port_t port) {
+char platform_dshot_init(dshot_port_t port) {
   switch (port) {
   case DSHOT_PORT1:
     break;
@@ -89,11 +89,11 @@ static char _dshot_init(dshot_port_t port) {
   return 0;
 }
 
-static char dshot_send(dshot_port_t port, uint16_t data) {
+char platform_dshot_send(dshot_port_t port, uint16_t data) {
   return 0;
 }
 
-static char _dshot_ex_init(dshot_ex_port_t port) {
+char platform_dshot_ex_init(dshot_ex_port_t port) {
   switch (port) {
   case DSHOT_EX_PORT1:
     break;
@@ -110,8 +110,15 @@ static char _dshot_ex_init(dshot_ex_port_t port) {
   return 0;
 }
 
-static char dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
+char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
   return 0;
+}
+
+void platform_console(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  esp_log_writev(ESP_LOG_INFO, "", format, args);
+  va_end(args);
 }
 
 static void timer_4khz(void*) { platform_scheduler_4khz(); }
@@ -149,49 +156,35 @@ void core0() {
   create_timer(timer_5hz, 5);
   create_timer(timer_1hz, 1);
 
-  while (1) { delay(1000); }
+  while (1) { platform_delay(1000); }
 }
 
 void core1() {
-  while (1) { delay(1000); }
-}
-
-static void console(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  esp_log_writev(ESP_LOG_INFO, "", format, args);
-  va_end(args);
+  while (1) { platform_delay(1000); }
 }
 
 void app_main(void) {
   ESP_LOGI(TAG, "Start program");
 
-  // Register platform functions
-  platform_register_toggle_led(toggle_led);
-  platform_register_time_ms(time_ms);
-  platform_register_delay(delay);
-  platform_register_storage(storage_read, storage_write);
-  platform_register_console(console);
-  platform_register_io_functions(
-    i2c_write_read_dma,
-    i2c_write_read,
-    i2c_read, i2c_write,
-    uart_send,
-    pwm_init,
-    pwm_send,
-    _dshot_init,
-    dshot_send,
-    _dshot_ex_init,
-    dshot_ex_send);
+  // Setup I2Cs
+
+  // Setup SPIs
+
+  // Setup UARTs
+
+  // Setup PWMs
+
+  // Setup DSHOT
+
+  // Setup timers
+  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
+  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
 
   // Setup platform modules
   platform_setup();
 
-  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
-  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
-
   while (1) {
     platform_loop();
-    delay(10);
+    platform_delay(10);
   }
 }

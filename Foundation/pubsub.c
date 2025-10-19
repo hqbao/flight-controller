@@ -1,4 +1,5 @@
 #include <pubsub.h>
+#include <platform.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -25,7 +26,7 @@ void subscribe(topic_t topic, subscriber_callback_t callback) {
 	fn->next = NULL;
 
 	if (g_function_pointers[topic] == NULL) {
-		printf("Topic %d has the first function\n", topic);
+		platform_console("Topic %d has the first function\n", topic);
 		g_function_pointers[topic] = fn;
 	}
 	else {
@@ -37,6 +38,6 @@ void subscribe(topic_t topic, subscriber_callback_t callback) {
 		}
 
 		cur_fn->next = fn;
-		printf("Topic %d has %d functions\n", topic, fn_count);
+		platform_console("Topic %d has %d functions\n", topic, fn_count);
 	}
 }
