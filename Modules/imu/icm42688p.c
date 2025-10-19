@@ -30,7 +30,7 @@ void icm42688p_init(icm42688p_t *icm42688p, uint8_t Ascale, uint8_t Gscale,
     icm42688p->i2c_buffer[1] = (Gscale << 5) | GODR;  // GODR = 0x08 (8 kHz)
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->i2c_buffer, 2);
 
-    // Set gyro bandwidth to ODR/2 (4 kHz) for minimal fusioning
+    // Set gyro bandwidth to ODR/2 (4 kHz) for minimal filtering
     icm42688p->i2c_buffer[0] = ICM42688_GYRO_ACCEL_CONFIG0;
     icm42688p->i2c_buffer[1] = 0x07;  // Gyro BW = 000 (ODR/2), Accel BW = 111 (ODR/320)
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->i2c_buffer, 2);
@@ -79,7 +79,7 @@ void icm42688p_init(icm42688p_t *icm42688p, uint8_t Ascale, uint8_t Gscale,
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->i2c_buffer, 2);
 
     icm42688p->i2c_buffer[0] = ICM42688_GYRO_CONFIG_STATIC2;
-    icm42688p->i2c_buffer[1] = 0x00; // Disable AA fusion
+    icm42688p->i2c_buffer[1] = 0x00; // Disable AA filter
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->i2c_buffer, 2);
 
     // Return to Bank 0
