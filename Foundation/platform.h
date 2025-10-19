@@ -100,6 +100,10 @@ void platform_on_fault_detected(uint8_t *data, uint16_t size);
 void platform_setup(void);
 void platform_loop(void);
 
+void platform_i2c_data_dma_callback(i2c_port_t port);
+void platform_spi_data_dma_callback(spi_port_t port);
+void platform_uart_data_dma_callback(uart_port_t port);
+
 #define print platform_console
 
 #endif

@@ -64,3 +64,15 @@ void platform_on_fault_detected(uint8_t *data, uint16_t size) {
 void platform_loop(void) {
 	publish(LOOP, NULL, 0);
 }
+
+void platform_i2c_data_dma_callback(i2c_port_t port) {
+	publish(I2C_CALLBACK_UPDATE, (uint8_t*)&port, 1);
+}
+
+void platform_spi_data_dma_callback(spi_port_t port) {
+	publish(SPI_CALLBACK_UPDATE, (uint8_t*)&port, 1);
+}
+
+void platform_uart_data_dma_callback(uart_port_t port) {
+	publish(UART_CALLBACK_UPDATE, (uint8_t*)&port, 1);
+}

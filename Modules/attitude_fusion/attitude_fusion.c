@@ -6,9 +6,11 @@
 #include <fusion1.h>
 
 #define MAX_IMU_ACCEL 16384
+#define IMU_FREQ 4000
 #define DEG2RAD 0.01745329251
 #define RAD2DEG 57.2957795131
-#define IMU_FREQ 4000
+#define DT (1.0 / IMU_FREQ)
+#define DEG2RAD_BY_DT (DEG2RAD * DT)
 
 #define ACCEL_OFFSET_X 0
 #define ACCEL_OFFSET_Y 0
@@ -38,29 +40,28 @@ static void gyro_update(uint8_t *data, size_t size) {
 	float gx = -(*(float*)&data[0]);
 	float gy = -(*(float*)&data[4]);
 	float gz = (*(float*)&data[8]);
-	double dt = 1.0 / IMU_FREQ;
 
 	vector3d_init(&g_imu1_gyro, gx, gy, gz);
 	fusion1_predict(&g_f11,
-			dt * g_imu1_gyro.x * DEG2RAD,
-			dt * g_imu1_gyro.y * DEG2RAD,
-			dt * g_imu1_gyro.z * DEG2RAD);
+			g_imu1_gyro.x * DEG2RAD_BY_DT,
+			g_imu1_gyro.y * DEG2RAD_BY_DT,
+			g_imu1_gyro.z * DEG2RAD_BY_DT);
 
 	vector3d_init(&g_imu2_gyro, gx, gz, -gy);
 	fusion1_predict(&g_f12,
-			dt * g_imu2_gyro.x * DEG2RAD,
-			dt * g_imu2_gyro.y * DEG2RAD,
-			dt * g_imu2_gyro.z * DEG2RAD);
+			g_imu2_gyro.x * DEG2RAD_BY_DT,
+			g_imu2_gyro.y * DEG2RAD_BY_DT,
+			g_imu2_gyro.z * DEG2RAD_BY_DT);
 
 	vector3d_init(&g_imu3_gyro, gz, gy, -gx);
 	fusion1_predict(&g_f13,
-			dt * g_imu3_gyro.x * DEG2RAD,
-			dt * g_imu3_gyro.y * DEG2RAD,
-			dt * g_imu3_gyro.z * DEG2RAD);
+			g_imu3_gyro.x * DEG2RAD_BY_DT,
+			g_imu3_gyro.y * DEG2RAD_BY_DT,
+			g_imu3_gyro.z * DEG2RAD_BY_DT);
 
 	g_angular_state.roll = asin(g_f11.v_pred.y) * RAD2DEG;
 	g_angular_state.pitch = asin(g_f11.v_pred.x) * RAD2DEG;
-	g_angular_state.yaw += g_imu1_gyro.z * dt;
+	g_angular_state.yaw += g_imu1_gyro.z * DT;
 
 	publish(SENSOR_ATTITUDE_ANGLE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 }

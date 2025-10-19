@@ -96,24 +96,29 @@ static void imu1_calibrate(uint8_t *data, size_t size) {
 
 static void imu1_loop(uint8_t *data, size_t size) {
 	icm42688p_read(&g_imu1.imu_sensor, g_imu1.gyro_accel);
+}
 
-	if (g_imu1.mode == ready) {
-		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
-		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
-		g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
-		g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
-		g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
-		g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
-		publish_data(&g_imu1);
-	}
-	else if (g_imu1.mode == calibrating) {
-		calibrate(&g_imu1);
+static void imu1_data_udpate(uint8_t *data, size_t size) {
+	if (data[0] == I2C_PORT1) {
+		if (g_imu1.mode == ready) {
+			g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
+			g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
+			g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
+			g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
+			g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
+			g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
+			publish_data(&g_imu1);
+		}
+		else if (g_imu1.mode == calibrating) {
+			calibrate(&g_imu1);
+		}
 	}
 }
 
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
 			AFS_2G, GFS_2000DPS, AODR_500Hz, GODR_32kHz, aMode_LN, gMode_LN, 0);
-	subscribe(SCHEDULER_4KHZ, imu1_loop);
+	subscribe(SCHEDULER_8KHZ, imu1_loop);
+	subscribe(I2C_CALLBACK_UPDATE, imu1_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
 }
