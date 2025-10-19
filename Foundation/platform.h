@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 typedef enum {
 	I2C_PORT1 = 0,
@@ -10,6 +11,13 @@ typedef enum {
 	I2C_PORT3,
 	I2C_PORT4,
 } i2c_port_t;
+
+typedef enum {
+	SPI_PORT1 = 0,
+	SPI_PORT2,
+	SPI_PORT3,
+	SPI_PORT4,
+} spi_port_t;
 
 typedef enum {
 	UART_PORT1 = 0,
@@ -64,6 +72,8 @@ typedef void (*delay_t)(uint32_t ms);
 typedef char (*storage_read_t)(uint16_t start, uint16_t size, uint8_t *data);
 typedef char (*storage_write_t)(uint16_t start, uint16_t size, uint8_t *data);
 
+typedef void (*console_t)(const char *format, ...);
+
 typedef struct {
 	i2c_write_read_dma_t i2c_write_read_dma;
 	i2c_write_read_t i2c_write_read;
@@ -85,6 +95,7 @@ typedef struct {
 	delay_t delay;
 	storage_read_t storage_read;
 	storage_write_t storage_write;
+	console_t console;
 } platform_t;
 
 void platform_register_io_functions(
@@ -107,6 +118,8 @@ void platform_register_time_ms(time_ms_t time_ms);
 void platform_register_delay(delay_t delay);
 
 void platform_register_storage(storage_read_t storage_read, storage_write_t storage_write);
+
+void platform_register_console(console_t console);
 
 platform_t* get_platform(void);
 
@@ -152,5 +165,7 @@ void platform_loop(void);
 
 #define platform_storage_read		get_platform()->storage_read
 #define platform_storage_write		get_platform()->storage_write
+
+#define print 						get_platform()->console
 
 #endif

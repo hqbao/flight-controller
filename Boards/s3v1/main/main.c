@@ -114,12 +114,6 @@ static char dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
   return 0;
 }
 
-static void handle_db_msg(uart_rx_t *msg) {
-  if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
-    platform_receive_internal_message(msg->buffer, msg->payload_size);
-  }
-}
-
 static void timer_4khz(void*) { platform_scheduler_4khz(); }
 static void timer_2khz(void*) { platform_scheduler_2khz(); }
 static void timer_1khz(void*) { platform_scheduler_1khz(); }
@@ -162,6 +156,13 @@ void core1() {
   while (1) { delay(1000); }
 }
 
+static void console(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  esp_log_writev(ESP_LOG_INFO, "", format, args);
+  va_end(args);
+}
+
 void app_main(void) {
   ESP_LOGI(TAG, "Start program");
 
@@ -170,6 +171,7 @@ void app_main(void) {
   platform_register_time_ms(time_ms);
   platform_register_delay(delay);
   platform_register_storage(storage_read, storage_write);
+  platform_register_console(console);
   platform_register_io_functions(
     i2c_write_read_dma,
     i2c_write_read,

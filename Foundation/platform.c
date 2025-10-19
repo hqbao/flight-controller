@@ -45,6 +45,10 @@ void platform_register_storage(storage_read_t storage_read, storage_write_t stor
 	g_platform.storage_write = storage_write;
 }
 
+void platform_register_console(console_t console) {
+	g_platform.console = console;
+}
+
 platform_t* get_platform(void) {
 	return &g_platform;
 }
