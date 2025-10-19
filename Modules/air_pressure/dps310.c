@@ -155,7 +155,7 @@ int16_t dps310_read(float *p_temperature, float *p_pressure) {
     ret = read_temperature(p_temperature);
     if (ret != DPS310_OK) return ret;
 
-    dps310_i2c_delay_ms(1);  //50ms
+    platform_delay(1);  //50ms
 
     ret = read_pressure(p_pressure);
     if (ret != DPS310_OK) return ret;
@@ -238,7 +238,7 @@ int16_t wait_for_reg_value(uint8_t reg_addr, uint8_t reg_value, uint8_t mask) {
         bool b_is_expected_value = ((buff[0] & mask) == reg_value);
         if (b_is_expected_value) return DPS310_OK;
 
-        dps310_i2c_delay_ms(1); //10ms
+        platform_delay(1); //10ms
     }
 
     if (attempts == DPS310_READ_WAIT_FOR_REG_ATTEMPTS) {
