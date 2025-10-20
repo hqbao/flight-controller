@@ -23,23 +23,18 @@ typedef struct {
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
 
-// Initialize SPI
-// SPI Configuration
-#define SPI_HOST        SPI2_HOST
-#define PIN_NUM_MISO    8
-#define PIN_NUM_MOSI    9
-#define PIN_NUM_CLK     7
-#define PIN_NUM_CS      1
+static spi_device_handle_t spi1;
+static spi_device_handle_t spi2;
+static spi_device_handle_t spi3;
+static spi_device_handle_t spi4;
 
-static spi_device_handle_t spi;
+static spi_device_handle_t *spi_device_handlers[4] = {&spi1, &spi2, &spi3, &spi4};
 
-static void spi_init(void) {
-    esp_err_t ret;
-    
+static void spi_init(void) {    
     spi_bus_config_t buscfg = {
-        .miso_io_num = PIN_NUM_MISO,
-        .mosi_io_num = PIN_NUM_MOSI,
-        .sclk_io_num = PIN_NUM_CLK,
+        .miso_io_num = 8,
+        .mosi_io_num = 9,
+        .sclk_io_num = 7,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = 4096,
@@ -48,7 +43,7 @@ static void spi_init(void) {
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = 1 * 1000 * 1000,  // 1 MHz
         .mode = 3,                          // SPI mode 3 (CPOL=1, CPHA=1)
-        .spics_io_num = PIN_NUM_CS,
+        .spics_io_num = 1,
         .queue_size = 7,
         .command_bits = 0,                  // No command bits, we'll use full transactions
         .address_bits = 0,                  // No address bits
@@ -56,11 +51,11 @@ static void spi_init(void) {
     };
     
     // Initialize SPI bus
-    ret = spi_bus_initialize(SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    esp_err_t ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);
     
     // Attach device to SPI bus
-    ret = spi_bus_add_device(SPI_HOST, &devcfg, &spi);
+    ret = spi_bus_add_device(SPI2_HOST, &devcfg, spi_device_handlers[0]);
     ESP_ERROR_CHECK(ret);
     
     ESP_LOGI(TAG, "SPI initialized");
@@ -88,24 +83,48 @@ char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
 
 char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size) {
-  return ESP_OK;
+  return 0;
 }
 
 char platform_i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size, uint32_t timeout) {
-  return ESP_OK;
+  return 0;
 }
 
 char platform_i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
-  return ESP_OK;
+  return 0;
 }
 
 char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
-  return ESP_OK;
+  return 0;
+}
+
+char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size) {
+  spi_transaction_t t = {
+    .length = size * 8, // In bits
+    .tx_buffer = input,
+    .rx_buffer = NULL,
+  };
+  esp_err_t status = spi_device_polling_transmit(*spi_device_handlers[spi_port], &t);
+  return status == ESP_OK ? 0 : -1;
+}
+
+char platform_spi_write_read(spi_port_t spi_port, 
+  uint8_t *input, uint16_t input_size,
+  uint8_t *output, uint16_t output_size) {
+  spi_transaction_t t = {
+    .length = (input_size + output_size) * 8,  // Input/Output size in bits
+    .tx_buffer = input,
+    .rx_buffer = output,
+  };
+  
+  esp_err_t status = spi_device_polling_transmit(*spi_device_handlers[spi_port], &t);
+  platform_spi_data_dma_callback(spi_port);
+  return status == ESP_OK ? 0 : -1;
 }
 
 char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
-  return ESP_OK;
+  return 0;
 }
 
 char platform_pwm_init(pwm_port_t port) {
@@ -176,28 +195,10 @@ static void create_timer(timer_callback_t callback, uint64_t freq) {
 }
 
 void core0() {
-  create_timer(platform_scheduler_4khz, 4000);
-  create_timer(platform_scheduler_2khz, 2000);
-  create_timer(platform_scheduler_1khz, 1000);
-  create_timer(platform_scheduler_500hz, 500);
-  create_timer(platform_scheduler_250hz, 250);
-  create_timer(platform_scheduler_100hz, 100);
-  create_timer(platform_scheduler_50hz, 50);
-  create_timer(platform_scheduler_25hz, 25);
-  create_timer(platform_scheduler_10hz, 10);
-  create_timer(platform_scheduler_5hz, 5);
-  create_timer(platform_scheduler_1hz, 1);
-
   while (1) { platform_delay(1000); }
 }
 
 void core1() {
-  while (1) { platform_delay(1000); }
-}
-
-void app_main(void) {
-  ESP_LOGI(TAG, "Start program");
-
   // Setup I2Cs
 
   // Setup SPIs
@@ -210,8 +211,17 @@ void app_main(void) {
   // Setup DSHOT
 
   // Setup timers
-  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
-  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
+  create_timer(platform_scheduler_4khz, 4000);
+  create_timer(platform_scheduler_2khz, 2000);
+  create_timer(platform_scheduler_1khz, 1000);
+  create_timer(platform_scheduler_500hz, 500);
+  create_timer(platform_scheduler_250hz, 250);
+  create_timer(platform_scheduler_100hz, 100);
+  create_timer(platform_scheduler_50hz, 50);
+  create_timer(platform_scheduler_25hz, 25);
+  create_timer(platform_scheduler_10hz, 10);
+  create_timer(platform_scheduler_5hz, 5);
+  create_timer(platform_scheduler_1hz, 1);
 
   // Setup platform modules
   platform_setup();
@@ -220,4 +230,13 @@ void app_main(void) {
     platform_loop();
     platform_delay(10);
   }
+}
+
+void app_main(void) {
+  ESP_LOGI(TAG, "Start program");
+
+  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 2, &task_hangle_1, 0);
+  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
+
+  while (1) { platform_delay(1000); }
 }

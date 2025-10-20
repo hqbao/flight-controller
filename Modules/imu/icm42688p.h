@@ -1,5 +1,7 @@
+#ifndef ICM42688P_H
+#define ICM42688P_H
+
 #include <stdint.h>
-#include <string.h>
 #include <stdbool.h>
 #include <platform.h>
 
@@ -170,19 +172,25 @@
 #define GODR_25Hz   0x0A
 #define GODR_12_5Hz 0x0B
 
-#define aMode_OFF 0x01
-#define aMode_LP  0x02
-#define aMode_LN  0x03
+#define accel_mode_OFF 0x01
+#define accel_mode_LP  0x02
+#define accel_mode_LN  0x03
 
-#define gMode_OFF 0x00
-#define gMode_SBY 0x01
-#define gMode_LN  0x03
+#define gyro_mode_OFF 0x00
+#define gyro_mode_SBY 0x01
+#define gyro_mode_LN  0x03
 
 typedef struct {
-	uint8_t i2c_buffer[32];
+	uint8_t buffer[32];
 	i2c_port_t i2c_port;
+	spi_port_t spi_port;
+	char use_port; // 0: I2C, 1: SPI
 } icm42688p_t;
 
-void icm42688p_init(icm42688p_t *icm42688p, uint8_t Ascale, uint8_t Gscale,
-		uint8_t AODR, uint8_t GODR, uint8_t aMode, uint8_t gMode, bool CLKIN);
-void icm42688p_read(icm42688p_t *icm42688p, float *data);
+void icm42688p_init(icm42688p_t *icm42688p, 
+	uint8_t accel_scale, uint8_t gyro_scale,
+	uint8_t accel_odr, uint8_t gyro_odr, 
+	uint8_t accel_mode, uint8_t gyro_mode);
+void icm42688p_read(icm42688p_t *icm42688p);
+
+#endif

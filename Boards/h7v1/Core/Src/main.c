@@ -162,6 +162,16 @@ char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16
 	return HAL_I2C_Master_Transmit(i2c_ports[port], address, input, input_size, 1000);
 }
 
+char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size) {
+  return 0;
+}
+
+char platform_spi_write_read(spi_port_t spi_port,
+  uint8_t *input, uint16_t input_size,
+  uint8_t *output, uint16_t output_size) {
+  return 0;
+}
+
 char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
 	return HAL_UART_Transmit_IT(uart_ports[port], data, data_size);
 }

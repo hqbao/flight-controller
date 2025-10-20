@@ -59,6 +59,11 @@ char platform_i2c_read(i2c_port_t port, uint8_t address,
 char platform_i2c_write(i2c_port_t port, uint8_t address, 
 	uint8_t *input, uint16_t input_size);
 
+char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size);
+char platform_spi_write_read(spi_port_t spi_port, 
+  uint8_t *input, uint16_t input_size,
+  uint8_t *output, uint16_t output_size);
+
 char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size);
 
 char platform_pwm_init(pwm_port_t port);

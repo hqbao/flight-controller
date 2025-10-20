@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include "icm42688p.h"
+#include "icm42688p_i2c.h"
+#include "icm42688p_spi.h"
 
 #define IMU_FREQ 4000
 #define CALIBRATION_FREQ (IMU_FREQ * 2) // 2 seconds
@@ -32,7 +34,7 @@ typedef struct {
 } imu_t;
 
 static imu_t g_imu1 = {
-	{{0}, I2C_PORT1},
+	{{0}, I2C_PORT1, SPI_PORT1, 0},
 	{0, 0, 0, 0, 0, 0},
 	{0},
 	{0},
@@ -95,30 +97,45 @@ static void imu1_calibrate(uint8_t *data, size_t size) {
 }
 
 static void imu1_loop(uint8_t *data, size_t size) {
-	icm42688p_read(&g_imu1.imu_sensor, g_imu1.gyro_accel);
+	icm42688p_read(&g_imu1.imu_sensor);
 }
 
-static void imu1_data_udpate(uint8_t *data, size_t size) {
+static void imu1_data_udpate(void) {
+	if (g_imu1.mode == ready) {
+		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
+		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
+		g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
+		g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
+		g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
+		g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
+		publish_data(&g_imu1);
+	}
+	else if (g_imu1.mode == calibrating) {
+		calibrate(&g_imu1);
+	}
+} 
+
+static void imu1_i2c_data_udpate(uint8_t *data, size_t size) {
 	if (data[0] == I2C_PORT1) {
-		if (g_imu1.mode == ready) {
-			g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
-			g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
-			g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
-			g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
-			g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
-			g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
-			publish_data(&g_imu1);
-		}
-		else if (g_imu1.mode == calibrating) {
-			calibrate(&g_imu1);
-		}
+		icm42688p_get_i2c(&g_imu1.imu_sensor, g_imu1.gyro_accel);
+		imu1_data_udpate();
+	}
+}
+
+static void imu1_spi_data_udpate(uint8_t *data, size_t size) {
+	if (data[0] == SPI_PORT1) {
+		icm42688p_get_spi(&g_imu1.imu_sensor, g_imu1.gyro_accel);
+		imu1_data_udpate();
 	}
 }
 
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
-			AFS_2G, GFS_2000DPS, AODR_500Hz, GODR_32kHz, aMode_LN, gMode_LN, 0);
+		AFS_2G, GFS_2000DPS, 
+		AODR_500Hz, GODR_32kHz, 
+		accel_mode_LN, gyro_mode_LN);
 	subscribe(SCHEDULER_4KHZ, imu1_loop);
-	subscribe(I2C_CALLBACK_UPDATE, imu1_data_udpate);
+	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
+	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
 }
