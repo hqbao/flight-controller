@@ -3,8 +3,6 @@
 
 // Register Values
 #define ICM42688_WHO_AM_I_VALUE     0x47
-#define ICM42688_PWR_MGMT0_ACCEL_LN (0x0F << 0)  // Accel LN mode
-#define ICM42688_PWR_MGMT0_GYRO_LN  (0x0F << 4)  // Gyro LN mode
 #define ICM42688_ACCEL_CONFIG0_8G   (0x03 << 5)  // ±8g range
 #define ICM42688_GYRO_CONFIG0_1000DPS (0x03 << 5) // ±1000 dps range
 
@@ -31,19 +29,56 @@ void icm42688p_init_spi(icm42688p_t *icm42688p,
     
     // Configure power management
     icm42688p->buffer[0] = ICM42688_PWR_MGMT0 | ICM42688_WRITE_FLAG;
-    icm42688p->buffer[1] = ICM42688_PWR_MGMT0_ACCEL_LN | ICM42688_PWR_MGMT0_GYRO_LN;
+    icm42688p->buffer[1] = (gyro_mode << 2) | accel_mode;
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
     
     platform_delay(10);
     
     // Configure accelerometer
     icm42688p->buffer[0] = ICM42688_ACCEL_CONFIG0 | ICM42688_WRITE_FLAG;
-    icm42688p->buffer[1] = ICM42688_ACCEL_CONFIG0_8G;
+    icm42688p->buffer[1] = (accel_scale << 5) | accel_odr;
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
     
     // Configure gyroscope
     icm42688p->buffer[0] = ICM42688_GYRO_CONFIG0 | ICM42688_WRITE_FLAG;
-    icm42688p->buffer[1] = ICM42688_GYRO_CONFIG0_1000DPS;
+    icm42688p->buffer[1] = (gyro_scale << 5) | gyro_odr;
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    // Set gyro bandwidth to ODR/2 (4 kHz) for minimal filtering
+    icm42688p->buffer[0] = ICM42688_GYRO_ACCEL_CONFIG0;
+    icm42688p->buffer[1] = 0x07;  // Gyro BW = 000 (ODR/2), Accel BW = 111 (ODR/320)
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    // Enable FIFO for gyro data (critical for 8 kHz streaming)
+    icm42688p->buffer[0] = ICM42688_FIFO_CONFIG1;
+    icm42688p->buffer[1] = 0x03;  // FIFO mode + gyro data stored
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    icm42688p->buffer[0] = ICM42688_TMST_CONFIG;
+    icm42688p->buffer[1] = 0x01; // Enable temp compensation
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    // Configure interrupts (data-ready on INT1)
+    icm42688p->buffer[0] = ICM42688_INT_CONFIG;
+    icm42688p->buffer[1] = 0x18 | 0x03;  // Push-pull, pulsed, active HIGH
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    icm42688p->buffer[0] = ICM42688_INT_SOURCE0;
+    icm42688p->buffer[1] = 0x08;  // Data-ready interrupt to INT1
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    // Bank 2
+    icm42688p->buffer[0] = ICM42688_REG_BANK_SEL;
+    icm42688p->buffer[1] = 0x02;
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    icm42688p->buffer[0] = ICM42688_GYRO_CONFIG_STATIC2;
+    icm42688p->buffer[1] = 0x00; // Disable AA filter
+    platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
+
+    // Return to Bank 0
+    icm42688p->buffer[0] = ICM42688_REG_BANK_SEL;
+    icm42688p->buffer[1] = 0x00;
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
 
     icm42688p->buffer[0] = ICM42688_TEMP_DATA1 | ICM42688_READ_FLAG;
@@ -62,9 +97,6 @@ void icm42688p_get_spi(icm42688p_t *icm42688p, float *data) {
     int16_t gx = (int16_t) (buffer[8] << 8 | buffer[9]);
     int16_t gy = (int16_t) (buffer[10] << 8 | buffer[11]);
     int16_t gz = (int16_t) (buffer[12] << 8 | buffer[13]);
-    print("gx: %.5f\t gy: %.5f\t gz: %.5f\t ax: %.5f\t ay: %.5f\t az: %.5f\n", 
-        (float)gx/20000, (float)gy/20000, (float)gz/20000, 
-        (float)ax/20000, (float)ay/20000, (float)az/20000);
 
     data[0] = ax;
     data[1] = ay;

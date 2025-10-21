@@ -13,6 +13,7 @@ void icm42688p_init_i2c(icm42688p_t *icm42688p,
     // Verify WHO_AM_I (optional but recommended)
     icm42688p->buffer[0] = ICM42688_WHO_AM_I;
     platform_i2c_write_read(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 1, &icm42688p->buffer[1], 1, 1000);
+    print("WHO_AM_I = 0x%02X\n", icm42688p->buffer[1]);
 
     // Set power modes (gyro in low-noise mode, accel off if not needed)
     icm42688p->buffer[0] = ICM42688_PWR_MGMT0;
