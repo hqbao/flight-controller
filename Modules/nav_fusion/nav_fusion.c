@@ -150,9 +150,9 @@ static void loop_1khz(uint8_t *data, size_t size) {
 
 	publish(NAV_POSITION_UPDATE, (uint8_t*)&g_nav_pos_msg, sizeof(vector3d_t) * 2);
 
-	int number1 = g_alt_d * coef43;
-	int number2 = g_alt_d * coef43;
-	int number3 = g_linear_veloc.z;
+	int number1 = g_air_pressure_alt_raw;
+	int number2 = g_pos_true.z;
+	int number3 = g_pos.z;
 	static uint8_t g_msg[16] = {0};
 	memcpy(&g_msg[0], &number1, 4);
 	memcpy(&g_msg[4], &number2, 4);

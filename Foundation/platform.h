@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#define PLATFORM_OK 0
+#define PLATFORM_ERROR -1
+#define PLATFORM_NOT_SUPPORT -2
+
 typedef enum {
 	I2C_PORT1 = 0,
 	I2C_PORT2,

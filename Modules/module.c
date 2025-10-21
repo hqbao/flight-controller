@@ -1,3 +1,4 @@
+#include <fault_handler/fault_handler.h>
 #include <imu/imu.h>
 #include <attitude_fusion/attitude_fusion.h>
 #include <air_pressure/air_pressure.h>
@@ -13,11 +14,12 @@
 #include <test/test.h>
 
 void platform_setup(void) {
+	fault_handler_setup();
 	//test_setup();
 	imu_setup();
+	air_pressure_setup();
 	speed_control_setup();
 	attitude_fusion_setup();
-	air_pressure_setup();
 	attitude_control_setup();
 	nav_fusion_setup();
 	nav_control_setup();

@@ -137,48 +137,53 @@ uint32_t platform_time_ms(void) {
 }
 
 char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {
-	return 0;
+	return PLATFORM_NOT_SUPPORT;
 }
 
 char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
-	return 0;
+	return PLATFORM_NOT_SUPPORT;
 }
 
 char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
 		uint8_t *output, uint16_t output_size) {
-	return HAL_I2C_Mem_Read_DMA(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size);
+	HAL_StatusTypeDef status = HAL_I2C_Mem_Read_DMA(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 char platform_i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
 		uint8_t *output, uint16_t output_size, uint32_t timeout) {
-	return HAL_I2C_Mem_Read(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size, timeout);
+	HAL_StatusTypeDef status = HAL_I2C_Mem_Read(i2c_ports[port], address, *(uint16_t*)input, input_size, output, output_size, timeout);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 char platform_i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
-	return HAL_I2C_Master_Receive(i2c_ports[port], address, output, output_size, 1000);
+	HAL_StatusTypeDef status = HAL_I2C_Master_Receive(i2c_ports[port], address, output, output_size, 1000);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
-	return HAL_I2C_Master_Transmit(i2c_ports[port], address, input, input_size, 1000);
+	HAL_StatusTypeDef status =  HAL_I2C_Master_Transmit(i2c_ports[port], address, input, input_size, 1000);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size) {
-  return 0;
+	return PLATFORM_NOT_SUPPORT;
 }
 
 char platform_spi_write_read(spi_port_t spi_port,
-  uint8_t *input, uint16_t input_size,
-  uint8_t *output, uint16_t output_size) {
-  return 0;
+	uint8_t *input, uint16_t input_size,
+	uint8_t *output, uint16_t output_size) {
+	return PLATFORM_NOT_SUPPORT;
 }
 
 char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
-	return HAL_UART_Transmit_IT(uart_ports[port], data, data_size);
+	HAL_StatusTypeDef status = HAL_UART_Transmit_IT(uart_ports[port], data, data_size);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 char platform_pwm_init(pwm_port_t port) {
-	HAL_TIM_PWM_Start(g_pwm_timers[port], g_pwm_timer_channels[port]);
-	return 0;
+	HAL_StatusTypeDef status = HAL_TIM_PWM_Start(g_pwm_timers[port], g_pwm_timer_channels[port]);
+	return status == HAL_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
 static void set_pwm(TIM_TypeDef *timer_base, uint32_t channel, uint32_t duty) {
@@ -202,7 +207,7 @@ static void set_pwm(TIM_TypeDef *timer_base, uint32_t channel, uint32_t duty) {
 
 char platform_pwm_send(pwm_port_t port, uint32_t data) {
 	set_pwm(g_pwm_time_bases[port], g_pwm_timer_channels[port], data);
-	return 0;
+	return PLATFORM_OK;
 }
 
 char platform_dshot_init(dshot_port_t port) {
@@ -223,12 +228,12 @@ char platform_dshot_init(dshot_port_t port) {
 		break;
 	}
 
-	return 0;
+	return PLATFORM_OK;
 }
 
 char platform_dshot_send(dshot_port_t port, uint16_t data) {
 	dshot_write(&g_dshots[port], data);
-	return 0;
+	return PLATFORM_OK;
 }
 
 char platform_dshot_ex_init(dshot_ex_port_t port) {
@@ -249,12 +254,12 @@ char platform_dshot_ex_init(dshot_ex_port_t port) {
 		break;
 	}
 
-	return 0;
+	return PLATFORM_OK;
 }
 
 char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
 	dshot_ex_write(&g_dshot_exs[port], data);
-	return 0;
+	return PLATFORM_OK;
 }
 
 void platform_console(const char *format, ...) {
@@ -262,9 +267,9 @@ void platform_console(const char *format, ...) {
 }
 
 static void handle_db_msg(uart_rx_t *msg) {
-  if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
-  	platform_receive_internal_message(msg->buffer, msg->payload_size);
-  }
+	if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
+		platform_receive_internal_message(msg->buffer, msg->payload_size);
+	}
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
