@@ -31,14 +31,14 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>Foundation</name>
+			<name>foundation</name>
 			<type>2</type>
-			<locationURI>$%7BPARENT-2-PROJECT_LOC%7D/Foundation</locationURI>
+			<location>/Users/bao/skydev/flight-controller/base/foundation</location>
 		</link>
 		<link>
-			<name>Modules</name>
+			<name>modules</name>
 			<type>2</type>
-			<locationURI>$%7BPARENT-2-PROJECT_LOC%7D/Modules</locationURI>
+			<location>/Users/bao/skydev/flight-controller/modules</location>
 		</link>
 	</linkedResources>
 </projectDescription>

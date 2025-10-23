@@ -1,6 +1,6 @@
-set(FOUNDATION_DIR ../../../Foundation)
-set(MODULE_DIR ../../../Modules)
-set(ROBOTKIT_DIR ../../../Libs/robotkit)
+set(FOUNDATION_DIR ../../../foundation)
+set(MODULE_DIR ../../../../modules)
+set(ROBOTKIT_DIR ../../../../libs/robotkit)
 
 file(GLOB FOUNDATION_C_SOURCES ${FOUNDATION_DIR}/*.c)
 
@@ -20,5 +20,5 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_TARGET} PUBLIC "ESP32")
 
 add_library(robotkit STATIC IMPORTED)
-set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "../../../Libs/robotkit/librobotkit-esp32s3.a")
+set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "../../../../Libs/robotkit/librobotkit-esp32s3.a")
 target_link_libraries(${COMPONENT_LIB} PUBLIC robotkit)
