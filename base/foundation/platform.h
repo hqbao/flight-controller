@@ -14,7 +14,7 @@ typedef enum {
 	I2C_PORT2,
 	I2C_PORT3,
 	I2C_PORT4,
-} i2c_port_t;
+} i2c_port__t;
 
 typedef enum {
 	SPI_PORT1 = 0,
@@ -52,15 +52,15 @@ typedef enum {
 } dshot_ex_port_t;
 
 // Outcoming functions
-char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, 
+char platform_i2c_write_read_dma(i2c_port__t port, uint8_t address, 
 	uint8_t *input, uint16_t input_size,
 	uint8_t *output, uint16_t output_size);
-char platform_i2c_write_read(i2c_port_t port, uint8_t address, 
+char platform_i2c_write_read(i2c_port__t port, uint8_t address, 
 	uint8_t *input, uint16_t input_size,
 	uint8_t *output, uint16_t output_size, uint32_t timeout);
-char platform_i2c_read(i2c_port_t port, uint8_t address, 
+char platform_i2c_read(i2c_port__t port, uint8_t address, 
 	uint8_t *output, uint16_t output_size);
-char platform_i2c_write(i2c_port_t port, uint8_t address, 
+char platform_i2c_write(i2c_port__t port, uint8_t address, 
 	uint8_t *input, uint16_t input_size);
 
 char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size);
@@ -109,7 +109,7 @@ void platform_on_fault_detected(uint8_t *data, uint16_t size);
 void platform_setup(void);
 void platform_loop(void);
 
-void platform_i2c_data_dma_callback(i2c_port_t port);
+void platform_i2c_data_dma_callback(i2c_port__t port);
 void platform_spi_data_dma_callback(spi_port_t port);
 void platform_uart_data_dma_callback(uart_port_t port);
 

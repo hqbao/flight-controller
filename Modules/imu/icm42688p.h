@@ -182,7 +182,7 @@
 
 typedef struct {
 	uint8_t buffer[32];
-	i2c_port_t i2c_port;
+	i2c_port__t i2c_port;
 	spi_port_t spi_port;
 	char use_port; // 0: I2C, 1: SPI
 } icm42688p_t;

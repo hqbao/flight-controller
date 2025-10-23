@@ -65,7 +65,7 @@ void platform_loop(void) {
 	publish(LOOP, NULL, 0);
 }
 
-void platform_i2c_data_dma_callback(i2c_port_t port) {
+void platform_i2c_data_dma_callback(i2c_port__t port) {
 	publish(I2C_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 }
 

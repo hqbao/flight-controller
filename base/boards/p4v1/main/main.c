@@ -42,21 +42,21 @@ char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
   return PLATFORM_OK;
 }
 
-char platform_i2c_write_read_dma(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read_dma(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size) {
   return PLATFORM_OK;
 }
 
-char platform_i2c_write_read(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size,
+char platform_i2c_write_read(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size,
     uint8_t *output, uint16_t output_size, uint32_t timeout) {
   return PLATFORM_OK;
 }
 
-char platform_i2c_read(i2c_port_t port, uint8_t address, uint8_t *output, uint16_t output_size) {
+char platform_i2c_read(i2c_port__t port, uint8_t address, uint8_t *output, uint16_t output_size) {
   return PLATFORM_OK;
 }
 
-char platform_i2c_write(i2c_port_t port, uint8_t address, uint8_t *input, uint16_t input_size) {
+char platform_i2c_write(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size) {
   return PLATFORM_OK;
 }
 
