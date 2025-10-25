@@ -1,45 +1,45 @@
 # Factory Demo
 
-[中文版本](./README_CN.md)
+[英文版本](./README.md)
 
-This example is based on ESP32-P4-EYE and demonstrates a comprehensive mini camera application that supports photo capture, timed photo capture, video recording, album preview, USB SD card mounting, and image parameter settings (with adjustable resolution, saturation, contrast, brightness, and hue). Building on this foundation, the application also integrates face detection, pedestrian detection, and YOLOv11 nano model-based object detection capabilities, enhancing intelligent visual recognition. The project comprehensively utilizes various peripheral resources of the development board, including MIPI-CSI camera interface, SPI LCD display interface, USB High-Speed interface, button input, rotary encoder, and SD card storage.
+该示例基于 ESP32-P4-EYE 开发板，展示了一个功能全面的迷你相机应用，支持拍照、定时拍照、录像、相册预览、USB 挂载 SD 卡以及图像参数设置（可调节分辨率、饱和度、对比度、亮度和色度）。在此基础上，应用还集成了人脸检测、行人检测以及基于 YOLOv11 nano 模型的目标检测功能，增强了智能视觉识别能力。项目综合利用了开发板的多种外设资源，包括 MIPI-CSI 摄像头接口、SPI 接口 LCD 显示屏、USB High-Speed 接口、按键输入、旋转编码器和 SD 卡存储等。
 
-## Quick Start
+## 快速入门
 
-### Prerequisites
+### 准备工作
 
-* An ESP32-P4-EYE development board.
-* A USB-C cable for power supply and programming.
-* An SD card for storing photos and videos (optional)
+* 一块 ESP32-P4-EYE 开发板。
+* 用于供电和编程的 USB-C 电缆。
+* 用于存储照片、录像的 SD 卡（可选）
 
-### ESP-IDF Requirements
+### ESP-IDF 要求
 
-- This example supports ESP-IDF release/v5.4 and above. By default, it runs on ESP-IDF release/v5.5.
-- Please refer to the [ESP-IDF Programming Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html) to set up the development environment. **Strongly recommended** to go through [Build Your First Project](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html#id8) to familiarize yourself with ESP-IDF and ensure the environment is set up correctly.
+- 此示例支持 ESP-IDF release/v5.4 及以上版本。默认情况下，在 ESP-IDF release/v5.5 上运行。
+- 请参照 [ESP-IDF 编程指南](https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/get-started/index.html) 设置开发环境。**强烈推荐** 通过 [编译第一个工程](https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/get-started/index.html#id8) 来熟悉 ESP-IDF，并确保环境设置正确。
 
-### Get the esp-dev-kits Repository
+### 获取 esp-dev-kits 仓库
 
-Before compiling examples from the esp-dev-kits repository, please run the following command in the terminal to clone the repository locally:
+在编译 esp-dev-kits 仓库中的示例之前，请先在终端中运行以下命令，将该仓库克隆到本地：
 
 ```
 git clone --recursive https://github.com/espressif/esp-dev-kits.git
 ```
 
-### Configuration
+### 配置
 
-Run ``idf.py menuconfig`` and modify the ``Board Support Package`` configuration:
+运行 ``idf.py menuconfig`` 并修改 ``Board Support Package`` 配置：
 
 ```
 menuconfig > Component config > Board Support Package
 ```
 
-## How to Use the Example
+## 如何使用示例
 
-### Apply Patch
+### 应用补丁
 
-* When the pixel clock is set to 80MHz, the default SPI clock source may temporarily fail to meet timing requirements. To address this, please follow these steps to apply the patch file `0004-fix-spi-default-clock-source.patch`:
+* 当像素时钟设置为 80MHz 时，SPI 默认时钟源暂时可能无法满足时序需求。为此，请按照以下步骤应用补丁文件 `0004-fix-spi-default-clock-source.patch`：
 
-1. Change to the ESP-IDF root directory and check out the specific version (the patch is designed for IDF release/v5.5 commit:98cd765953dfe0e7bb1c5df8367e1b54bd966cce):
+1. 切换到 ESP-IDF 根目录并检出特定版本 (补丁针对 IDF release/v5.5 commit:98cd765953dfe0e7bb1c5df8367e1b54bd966cce 版本):
 
 ```bash
 cd ~/esp-idf
@@ -47,53 +47,53 @@ git checkout release/v5.5
 git checkout 98cd765953dfe0e7bb1c5df8367e1b54bd966cce
 ```
 
-2. Copy the patch file to the ESP-IDF root directory, for example:
+2. 将补丁文件复制到 ESP-IDF 根目录，例如：
 
 ```bash
 cp 0004-fix-spi-default-clock-source.patch ~/esp-idf/
 ```
 
-3. Change to the ESP-IDF root directory:
+3. 切换到 ESP-IDF 根目录：
 
 ```bash
 cd ~/esp-idf
 ```
 
-4. Apply the patch using the following command:
+4. 执行以下命令应用补丁
 
 ```bash
 git apply 0004-fix-spi-default-clock-source.patch
 ```
 
-* If you experience significant lag during photo capture or video recording, you can try applying the patch file `0004-fix-sdmmc-aligned-write-buffer.patch` using the same method as above.
+* 若在拍照或录像过程中出现明显卡顿，可尝试应用补丁文件 `0004-fix-sdmmc-aligned-write-buffer.patch`，其使用方法同上。
 
-### Compile and Flash the Example
+### 编译和烧录示例
 
-Compile the project and flash it to the development board, then run the monitor tool to view the serial port output (replace `PORT` with your development board's serial port name):
+编译项目并将其烧录到开发板上，运行监视工具可查看串行端口输出（将 `PORT` 替换为所用开发板的串行端口名）：
 
 ```c
 idf.py -p PORT flash monitor
 ```
 
-Press ``Ctrl-]`` to exit the serial monitor.
+输入``Ctrl-]`` 可退出串口监视。
 
-For complete steps on configuring and using ESP-IDF to compile projects, please refer to the [ESP-IDF Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html).
+有关配置和使用 ESP-IDF 来编译项目的完整步骤，请参阅 [ESP-IDF 快速入门指南](https://docs.espressif.com/projects/esp-idf/zh_CN/latest/esp32/get-started/index.html) 。
 
-### Feature Description
+### 功能说明
 
-| Diagram | Feature | Description |
-|---------|---------|-------------|
-| ![Camera](https://dl.espressif.com/AE/esp-dev-kits/esp32-p4-eye-capture.png) | Photo Capture | Users can take photos by pressing the encoder button, with support for digital zoom through rotary encoder or button operations. <br> **Note**: Photo capture requires an SD card. Photos are saved by default in the `esp32_p4_pic_save` folder on the SD card and can be previewed through the album feature. |
-| ![interval_cam](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_timed_capture.png) | Timed Capture | Users can set the capture interval using buttons and start timed capture mode by pressing the encoder button. Digital zoom is also supported via the rotary encoder. Press any button to stop the timed capture. <br> **Note**: Timed capture requires an SD card. Photos are saved by default in the `esp32_p4_pic_save` folder on the SD card and can be previewed through the album feature. |
-| ![video_mode](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_video_record.png) | Video Recording | Users can start video recording by pressing the encoder button, with support for digital zoom through rotary encoder or button operations. <br> **Note**: Video recording requires an SD card. Videos are saved in MP4 format in the `esp32_p4_mp4_save` folder on the SD card. Currently, MP4 video preview is not supported in the album feature. |
-| ![ai_detect](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_video_ai.png) | AI Detection | AI detection supports face detection and pedestrian detection functions, based on esp-dl inference framework. Users can switch between function modes using the up and down buttons. <br> **Note**: Photo capture is not available in this mode. |
-| ![album](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_album_preview.png) | Album | Users can preview photos taken in photo capture or timed capture modes, and navigate through them using buttons. Press the encoder button to delete the current photo. If YOLO object detection is enabled in settings, object detection will be automatically performed on photos when browsing the album. |
-| ![usb_disk](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_usb_access.png) | USB Mounting | Connect the device to a PC via the USB 2.0 Device interface to directly access files on the SD card. |
-| ![settings](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_settings.png) | Settings | Users can configure whether to enable triaxial accelerometer rotation, whether to enable YOLO object detection, image resolution, whether to enable flash, and adjust image saturation, contrast, brightness, and hue. |
+| 示意图                                               | 功能     | 描述                                                         |
+| ---------------------------------------------------- | -------- | ------------------------------------------------------------ |
+| ![Camera](https://dl.espressif.com/AE/esp-dev-kits/esp32-p4-eye-capture.png)             | 拍照     | 用户可通过按下编码器按键进行拍照，同时支持通过旋转编码器或按键操作实现数码变焦功能。<br>**注意**：拍照功能需插入 SD 卡，照片将默认保存至 SD 卡中的 `esp32_p4_pic_save` 文件夹，并可通过相册功能进行预览 |
+| ![interval_cam](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_timed_capture.png) | 定时拍摄 | 用户可通过按键设置定时拍摄时间，并通过按下编码器按键启动定时拍摄模式。同时，可通过旋转编码器实现数码变焦。在定时拍摄过程中，按下任意按键即可停止拍摄。<br>**注意**：定时拍摄功能需插入 SD 卡，照片将默认保存至 SD 卡中的 `esp32_p4_pic_save` 文件夹，并可通过相册功能进行预览。 |
+| ![video_mode](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_video_record.png)     | 录像     | 用户可通过按下编码器按键开始录像，同时支持通过旋转编码器或按键操作进行数码变焦。<br>**注意**：录像功能需插入 SD 卡，视频将以 MP4 格式保存至 SD 卡中的 `esp32_p4_mp4_save` 文件夹。目前暂不支持通过相册功能预览 MP4 视频。 |
+| ![ai_detect](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_video_ai.png)     | AI 检测     | 检测功能支持人脸检测与行人检测，基于 esp-dl 推理框架实现，用户可通过上下翻按键在不同检测模式间切换。<br>**注意**：该模式下不可进行拍照。 |
+| ![album](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_album_preview.png)               | 相册     | 用户可在拍照模式或定时拍摄模式下预览已拍摄的照片，并通过按键进行上下翻页浏览。按下编码器按键可删除当前照片。若在设置中启用 YOLO 目标检测，浏览相册时将自动对照片进行目标检测。 |
+| ![usb_disk](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_usb_access.png)         | USB 挂载 | 将设备通过 USB 2.0 Device 接口连接至 PC 后，可直接访问 SD 卡中的文件内容。 |
+| ![settings](https://dl.espressif.com/AE/esp-dev-kits/esp32_p4_eye_settings.png)         | 设置     | 用户可设置是否开启三轴加速度计旋转、是否开启 YOLO 目标检测、拍摄图像的分辨率、是否开启闪光灯，并可调节图像的饱和度、对比度、亮度和色度。 |
 
-### Example Output
+### 示例输出
 
-- The complete log is shown below:
+- 完整日志如下所示：
 
     ```c
     I (27) boot: ESP-IDF v5.5-dev-2511-g2696c6bced8-dirt 2nd stage bootloader
@@ -271,12 +271,12 @@ For complete steps on configuring and using ESP-IDF to compile projects, please 
     ...
     ```
 
-## Technical Support and Feedback
+## 技术支持与反馈
 
-Please provide feedback through the following channels:
+请通过以下渠道进行反馈：
 
-- For technical questions, please visit the [esp32.com](https://esp32.com/viewforum.php?f=22) forum.
-- For feature requests or bug reports, please create a new [GitHub issue](https://github.com/espressif/esp-dev-kits/issues).
-- For ESP-LaunchPad related questions, please visit [ESP-LaunchPad](https://esp-launchpad.com/).
+- 有关技术问题，请访问 [esp32.com](https://esp32.com/viewforum.php?f=22) 论坛。
+- 有关功能请求或错误报告，请创建新的 [GitHub 问题](https://github.com/espressif/esp-dev-kits/issues)。
 
-We will respond as soon as possible.
+
+我们会尽快回复。
