@@ -13,7 +13,7 @@
 #include "overlay_manager.h"
 
 // Optical Flow Constants
-#define OPTFLOW_WIDTH   70
+#define OPTFLOW_WIDTH   50
 #define OPTFLOW_HEIGHT  70
 
 // Camera Configuration
@@ -44,6 +44,16 @@ void platform_delay(uint32_t ms) {
 
 uint32_t platform_time_ms(void) {
     return esp_timer_get_time();
+}
+
+static void create_timer(timer_callback_t callback, uint64_t freq) {
+  const esp_timer_create_args_t timer_args = {
+    .callback = callback,
+    .name = "Timer"
+  };
+  esp_timer_handle_t timer_handler;
+  esp_timer_create(&timer_args, &timer_handler);
+  esp_timer_start_periodic(timer_handler, 1000000/freq);
 }
 
 static void bsp_camera_power_init(void) {
@@ -123,16 +133,6 @@ static void calc_optflow(void*) {
     g_dy = (int)(dy * 100);
 }
 
-static void create_timer(timer_callback_t callback, uint64_t freq) {
-  const esp_timer_create_args_t timer_args = {
-    .callback = callback,
-    .name = "Timer"
-  };
-  esp_timer_handle_t timer_handler;
-  esp_timer_create(&timer_args, &timer_handler);
-  esp_timer_start_periodic(timer_handler, 1000000/freq);
-}
-
 static void capture_video(void*) {
     if (g_frame_captured == 0) {
         app_video_stream_capture();
@@ -140,6 +140,9 @@ static void capture_video(void*) {
 }
 
 void core0() {
+    // Initialize optical flow
+    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+
     // Initialize display
     init_display();
     
@@ -151,25 +154,30 @@ void core0() {
     ESP_LOGI(TAG, "Initializing video streaming");
     ESP_ERROR_CHECK(app_video_stream_init(frame_update));
 
-    create_timer(capture_video, 100);
-
-    while (true) { platform_delay(1000); }
+    create_timer(capture_video, 15);
+    create_timer(calc_optflow, 100);
+    while (true) { 
+        // capture_video(NULL);
+        // calc_optflow(NULL);
+        platform_delay(1000); 
+    }
 }
 
 void core1() {
-    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
-    create_timer(calc_optflow, 100);
-
-    while (1) { platform_delay(1000); }
+    while (1) { 
+        platform_delay(1000); 
+    }
 }
 
 void app_main(void) {
     ESP_LOGI(TAG, "Start program");
 
-    xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 10, &task_hangle_1, 0);
-    xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 10, &task_hangle_2, 1);
+    xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
+    xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
 
-    while (1) { platform_delay(1000); }
+    while (1) { 
+        platform_delay(1000); 
+    }
 }
 
 // Auto-initialize camera power on startup
