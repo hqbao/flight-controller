@@ -39,7 +39,6 @@ static esp_err_t video_stream_stop(int video_fd);
 static esp_err_t video_receive_frame(int video_fd);
 static esp_err_t video_free_frame(int video_fd);
 static void video_process_frame(int video_fd);
-static void video_stream_task(void *arg);
 
 /* Public function implementations */
 
@@ -240,34 +239,14 @@ uint32_t app_video_get_buf_size(void) {
     return s_video_ctx.camera_buf_hes * s_video_ctx.camera_buf_ves * bytes_per_pixel;
 }
 
-esp_err_t app_video_stream_task_start(int video_fd, int core_id) {
-    esp_err_t ret;
-
+esp_err_t app_video_stream_task_start(int video_fd) {
     // Start video stream
-    ret = video_stream_start(video_fd);
+    esp_err_t ret = video_stream_start(video_fd);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start video stream");
         return ret;
     }
 
-    // Create video streaming task
-    BaseType_t task_result = xTaskCreatePinnedToCore(
-        video_stream_task, 
-        "video_stream", 
-        VIDEO_TASK_STACK_SIZE, 
-        &video_fd, 
-        VIDEO_TASK_PRIORITY, 
-        &s_video_ctx.video_stream_task_handle, 
-        core_id
-    );
-
-    if (task_result != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create video stream task");
-        video_stream_stop(video_fd);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Video stream task started on core %d", core_id);
     return ESP_OK;
 }
 
@@ -389,37 +368,29 @@ static void video_process_frame(int video_fd) {
     }
 }
 
-static void video_stream_task(void *arg) {
-    int video_fd = *((int *)arg);
-    ESP_LOGI(TAG, "Video stream task started");
+void app_video_capture(int video_fd) {
+    // Receive frame from driver
+    if (video_receive_frame(video_fd) != ESP_OK) {
+        return;
+    }
 
-    while (1) {
-        // Receive frame from driver
-        if (video_receive_frame(video_fd) != ESP_OK) {
-            vTaskDelay(pdMS_TO_TICKS(10)); // Avoid tight loop on error
-            continue;
-        }
+    // Process frame
+    video_process_frame(video_fd);
 
-        // Process frame
-        video_process_frame(video_fd);
+    // Return frame to driver
+    if (video_free_frame(video_fd) != ESP_OK) {
+        ESP_LOGI(TAG, "Video frame free failed");
+    }
 
-        // Return frame to driver
-        if (video_free_frame(video_fd) != ESP_OK) {
-            // Continue processing even if free fails
-        }
-
-        // Check for task termination request
-        if (s_video_ctx.video_task_delete) {
-            ESP_LOGI(TAG, "Video stream task stopping");
-            s_video_ctx.video_task_delete = false;
-            
-            // Stop video stream and signal completion
-            video_stream_stop(video_fd);
-            if (s_video_ctx.video_stop_sem != NULL) {
-                xSemaphoreGive(s_video_ctx.video_stop_sem);
-            }
-            
-            vTaskDelete(NULL);
+    // Check for task termination request
+    if (s_video_ctx.video_task_delete) {
+        ESP_LOGI(TAG, "Video stream task stopping");
+        s_video_ctx.video_task_delete = false;
+        
+        // Stop video stream and signal completion
+        video_stream_stop(video_fd);
+        if (s_video_ctx.video_stop_sem != NULL) {
+            xSemaphoreGive(s_video_ctx.video_stop_sem);
         }
     }
 }

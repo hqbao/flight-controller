@@ -18,7 +18,7 @@
 
 static const char *TAG = "main";
 
-void bsp_camera_power_init(void) {
+static void bsp_camera_power_init(void) {
     // Initialize camera power control
     rtc_gpio_init(BSP_CAMERA_EN_PIN);
     rtc_gpio_set_direction(BSP_CAMERA_EN_PIN, RTC_GPIO_MODE_OUTPUT_ONLY);
@@ -32,7 +32,7 @@ void bsp_camera_power_init(void) {
     gpio_set_level(BSP_CAMERA_RST_PIN, 1);
 }
 
-esp_err_t bsp_camera_xclk_init(void) {
+static esp_err_t bsp_camera_xclk_init(void) {
     static esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
 
     esp_cam_sensor_xclk_config_t cam_xclk_config = {
@@ -80,7 +80,8 @@ void app_main(void) {
     
     // Main loop can be added here for ongoing tasks
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        app_video_stream_capture();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 

@@ -1,17 +1,17 @@
 #include <sys/stat.h> 
 #include <dirent.h>
 #include <stdio.h>
-#include "esp_log.h"
-#include "esp_private/esp_cache_private.h"
-#include "driver/ppa.h"
-#include "driver/jpeg_encode.h"
+#include <esp_log.h>
+#include <esp_private/esp_cache_private.h>
+#include <driver/ppa.h>
+#include <driver/jpeg_encode.h>
+#include <esp_timer.h>
 #include "app_video.h"
 #include "app_video_stream.h"
 #include "app_video_utils.h"
 #include "display.h"
 #include "overlay_manager.h"
 #include "optflow.h"
-#include <esp_timer.h>
 
 #define OPTFLOW_WIDTH   70
 #define OPTFLOW_HEIGHT  70
@@ -55,6 +55,8 @@ typedef struct {
     int video_cam_fd;
 } camera_buffer_t;
 
+typedef void (*timer_callback_t)(void*);
+
 /* Static variables */
 static camera_state_t s_camera_state = {
     .flags.is_initialized = false,
@@ -87,9 +89,18 @@ static void camera_video_frame_operation(uint8_t *camera_buf, uint8_t camera_buf
                                         uint32_t camera_buf_hes, uint32_t camera_buf_ves, 
                                         size_t camera_buf_len);
 
-/* Public function implementations */
+static void create_timer(timer_callback_t callback, uint64_t freq) {
+  const esp_timer_create_args_t timer_args = {
+    .callback = callback,
+    .name = "Timer"
+  };
+  esp_timer_handle_t timer_handler;
+  esp_timer_create(&timer_args, &timer_handler);
+  esp_timer_start_periodic(timer_handler, 1000000/freq);
+}
 
-static void calc_otpflw(void) {
+static void calc_otpflw(void*) {
+    if (g_frame_captured == 0) return;
     g_frame_captured = 0;
 
     static uint64_t t0 = 0;
@@ -106,26 +117,16 @@ static void calc_otpflw(void) {
     g_dy = dy * 100;
 }
 
-static void core1() {
-    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
-    while (1) {
-        if (g_frame_captured > 0) {
-            calc_otpflw();
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(5));
-    }
-}
+/* Public function implementations */
 
 esp_err_t app_video_stream_init() {
-    esp_err_t ret = ESP_OK;
-
-    xTaskCreatePinnedToCore(core1, "Core 1 loop", 4096, NULL, 6, &task_hangle_1, 1);
+    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+    create_timer(calc_otpflw, 100);
 
     ESP_LOGI(TAG, "Initializing video streaming");
 
     // Initialize video utilities
-    ret = app_video_utils_init();
+    esp_err_t ret = app_video_utils_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize video utils: 0x%x", ret);
         return ret;
@@ -175,7 +176,7 @@ esp_err_t app_video_stream_init() {
     }
 
     // Start video streaming task
-    ret = app_video_stream_task_start(s_camera_buffer.video_cam_fd, 0);
+    ret = app_video_stream_task_start(s_camera_buffer.video_cam_fd);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start video stream task: 0x%x", ret);
         goto cleanup_buffers;
@@ -267,6 +268,10 @@ void app_video_stream_get_jpg_buf(uint8_t **buf, uint32_t *size) {
 void app_video_stream_get_shared_photo_buf(uint8_t **buf, uint32_t *size) {
     *buf = s_camera_buffer.shared_photo_buf;
     *size = SHARED_PHOTO_BUF_WIDTH * SHARED_PHOTO_BUF_HEIGHT * 2;
+}
+
+void app_video_stream_capture(void) {
+    app_video_capture(s_camera_buffer.video_cam_fd);
 }
 
 /* Private function implementations */
@@ -441,16 +446,16 @@ static void camera_video_frame_operation(uint8_t *camera_buf, uint8_t camera_buf
         OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
     g_frame_captured = 1;
     
-    // Convert RGB565 format for display
-    swap_rgb565_bytes(s_camera_buffer.canvas_buf[camera_buf_index], BSP_LCD_H_RES * BSP_LCD_V_RES);    
+    // // Convert RGB565 format for display
+    // swap_rgb565_bytes(s_camera_buffer.canvas_buf[camera_buf_index], BSP_LCD_H_RES * BSP_LCD_V_RES);    
     
-    // Draw an arrow
-    uint16_t *frame_buffer = (uint16_t *)s_camera_buffer.canvas_buf[camera_buf_index];
-    draw_arrow(frame_buffer, BSP_LCD_V_RES, BSP_LCD_H_RES, 
-               BSP_LCD_V_RES/2, BSP_LCD_H_RES/2, 
-               BSP_LCD_V_RES/2 + g_dx, BSP_LCD_H_RES/2 + g_dy, 
-               COLOR_BLUE, 5);
+    // // Draw an arrow
+    // uint16_t *frame_buffer = (uint16_t *)s_camera_buffer.canvas_buf[camera_buf_index];
+    // draw_arrow(frame_buffer, BSP_LCD_V_RES, BSP_LCD_H_RES, 
+    //            BSP_LCD_V_RES/2, BSP_LCD_H_RES/2, 
+    //            BSP_LCD_V_RES/2 + g_dx, BSP_LCD_H_RES/2 + g_dy, 
+    //            COLOR_BLUE, 5);
 
-    // Update display with processed frame
-    update_display(s_camera_buffer.canvas_buf[camera_buf_index]);
+    // // Update display with processed frame
+    // update_display(s_camera_buffer.canvas_buf[camera_buf_index]);
 }

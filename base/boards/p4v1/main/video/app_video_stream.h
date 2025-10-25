@@ -107,4 +107,6 @@ void app_video_stream_get_jpg_buf(uint8_t **buf, uint32_t *size);
  */
 void app_video_stream_get_shared_photo_buf(uint8_t **buf, uint32_t *size);
 
+void app_video_stream_capture(void);
+
 #endif /* APP_VIDEO_STREAM_H */

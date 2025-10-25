@@ -91,10 +91,10 @@ uint32_t app_video_get_buf_size(void);
  * @brief Start video streaming task
  *
  * @param video_fd Video device file descriptor
- * @param core_id CPU core for task execution
  * @return ESP_OK on success, error code on failure
  */
-esp_err_t app_video_stream_task_start(int video_fd, int core_id);
+esp_err_t app_video_stream_task_start(int video_fd);
+void app_video_capture(int video_fd);
 
 /**
  * @brief Stop video streaming task
