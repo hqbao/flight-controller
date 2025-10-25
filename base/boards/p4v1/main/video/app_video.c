@@ -16,7 +16,7 @@
 #include "esp_video_init.h"
 #include "driver/ppa.h"
 #include "driver/jpeg_encode.h"
-#include "display.h" 
+#include "display.h" // For LCD size
 #include "app_video.h"
 
 static const char *TAG = "app_video_unified";
@@ -107,9 +107,6 @@ static const int s_scale_level_res[SCALE_LEVELS] = {960, 480, 240, 120};
 static size_t s_data_cache_line_size = 0;
 static ppa_srm_rotation_angle_t s_current_ppa_rotation = PPA_SRM_ROTATION_ANGLE_0;
 
-// Optical Flow Frame Buffer (Grayscale, 70x70)
-static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
-
 /* -------------------------------------------------------------------------- */
 /* --- Private Function Declarations (Internal Helpers) --- */
 /* -------------------------------------------------------------------------- */
@@ -136,10 +133,7 @@ static esp_err_t app_image_process_video_frame(
     int scale_level, ppa_srm_rotation_angle_t rotation_angle,
     uint8_t *out_buf, uint32_t out_width, uint32_t out_height, size_t out_buf_size);
 static bool validate_scale_level(int scale_level);
-static void swap_rgb565_bytes(uint16_t *buffer, int pixel_count);
 static uint8_t rgb565_to_grayscale(uint16_t rgb565);
-static void resize_frame_nearest(const uint16_t* src_buffer, uint32_t width, uint32_t height, 
-    uint8_t* dst_buffer, uint32_t new_width, uint32_t new_height);
 static void camera_video_frame_operation(uint8_t *camera_buf, uint8_t camera_buf_index, 
                                         uint32_t camera_buf_hes, uint32_t camera_buf_ves, 
                                         size_t camera_buf_len);
@@ -147,7 +141,6 @@ static void camera_video_frame_operation(uint8_t *camera_buf, uint8_t camera_buf
 // Context Callbacks
 static esp_err_t app_video_register_frame_operation_cb(app_video_frame_operation_cb_t operation_cb);
 static esp_err_t app_video_register_frame_update(frame_update_t frame_update);
-static void app_video_update_frame(uint8_t *frame, uint32_t width, uint32_t height);
 static esp_err_t app_video_wait_video_stop(void);
 
 
@@ -606,7 +599,7 @@ esp_err_t app_image_encode_jpeg(
 /**
  * @brief Swaps the high and low bytes of each 16-bit RGB565 pixel.
  */
-static void swap_rgb565_bytes(uint16_t *buffer, int pixel_count) {
+void swap_rgb565_bytes(uint16_t *buffer, int pixel_count) {
     if (buffer == NULL || pixel_count <= 0) {
         return;
     }
@@ -638,7 +631,7 @@ static uint8_t rgb565_to_grayscale(uint16_t rgb565) {
 /**
  * @brief Resizes an RGB565 frame to a grayscale frame using nearest neighbor interpolation.
  */
-static void resize_frame_nearest(const uint16_t* src_buffer, uint32_t width, uint32_t height, 
+void resize_frame_nearest(const uint16_t* src_buffer, uint32_t width, uint32_t height, 
     uint8_t* dst_buffer, uint32_t new_width, uint32_t new_height) {
     
     if (!src_buffer || !dst_buffer || width == 0 || height == 0 || new_width == 0 || new_height == 0) return;
@@ -773,21 +766,7 @@ static void camera_video_frame_operation(uint8_t *camera_buf, uint8_t camera_buf
         return;
     }
     
-    // 3. Resize and Grayscale for Optical Flow Input
-    resize_frame_nearest(
-        (const uint16_t*)s_camera_buffer.canvas_buf[camera_buf_index], 
-        BSP_LCD_H_RES, BSP_LCD_V_RES,
-        g_frame, 
-        OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
-
-    // 4. Update Optical Flow/User Frame
-    app_video_update_frame(g_frame, OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
-    
-    // 5. Byte Swap for Display
-    swap_rgb565_bytes(s_camera_buffer.canvas_buf[camera_buf_index], BSP_LCD_H_RES * BSP_LCD_V_RES);    
-    
-    // 6. Update Display
-    update_display(s_camera_buffer.canvas_buf[camera_buf_index]);
+    s_video_ctx.frame_update(s_camera_buffer.canvas_buf[camera_buf_index], BSP_LCD_H_RES, BSP_LCD_V_RES);
 }
 
 /**
@@ -802,13 +781,6 @@ static esp_err_t app_video_register_frame_update(frame_update_t frame_update) {
     s_video_ctx.frame_update = frame_update;
     ESP_LOGI(TAG, "Frame update callback registered");
     return ESP_OK;
-}
-
-/**
- * @brief Execute the user callback.
- */
-static void app_video_update_frame(uint8_t *frame, uint32_t width, uint32_t height) {
-    s_video_ctx.frame_update(frame, width, height);
 }
 
 /**

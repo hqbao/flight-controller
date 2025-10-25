@@ -35,10 +35,6 @@ extern "C" {
 #define PHOTO_HEIGHT_1080P              1080
 #define PHOTO_HEIGHT_1088P              1088 // JPEG encoder 16-byte aligned height for 1080P
 
-// Optical Flow Configuration
-#define OPTFLOW_WIDTH                   70
-#define OPTFLOW_HEIGHT                  70
-
 // Helper macro for cache alignment
 #define ALIGN_UP(num, align)            (((num) + ((align) - 1)) & ~((align) - 1))
 
@@ -62,7 +58,7 @@ typedef enum {
 /**
  * @brief Callback function for updating a processed frame (e.g., optical flow input).
  */
-typedef void (*frame_update_t)(uint8_t *buffer, uint32_t width, uint32_t height);
+typedef void (*frame_update_t)(uint16_t *buffer, uint32_t width, uint32_t height);
 
 /* -------------------------------------------------------------------------- */
 /* --- Public API: Core Streaming Functions --- */
@@ -116,6 +112,11 @@ int app_video_stream_get_video_fd(void);
  * @brief Gets a pointer and size for the JPEG output buffer.
  */
 void app_video_stream_get_jpg_buf(uint8_t **buf, uint32_t *size);
+
+void resize_frame_nearest(const uint16_t* src_buffer, uint32_t width, uint32_t height, 
+    uint8_t* dst_buffer, uint32_t new_width, uint32_t new_height);
+
+void swap_rgb565_bytes(uint16_t *buffer, int pixel_count);
 
 #ifdef __cplusplus
 }

@@ -10,6 +10,7 @@
 #include "display.h"
 #include "app_video.h"
 #include "optflow.h"
+#include "overlay_manager.h"
 
 // Optical Flow Constants
 #define OPTFLOW_WIDTH   70
@@ -62,10 +63,27 @@ static esp_err_t bsp_camera_xclk_init(void) {
     return ret;
 }
 
+static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
 static int g_dx = 0; // Unused in this file, kept for context
 static int g_dy = 0; // Unused in this file, kept for context
 
-void frame_update(uint8_t *buffer, uint32_t width, uint32_t height) {
+void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
+    // Resize and Grayscale for Optical Flow Input
+    resize_frame_nearest(buffer, width, height,
+        g_frame, OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+
+    // Byte Swap for Display
+    swap_rgb565_bytes(buffer, BSP_LCD_H_RES * BSP_LCD_V_RES);
+
+    // Draw an arrow
+    draw_arrow(buffer, width, height, 
+               width/2, height/2, 
+               width/2 + g_dx, height/2 + g_dy,
+               COLOR_BLUE, 5);
+    
+    // Update Display
+    update_display(buffer);
+
     static uint64_t t0 = 0;
     uint64_t t1 = esp_timer_get_time();
     int dt = t1 - t0;
@@ -74,7 +92,7 @@ void frame_update(uint8_t *buffer, uint32_t width, uint32_t height) {
     float clearity = 0;
     float dx = 0;
     float dy = 0;
-    optflow_calc(buffer, &dx, &dy, &clearity);
+    optflow_calc(g_frame, &dx, &dy, &clearity);
     // g_dx and g_dy are only used for logging/debugging in the original context
     ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
     g_dx = (int)(dx * 100);
