@@ -12,15 +12,6 @@
 
 typedef void (*timer_callback_t)(void*);
 
-typedef struct {
-  uint8_t byte;
-  uint8_t buffer[MAX_UART_BUFFER_SIZE];
-  uint8_t header[2];
-  char stage;
-  uint16_t payload_size;
-  int buffer_idx;
-} uart_rx_t;
-
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
 

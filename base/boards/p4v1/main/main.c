@@ -29,6 +29,12 @@ static const char *TAG = "main";
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
 
+static spi_device_handle_t spi1;
+static spi_device_handle_t *spi_device_handlers[4] = {&spi1, NULL, NULL, NULL};
+
+static i2c_master_dev_handle_t i2c1;
+static i2c_master_dev_handle_t *i2c_master_dev_handlers[4] = {&i2c1, NULL, NULL, NULL};
+
 static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
 static int g_dx = 0;
 static int g_dy = 0;
@@ -39,11 +45,129 @@ void platform_toggle_led(char led) {
 }
 
 void platform_delay(uint32_t ms) {
-    vTaskDelay(pdMS_TO_TICKS(ms));
+  vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
 uint32_t platform_time_ms(void) {
-    return esp_timer_get_time();
+  return esp_timer_get_time();
+}
+
+char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {
+  return PLATFORM_OK;
+}
+
+char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
+  return PLATFORM_OK;
+}
+
+char platform_i2c_write_read_dma(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size,
+    uint8_t *output, uint16_t output_size) {
+    esp_err_t ret = i2c_master_transmit_receive(*i2c_master_dev_handlers[port], 
+        input, input_size, output, output_size, -1);
+    if (ret == ESP_OK) platform_i2c_data_dma_callback(port);
+    return ret == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
+}
+
+char platform_i2c_write_read(i2c_port__t port, uint8_t address, 
+    uint8_t *input, uint16_t input_size,
+    uint8_t *output, uint16_t output_size, uint32_t timeout) {
+    esp_err_t ret = i2c_master_transmit_receive(*i2c_master_dev_handlers[port], 
+        input, input_size, output, output_size, -1);
+    return ret == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
+}
+
+char platform_i2c_read(i2c_port__t port, uint8_t address, uint8_t *output, uint16_t output_size) {
+    return PLATFORM_NOT_SUPPORT;
+}
+
+char platform_i2c_write(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size) {
+    esp_err_t ret = i2c_master_transmit(*i2c_master_dev_handlers[port], input, input_size, -1);
+    return ret == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
+}
+
+char platform_spi_write(spi_port_t spi_port, uint8_t *input, uint8_t size) {
+    spi_transaction_t t = {
+        .length = size * 8, // In bits
+        .tx_buffer = input,
+        .rx_buffer = NULL,
+    };
+    esp_err_t status = spi_device_polling_transmit(*spi_device_handlers[spi_port], &t);
+    return status == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
+}
+
+char platform_spi_write_read(spi_port_t spi_port, 
+    uint8_t *input, uint16_t input_size,
+    uint8_t *output, uint16_t output_size) {
+    spi_transaction_t t = {
+        .length = (input_size + output_size) * 8,  // Input/Output size in bits
+        .tx_buffer = input,
+        .rx_buffer = output,
+    };
+
+    esp_err_t status = spi_device_polling_transmit(*spi_device_handlers[spi_port], &t);
+    platform_spi_data_dma_callback(spi_port);
+    return status == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
+}
+
+char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
+    return PLATFORM_OK;
+}
+
+char platform_pwm_init(pwm_port_t port) {
+    return PLATFORM_OK;
+}
+
+char platform_pwm_send(pwm_port_t port, uint32_t data) {
+    return PLATFORM_OK;
+}
+
+char platform_dshot_init(dshot_port_t port) {
+    switch (port) {
+    case DSHOT_PORT1:
+        break;
+    case DSHOT_PORT2:
+        break;
+    case DSHOT_PORT3:
+        break;
+    case DSHOT_PORT4:
+        break;
+    default:
+        break;
+    }
+
+    return PLATFORM_OK;
+}
+
+char platform_dshot_send(dshot_port_t port, uint16_t data) {
+    return PLATFORM_OK;
+}
+
+char platform_dshot_ex_init(dshot_ex_port_t port) {
+    switch (port) {
+    case DSHOT_EX_PORT1:
+        break;
+    case DSHOT_EX_PORT2:
+        break;
+    case DSHOT_EX_PORT3:
+        break;
+    case DSHOT_EX_PORT4:
+        break;
+    default:
+        break;
+    }
+
+    return PLATFORM_OK;
+}
+
+char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
+  return PLATFORM_OK;
+}
+
+void platform_console(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  esp_log_writev(ESP_LOG_INFO, "", format, args);
+  va_end(args);
 }
 
 static void create_timer(timer_callback_t callback, uint64_t freq) {
@@ -54,6 +178,42 @@ static void create_timer(timer_callback_t callback, uint64_t freq) {
   esp_timer_handle_t timer_handler;
   esp_timer_create(&timer_args, &timer_handler);
   esp_timer_start_periodic(timer_handler, 1000000/freq);
+}
+
+static esp_err_t i2c_init(void) {
+    // I2C bus configuration
+    i2c_master_bus_config_t i2c_bus_config = {
+        .i2c_port = I2C_NUM_1,
+        .sda_io_num = GPIO_NUM_7,
+        .scl_io_num = GPIO_NUM_34,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+
+    // Initialize I2C master bus
+    i2c_master_bus_handle_t bus_handle;
+    esp_err_t ret = i2c_new_master_bus(&i2c_bus_config, &bus_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize I2C master bus: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Add ICM42688P as a device on the bus
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = 0x68,
+        .scl_speed_hz = 1000000,  // 400kHz
+    };
+
+    ret = i2c_master_bus_add_device(bus_handle, &dev_cfg, i2c_master_dev_handlers[0]);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add I2C device: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "I2C initialized");
+    return ret;
 }
 
 static void bsp_camera_power_init(void) {
@@ -156,16 +316,43 @@ void core0() {
 
     create_timer(capture_video, 15);
     create_timer(calc_optflow, 100);
-    while (true) { 
-        // capture_video(NULL);
-        // calc_optflow(NULL);
+    while (true) {
         platform_delay(1000); 
     }
 }
 
 void core1() {
-    while (1) { 
-        platform_delay(1000); 
+    // Setup I2Cs
+    i2c_init();
+
+    // Setup SPIs
+    // spi_init();
+
+    // Setup UARTs
+
+    // Setup PWMs
+
+    // Setup DSHOT
+
+    // Setup timers
+    create_timer(platform_scheduler_4khz, 4000);
+    create_timer(platform_scheduler_2khz, 2000);
+    create_timer(platform_scheduler_1khz, 1000);
+    create_timer(platform_scheduler_500hz, 500);
+    create_timer(platform_scheduler_250hz, 250);
+    create_timer(platform_scheduler_100hz, 100);
+    create_timer(platform_scheduler_50hz, 50);
+    create_timer(platform_scheduler_25hz, 25);
+    create_timer(platform_scheduler_10hz, 10);
+    create_timer(platform_scheduler_5hz, 5);
+    create_timer(platform_scheduler_1hz, 1);
+
+    // Setup platform modules
+    platform_setup();
+
+    while (1) {
+        platform_loop();
+        platform_delay(10);
     }
 }
 

@@ -15,8 +15,8 @@ file(GLOB APP_OPTFLOW_C_SOURCES ${OPTFLOW_DIR}/*.c)
 # Collect Video module source files  
 file(GLOB APP_DISPLAY_C_SOURCES ${DISPLAY_DIR}/*.c)
 
-file(GLOB 
- ${FOUNDATION_DIR}/*.c)
+file(GLOB FOUNDATION_C_SOURCES
+  ${FOUNDATION_DIR}/*.c)
 
 file(GLOB_RECURSE MODULE_C_SOURCES
   ${MODULE_DIR}/*.c
