@@ -22,7 +22,29 @@
 #define BSP_CAMERA_RST_PIN    (GPIO_NUM_26)
 #define BSP_CAMERA_XCLK_PIN   (GPIO_NUM_11)
 
+typedef void (*timer_callback_t)(void*);
+
 static const char *TAG = "main";
+
+TaskHandle_t task_hangle_1 = NULL;
+TaskHandle_t task_hangle_2 = NULL;
+
+static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
+static int g_dx = 0;
+static int g_dy = 0;
+static char g_frame_captured = 0;
+
+void platform_toggle_led(char led) {
+
+}
+
+void platform_delay(uint32_t ms) {
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+uint32_t platform_time_ms(void) {
+    return esp_timer_get_time();
+}
 
 static void bsp_camera_power_init(void) {
     // Initialize camera power control
@@ -63,14 +85,12 @@ static esp_err_t bsp_camera_xclk_init(void) {
     return ret;
 }
 
-static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
-static int g_dx = 0; // Unused in this file, kept for context
-static int g_dy = 0; // Unused in this file, kept for context
-
-void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
+static void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
     // Resize and Grayscale for Optical Flow Input
     resize_frame_nearest(buffer, width, height,
         g_frame, OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+
+    g_frame_captured = 1;
 
     // Byte Swap for Display
     swap_rgb565_bytes(buffer, BSP_LCD_H_RES * BSP_LCD_V_RES);
@@ -83,9 +103,14 @@ void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
     
     // Update Display
     update_display(buffer);
+}
+
+static void calc_optflow(void*) {
+    if (g_frame_captured == 0) return;
+    g_frame_captured = 0;
 
     static uint64_t t0 = 0;
-    uint64_t t1 = esp_timer_get_time();
+    uint64_t t1 = platform_time_ms();
     int dt = t1 - t0;
     t0 = t1;
     int fps = (double)1000000 / dt;
@@ -93,19 +118,29 @@ void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
     float dx = 0;
     float dy = 0;
     optflow_calc(g_frame, &dx, &dy, &clearity);
-    // g_dx and g_dy are only used for logging/debugging in the original context
     ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
     g_dx = (int)(dx * 100);
     g_dy = (int)(dy * 100);
 }
 
-void app_main(void) {
-    ESP_LOGI(TAG, "Starting ESP32-P4-EYE application");
+static void create_timer(timer_callback_t callback, uint64_t freq) {
+  const esp_timer_create_args_t timer_args = {
+    .callback = callback,
+    .name = "Timer"
+  };
+  esp_timer_handle_t timer_handler;
+  esp_timer_create(&timer_args, &timer_handler);
+  esp_timer_start_periodic(timer_handler, 1000000/freq);
+}
 
-    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+static void capture_video(void*) {
+    if (g_frame_captured == 0) {
+        app_video_stream_capture();
+    }
+}
 
+void core0() {
     // Initialize display
-    ESP_LOGI(TAG, "Initializing display");
     init_display();
     
     // Initialize camera XCLK
@@ -115,14 +150,26 @@ void app_main(void) {
     // Initialize video streaming
     ESP_LOGI(TAG, "Initializing video streaming");
     ESP_ERROR_CHECK(app_video_stream_init(frame_update));
-    
-    ESP_LOGI(TAG, "Application initialization completed successfully");
-    
-    // Main loop can be added here for ongoing tasks
-    while (true) {
-        app_video_stream_capture();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+
+    create_timer(capture_video, 100);
+
+    while (true) { platform_delay(1000); }
+}
+
+void core1() {
+    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+    create_timer(calc_optflow, 100);
+
+    while (1) { platform_delay(1000); }
+}
+
+void app_main(void) {
+    ESP_LOGI(TAG, "Start program");
+
+    xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 10, &task_hangle_1, 0);
+    xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 10, &task_hangle_2, 1);
+
+    while (1) { platform_delay(1000); }
 }
 
 // Auto-initialize camera power on startup
