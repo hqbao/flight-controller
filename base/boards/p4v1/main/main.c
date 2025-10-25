@@ -8,7 +8,12 @@
 #include <esp_err.h>
 #include <platform.h>
 #include "display.h"
-#include "app_video_stream.h"
+#include "app_video.h"
+#include "optflow.h"
+
+// Optical Flow Constants
+#define OPTFLOW_WIDTH   70
+#define OPTFLOW_HEIGHT  70
 
 // Camera Configuration
 #define BSP_MIPI_CAMERA_XCLK_FREQUENCY  (24000000)  // 24MHz
@@ -57,8 +62,29 @@ static esp_err_t bsp_camera_xclk_init(void) {
     return ret;
 }
 
+static int g_dx = 0; // Unused in this file, kept for context
+static int g_dy = 0; // Unused in this file, kept for context
+
+void frame_update(uint8_t *buffer, uint32_t width, uint32_t height) {
+    static uint64_t t0 = 0;
+    uint64_t t1 = esp_timer_get_time();
+    int dt = t1 - t0;
+    t0 = t1;
+    int fps = (double)1000000 / dt;
+    float clearity = 0;
+    float dx = 0;
+    float dy = 0;
+    optflow_calc(buffer, &dx, &dy, &clearity);
+    // g_dx and g_dy are only used for logging/debugging in the original context
+    ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
+    g_dx = (int)(dx * 100);
+    g_dy = (int)(dy * 100);
+}
+
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32-P4-EYE application");
+
+    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
 
     // Initialize display
     ESP_LOGI(TAG, "Initializing display");
@@ -68,13 +94,9 @@ void app_main(void) {
     ESP_LOGI(TAG, "Initializing camera XCLK");
     ESP_ERROR_CHECK(bsp_camera_xclk_init());
     
-    // Initialize I2C bus
-    ESP_LOGI(TAG, "Initializing I2C bus");
-    // ESP_ERROR_CHECK(bsp_i2c_init());
-    
     // Initialize video streaming
     ESP_LOGI(TAG, "Initializing video streaming");
-    ESP_ERROR_CHECK(app_video_stream_init());
+    ESP_ERROR_CHECK(app_video_stream_init(frame_update));
     
     ESP_LOGI(TAG, "Application initialization completed successfully");
     
