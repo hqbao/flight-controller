@@ -100,7 +100,7 @@ static void imu1_loop(uint8_t *data, size_t size) {
 	icm42688p_read(&g_imu1.imu_sensor);
 }
 
-static void imu1_data_udpate(void) {
+static void imu1_data_udpate(void) {	
 	if (g_imu1.mode == ready) {
 		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
 		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
@@ -113,7 +113,7 @@ static void imu1_data_udpate(void) {
 	else if (g_imu1.mode == calibrating) {
 		calibrate(&g_imu1);
 	}
-} 
+}
 
 static void imu1_i2c_data_udpate(uint8_t *data, size_t size) {
 	if (data[0] == I2C_PORT1) {
@@ -126,6 +126,20 @@ static void imu1_spi_data_udpate(uint8_t *data, size_t size) {
 	if (data[0] == SPI_PORT1) {
 		icm42688p_get_spi(&g_imu1.imu_sensor, g_imu1.gyro_accel);
 		imu1_data_udpate();
+	}
+}
+
+static void imu1_loop_10hz(uint8_t *data, size_t size) {
+	if (g_imu1.mode == init) {
+		print("Ignored data: %d\t%d\t%d\n", 
+			(int)g_imu1.gyro_accel[3], 
+			(int)g_imu1.gyro_accel[4], 
+			(int)g_imu1.gyro_accel[5]);
+	} else if (g_imu1.mode == calibrating) {
+		print("Calibrating: %d\t%d\t%d\n", 
+			(int)g_imu1.gyro_accel[3], 
+			(int)g_imu1.gyro_accel[4], 
+			(int)g_imu1.gyro_accel[5]);
 	}
 }
 
