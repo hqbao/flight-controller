@@ -7,6 +7,8 @@
 #include <esp_cam_sensor_xclk.h>
 #include <esp_err.h>
 #include <platform.h>
+#include <pubsub.h>
+#include <vector3d.h>
 #include "display.h"
 #include "app_video.h"
 #include "optflow.h"
@@ -29,6 +31,8 @@ static const char *TAG = "main";
 TaskHandle_t task_hangle_1 = NULL;
 TaskHandle_t task_hangle_2 = NULL;
 
+static char g_core1_started = 0;
+
 static spi_device_handle_t spi1;
 static spi_device_handle_t *spi_device_handlers[4] = {&spi1, NULL, NULL, NULL};
 
@@ -39,6 +43,9 @@ static uint8_t g_frame[OPTFLOW_HEIGHT * OPTFLOW_WIDTH] = {0};
 static int g_dx = 0;
 static int g_dy = 0;
 static char g_frame_captured = 0;
+
+static char g_imu_calibrated = 0;
+static vector3d_t g_state_vector = {0, 0, 0};
 
 void platform_toggle_led(char led) {
 
@@ -170,6 +177,7 @@ void platform_console(const char *format, ...) {
   va_end(args);
 }
 
+// Timers belongs to core 0
 static void create_timer(timer_callback_t callback, uint64_t freq) {
   const esp_timer_create_args_t timer_args = {
     .callback = callback,
@@ -188,6 +196,8 @@ static esp_err_t i2c_init(void) {
         .scl_io_num = GPIO_NUM_34,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
+        .intr_priority = 0,
+        .trans_queue_depth = 0, // Use default
         .flags.enable_internal_pullup = true,
     };
 
@@ -262,6 +272,9 @@ static void frame_update(uint16_t *buffer, uint32_t width, uint32_t height) {
 
     g_frame_captured = 1;
 
+    print("%.3f\t%.3f\t%.3f\t  %d\t%d\n", 
+        g_state_vector.x, g_state_vector.y, g_state_vector.z, g_dx, g_dx);
+
     // Byte Swap for Display
     swap_rgb565_bytes(buffer, BSP_LCD_H_RES * BSP_LCD_V_RES);
 
@@ -279,27 +292,37 @@ static void calc_optflow(void*) {
     if (g_frame_captured == 0) return;
     g_frame_captured = 0;
 
-    static uint64_t t0 = 0;
-    uint64_t t1 = platform_time_ms();
-    int dt = t1 - t0;
-    t0 = t1;
-    int fps = (double)1000000 / dt;
     float clearity = 0;
     float dx = 0;
     float dy = 0;
     optflow_calc(g_frame, &dx, &dy, &clearity);
-    ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
+
+    // static uint64_t t0 = 0;
+    // uint64_t t1 = platform_time_ms();
+    // int dt = t1 - t0;
+    // t0 = t1;
+    // int fps = (double)1000000 / dt;
+    // ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
+    
     g_dx = (int)(dx * 100);
     g_dy = (int)(dy * 100);
 }
 
 static void capture_video(void*) {
-    if (g_frame_captured == 0) {
+    if (g_frame_captured == 0 && g_imu_calibrated) {
         app_video_stream_capture();
     }
 }
 
-void core0() {
+static void on_imu_calibration_result(uint8_t *data, size_t size) {
+    g_imu_calibrated = data[0] == 1;
+}
+
+static void state_vector_update(uint8_t *data, size_t size) {
+    memcpy(&g_state_vector, data, size);
+}
+
+void core1() {
     // Initialize optical flow
     optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
 
@@ -314,14 +337,20 @@ void core0() {
     ESP_LOGI(TAG, "Initializing video streaming");
     ESP_ERROR_CHECK(app_video_stream_init(frame_update));
 
-    create_timer(capture_video, 15);
-    create_timer(calc_optflow, 100);
+    g_core1_started = 1;
+
     while (true) {
-        platform_delay(1000); 
+        capture_video(NULL);
+        calc_optflow(NULL);
+        platform_delay(10);
     }
 }
 
-void core1() {
+void core0() {
+    while (!g_core1_started) {
+        platform_delay(1000);
+    }
+
     // Setup I2Cs
     i2c_init();
 
@@ -350,17 +379,20 @@ void core1() {
     // Setup platform modules
     platform_setup();
 
+    subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
+    subscribe(SENSOR_ATTITUDE_VECTOR, state_vector_update);
+
     while (1) {
         platform_loop();
-        platform_delay(10);
+        platform_delay(100);
     }
 }
 
 void app_main(void) {
     ESP_LOGI(TAG, "Start program");
 
-    xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 1, &task_hangle_1, 0);
-    xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
+    xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 10, &task_hangle_1, 0);
+    xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 10, &task_hangle_2, 1);
 
     while (1) { 
         platform_delay(1000); 
