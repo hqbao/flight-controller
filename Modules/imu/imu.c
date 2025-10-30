@@ -149,6 +149,7 @@ void imu_setup(void) {
 		AODR_500Hz, GODR_32kHz, 
 		accel_mode_LN, gyro_mode_LN);
 	subscribe(SCHEDULER_4KHZ, imu1_loop);
+	subscribe(SCHEDULER_10HZ, imu1_loop_10hz);
 	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
 	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
