@@ -2,6 +2,7 @@
 #include <imu/imu.h>
 #include <attitude_fusion/attitude_fusion.h>
 #include <air_pressure/air_pressure.h>
+#include <compass/compass.h>
 #include <attitude_control/attitude_control.h>
 #include <remote_control/remote_control.h>
 #include <imu_calibrator/imu_calibrator.h>
@@ -18,6 +19,7 @@ void platform_setup(void) {
 	//test_setup();
 	imu_setup();
 	air_pressure_setup();
+	compass_setup();
 	speed_control_setup();
 	attitude_fusion_setup();
 	attitude_control_setup();

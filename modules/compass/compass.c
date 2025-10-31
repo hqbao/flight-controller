@@ -12,16 +12,15 @@ struct bmm350_dev BMMdev = {0};
 struct bmm350_mag_temp_data mag_temp_data;
 
 BMM350_INTF_RET_TYPE i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
-	while(HAL_I2C_Master_Transmit(&hi2c3, (uint16_t) BMM350_I2C_ADSEL_SET_LOW_,  &reg_addr, 1, 100) != HAL_OK);
-	while(HAL_I2C_Master_Receive(&hi2c3, (uint16_t) BMM350_I2C_ADSEL_SET_LOW_, reg_data, len, 100) != HAL_OK);
+	platform_i2c_write_read(I2C_PORT2, BMM350_I2C_ADSEL_SET_LOW_, &reg_addr, 1, reg_data, len, 4);
 	return BMM350_OK;
 }
 
 BMM350_INTF_RET_TYPE i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr) {
-	uint8_t buffer[len+1];
+	uint8_t buffer[len + 1];
 	buffer[0] = reg_addr;
-	buffer[1] = *reg_data;
-	while(HAL_I2C_Master_Transmit(&hi2c3, (uint16_t) BMM350_I2C_ADSEL_SET_LOW_,  buffer, len+1, 100) != HAL_OK);
+	memcpy(&buffer[1], reg_data, len);
+	platform_i2c_write(I2C_PORT2, BMM350_I2C_ADSEL_SET_LOW_, buffer, len + 1);
 	return BMM350_OK;
 }
 
@@ -29,7 +28,7 @@ BMM350_INTF_RET_TYPE i2c_write_byte(uint8_t reg_addr, uint8_t reg_data) {
 	uint8_t buffer[2];
 	buffer[0] = reg_addr;
 	buffer[1] = reg_data;
-	while(HAL_I2C_Master_Transmit(&hi2c3, (uint16_t) BMM350_I2C_ADSEL_SET_LOW_,  buffer, 2, 100) != HAL_OK);
+	platform_i2c_write(I2C_PORT2, BMM350_I2C_ADSEL_SET_LOW_, buffer, 2);
 	return BMM350_OK;
 }
 
@@ -53,5 +52,5 @@ void compass_setup(void) {
 	bmm350_enable_axes(BMM350_X_EN, BMM350_Y_EN, BMM350_Z_EN, &BMMdev);
 	bmm350_set_powermode(BMM350_NORMAL_MODE, &BMMdev);
 
-	subscribe(SCHEDULER_100HZ, loop_25hz);
+	subscribe(SCHEDULER_25HZ, loop_25hz);
 }
