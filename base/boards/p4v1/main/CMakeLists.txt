@@ -1,16 +1,13 @@
 set(VIDEO_DIR video)
-set(OPTFLOW_DIR optflow)
 set(DISPLAY_DIR display)
 
 set(FOUNDATION_DIR ../../../foundation)
 set(MODULE_DIR ../../../../modules)
 set(ROBOTKIT_DIR ../../../../libs/robotkit)
+set(OPTFLOW_DIR ../../../../libs/optflow)
 
 # Collect app core source files
 file(GLOB APP_VIDEO_C_SOURCES ${VIDEO_DIR}/*.c)
-
-# Collect Video module source files  
-file(GLOB APP_OPTFLOW_C_SOURCES ${OPTFLOW_DIR}/*.c)
 
 # Collect Video module source files  
 file(GLOB APP_DISPLAY_C_SOURCES ${DISPLAY_DIR}/*.c)
@@ -37,10 +34,10 @@ idf_component_register(
     INCLUDE_DIRS "." ${VIDEO_DIR} ${OPTFLOW_DIR} ${DISPLAY_DIR} ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR}
 )
 
-add_library(optflow STATIC IMPORTED)
-set_property(TARGET optflow PROPERTY IMPORTED_LOCATION "../main/optflow/liboptflow-esp32p4.a")
-target_link_libraries(${COMPONENT_LIB} PUBLIC optflow)
-
 add_library(robotkit STATIC IMPORTED)
-set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "../../../../Libs/robotkit/librobotkit-esp32p4.a")
+set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "${ROBOTKIT_DIR}/librobotkit-esp32p4.a")
 target_link_libraries(${COMPONENT_LIB} PUBLIC robotkit)
+
+add_library(optflow STATIC IMPORTED)
+set_property(TARGET optflow PROPERTY IMPORTED_LOCATION "${OPTFLOW_DIR}/liboptflow-esp32p4.a")
+target_link_libraries(${COMPONENT_LIB} PUBLIC optflow)

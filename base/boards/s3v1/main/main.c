@@ -5,15 +5,51 @@
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_master.h>
+#include <esp_camera.h>
+#include <optflow.h>
+#include "image_util.h"
 
 #define TAG "main.c"
 
-#define MAX_UART_BUFFER_SIZE 128
-
 typedef void (*timer_callback_t)(void*);
 
-TaskHandle_t task_hangle_1 = NULL;
-TaskHandle_t task_hangle_2 = NULL;
+#define PWDN_GPIO_NUM     -1
+#define RESET_GPIO_NUM    -1
+#define XCLK_GPIO_NUM     10
+#define SIOD_GPIO_NUM     40
+#define SIOC_GPIO_NUM     39
+#define Y9_GPIO_NUM       48
+#define Y8_GPIO_NUM       11
+#define Y7_GPIO_NUM       12
+#define Y6_GPIO_NUM       14
+#define Y5_GPIO_NUM       16
+#define Y4_GPIO_NUM       18
+#define Y3_GPIO_NUM       17
+#define Y2_GPIO_NUM       15
+#define VSYNC_GPIO_NUM    38 // 38 or 2
+#define HREF_GPIO_NUM     47
+#define PCLK_GPIO_NUM     13
+
+#define WIDTH 64
+#define HEIGHT 64
+#define FRAME_FREQ 25
+
+#define LIMIT(number, min, max) (number < min ? min : (number > max ? max : number))
+
+typedef struct {
+  int16_t dx;
+  int16_t dy;
+  int16_t dz;
+  int64_t z_raw;
+  int16_t z_alt;
+} optflow_t;
+
+static volatile char g_frame_captured = 0;
+static volatile optflow_t g_optflow = {0, 0, 0, 0, 0};
+static uint8_t g_frame[WIDTH*HEIGHT] = {0,};
+
+static TaskHandle_t task_hangle_1 = NULL;
+static TaskHandle_t task_hangle_2 = NULL;
 
 static spi_device_handle_t spi1;
 static spi_device_handle_t *spi_device_handlers[4] = {&spi1, NULL, NULL, NULL};
@@ -228,41 +264,139 @@ static void create_timer(timer_callback_t callback, uint64_t freq) {
   esp_timer_start_periodic(timer_handler, 1000000/freq);
 }
 
+static void init_cam(void) {
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.frame_size = FRAMESIZE_QVGA;
+  config.pixel_format = PIXFORMAT_GRAYSCALE;
+  config.grab_mode = CAMERA_GRAB_LATEST;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.jpeg_quality = 1;
+  config.fb_count = 2;
+
+  // camera init
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    ESP_LOGI(TAG, "Camera init failed with error 0x%x\n", err);
+    return;
+  }
+}
+
+static void frame_timer(void *param) {
+  // Capture frame
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    ESP_LOGI(TAG, "Capture failed\n");
+    return;
+  }
+
+  // ESP_LOGI(TAG, "%dx%d, %d, %d\n", fb->height, fb->width, fb->format, fb->len);
+  esp_camera_fb_return(fb);
+
+  fast_crop_and_resize_bilinear(
+    fb->buf, fb->width, fb->height,
+    g_frame, WIDTH, HEIGHT,
+    (int)((fb->width - fb->height) * 0.5), 0, fb->height, fb->height);
+
+  g_frame_captured = 1;
+}
+
+static void calc_otpflw(void) {
+  g_frame_captured = 0;
+
+  float clearity = 0;
+  float dx = 0;
+  float dy = 0;
+  optflow_calc(g_frame, &dx, &dy, &clearity);
+
+  dx = LIMIT(dx * 1000, -100, 100);
+  dy = LIMIT(dy * 1000, -100, 100);
+  int dx_int = g_optflow.dx;
+  int dy_int = g_optflow.dy;
+
+  static int64_t t_prev = 0;
+  int64_t t1 = esp_timer_get_time();
+  int dt_actual = t1 - t_prev;
+  t_prev = t1;
+  int f_actual = 1000000/dt_actual;
+
+  ESP_LOGI(TAG, "$%d\t%d\t%d\t%d\t%f\t%d\t",
+    (int)(dx_int), (int)(dy_int), (int)(g_optflow.dz), 
+    (int)(g_optflow.z_raw), clearity, f_actual);
+}
+
 void core0() {
-  while (1) { platform_delay(1000); }
+  // Init camera
+  init_cam();
+
+  // Frame capture timer
+  const esp_timer_create_args_t timer_args1 = {
+    .callback = &frame_timer,
+    .name = "Frame capturing timer"
+  };
+  esp_timer_handle_t timer_handler1;
+  ESP_ERROR_CHECK(esp_timer_create(&timer_args1, &timer_handler1));
+  ESP_ERROR_CHECK(esp_timer_start_periodic(timer_handler1, 1000000/FRAME_FREQ));
+
+  // Init optical flow
+  optflow_init(WIDTH, HEIGHT);
+
+  while (1) {
+    if (g_frame_captured > 0) {
+      calc_otpflw();
+    }
+  }
 }
 
 void core1() {
-  // Setup I2Cs
-  i2c_init();
+  // // Setup I2Cs
+  // i2c_init();
 
-  // Setup SPIs
-  // spi_init();
+  // // Setup SPIs
+  // // spi_init();
 
-  // Setup UARTs
+  // // Setup UARTs
 
-  // Setup PWMs
+  // // Setup PWMs
 
-  // Setup DSHOT
+  // // Setup DSHOT
 
-  // Setup timers
-  create_timer(platform_scheduler_4khz, 4000);
-  create_timer(platform_scheduler_2khz, 2000);
-  create_timer(platform_scheduler_1khz, 1000);
-  create_timer(platform_scheduler_500hz, 500);
-  create_timer(platform_scheduler_250hz, 250);
-  create_timer(platform_scheduler_100hz, 100);
-  create_timer(platform_scheduler_50hz, 50);
-  create_timer(platform_scheduler_25hz, 25);
-  create_timer(platform_scheduler_10hz, 10);
-  create_timer(platform_scheduler_5hz, 5);
-  create_timer(platform_scheduler_1hz, 1);
+  // // Setup timers
+  // create_timer(platform_scheduler_4khz, 4000);
+  // create_timer(platform_scheduler_2khz, 2000);
+  // create_timer(platform_scheduler_1khz, 1000);
+  // create_timer(platform_scheduler_500hz, 500);
+  // create_timer(platform_scheduler_250hz, 250);
+  // create_timer(platform_scheduler_100hz, 100);
+  // create_timer(platform_scheduler_50hz, 50);
+  // create_timer(platform_scheduler_25hz, 25);
+  // create_timer(platform_scheduler_10hz, 10);
+  // create_timer(platform_scheduler_5hz, 5);
+  // create_timer(platform_scheduler_1hz, 1);
 
-  // Setup platform modules
-  platform_setup();
+  // // Setup platform modules
+  // platform_setup();
 
   while (1) {
-    platform_loop();
+    // platform_loop();
     platform_delay(10);
   }
 }

@@ -1,8 +1,11 @@
 set(FOUNDATION_DIR ../../../foundation)
 set(MODULE_DIR ../../../../modules)
 set(ROBOTKIT_DIR ../../../../libs/robotkit)
+set(OPTFLOW_DIR ../../../../libs/optflow)
 
 file(GLOB FOUNDATION_C_SOURCES ${FOUNDATION_DIR}/*.c)
+
+file(GLOB APP_OPTFLOW_C_SOURCES ${OPTFLOW_DIR}/*.c)
 
 file(GLOB_RECURSE MODULE_C_SOURCES
   ${MODULE_DIR}/*.c
@@ -11,14 +14,18 @@ file(GLOB_RECURSE MODULE_C_SOURCES
 
 idf_component_register(
   SRCS 
-  "main.c" 
+  "main.c" "image_util.c"
   ${FOUNDATION_C_SOURCES}
   ${MODULE_C_SOURCES}
-  INCLUDE_DIRS "." ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR}
+  INCLUDE_DIRS "." ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR} ${OPTFLOW_DIR}
 )
 
 target_compile_definitions(${COMPONENT_TARGET} PUBLIC "ESP32")
 
 add_library(robotkit STATIC IMPORTED)
-set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "../../../../Libs/robotkit/librobotkit-esp32s3.a")
+set_property(TARGET robotkit PROPERTY IMPORTED_LOCATION "${ROBOTKIT_DIR}/librobotkit-esp32s3.a")
 target_link_libraries(${COMPONENT_LIB} PUBLIC robotkit)
+
+add_library(optflow STATIC IMPORTED)
+set_property(TARGET optflow PROPERTY IMPORTED_LOCATION "${OPTFLOW_DIR}/liboptflow-esp32s3.a")
+target_link_libraries(${COMPONENT_LIB} PUBLIC optflow)
