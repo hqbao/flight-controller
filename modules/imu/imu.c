@@ -140,11 +140,6 @@ static void imu1_loop_10hz(uint8_t *data, size_t size) {
 			(int)g_imu1.gyro_accel[3], 
 			(int)g_imu1.gyro_accel[4], 
 			(int)g_imu1.gyro_accel[5]);
-	} else {
-		print("Ready: %d\t%d\t%d\n", 
-			(int)g_imu1.gyro_accel[3], 
-			(int)g_imu1.gyro_accel[4], 
-			(int)g_imu1.gyro_accel[5]);
 	}
 }
 

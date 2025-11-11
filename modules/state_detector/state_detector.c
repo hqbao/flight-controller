@@ -164,6 +164,13 @@ static void angular_state_update(uint8_t *data, size_t size) {
 	memcpy(&g_angular_state, data, size);
 }
 
+static void loop_10hz(uint8_t *data, size_t size) {
+	print("Ready: %d\t%d\t%d\n", 
+		(int)g_angular_state.roll, 
+		(int)g_angular_state.pitch, 
+		(int)g_angular_state.yaw);
+}
+
 void state_detector_setup(void) {
 	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
 	subscribe(COMMAND_SET_STATE, state_control_update);
@@ -171,5 +178,6 @@ void state_detector_setup(void) {
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(SENSOR_ATTITUDE_ANGLE, angular_state_update);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
+	subscribe(SCHEDULER_10HZ, loop_10hz);
 	subscribe(SCHEDULER_1HZ, loop_1hz);
 }

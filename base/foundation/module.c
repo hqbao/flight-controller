@@ -23,10 +23,10 @@ void platform_setup(void) {
 	// speed_control_setup();
 	attitude_fusion_setup();
 	attitude_control_setup();
-	nav_fusion_setup();
-	nav_control_setup();
+	// nav_fusion_setup();
+	// nav_control_setup();
 	state_detector_setup();
 	// optflow_setup();
-	remote_control_setup();
+	// remote_control_setup();
 	logger_setup();
 }

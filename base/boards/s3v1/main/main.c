@@ -32,7 +32,6 @@ typedef void (*timer_callback_t)(void*);
 
 #define WIDTH 64
 #define HEIGHT 64
-#define FRAME_FREQ 25
 
 #define LIMIT(number, min, max) (number < min ? min : (number > max ? max : number))
 
@@ -327,10 +326,13 @@ static void calc_otpflw(void) {
   float dy = 0;
   optflow_calc(g_frame, &dx, &dy, &clearity);
 
-  dx = LIMIT(dx * 1000, -100, 100);
-  dy = LIMIT(dy * 1000, -100, 100);
-  int dx_int = g_optflow.dx;
-  int dy_int = g_optflow.dy;
+  float coef = 1000.0 / (clearity + 0.00001);
+  dx = dx * coef;
+  dy = -dy * coef;
+  dx = LIMIT(dx, -100, 100);
+  dy = LIMIT(dy, -100, 100);
+  int dx_int = dx;
+  int dy_int = dy;
 
   static int64_t t_prev = 0;
   int64_t t1 = esp_timer_get_time();
@@ -343,60 +345,50 @@ static void calc_otpflw(void) {
     (int)(g_optflow.z_raw), clearity, f_actual);
 }
 
-void core0() {
+void core1() {
   // Init camera
   init_cam();
-
-  // Frame capture timer
-  const esp_timer_create_args_t timer_args1 = {
-    .callback = &frame_timer,
-    .name = "Frame capturing timer"
-  };
-  esp_timer_handle_t timer_handler1;
-  ESP_ERROR_CHECK(esp_timer_create(&timer_args1, &timer_handler1));
-  ESP_ERROR_CHECK(esp_timer_start_periodic(timer_handler1, 1000000/FRAME_FREQ));
 
   // Init optical flow
   optflow_init(WIDTH, HEIGHT);
 
   while (1) {
-    if (g_frame_captured > 0) {
-      calc_otpflw();
-    }
+    frame_timer(NULL);
+    calc_otpflw();
   }
 }
 
-void core1() {
-  // // Setup I2Cs
-  // i2c_init();
+void core0() {
+  // Setup I2Cs
+  i2c_init();
 
-  // // Setup SPIs
-  // // spi_init();
+  // Setup SPIs
+  // spi_init();
 
-  // // Setup UARTs
+  // Setup UARTs
 
-  // // Setup PWMs
+  // Setup PWMs
 
-  // // Setup DSHOT
+  // Setup DSHOT
 
-  // // Setup timers
-  // create_timer(platform_scheduler_4khz, 4000);
-  // create_timer(platform_scheduler_2khz, 2000);
-  // create_timer(platform_scheduler_1khz, 1000);
-  // create_timer(platform_scheduler_500hz, 500);
-  // create_timer(platform_scheduler_250hz, 250);
-  // create_timer(platform_scheduler_100hz, 100);
-  // create_timer(platform_scheduler_50hz, 50);
-  // create_timer(platform_scheduler_25hz, 25);
-  // create_timer(platform_scheduler_10hz, 10);
-  // create_timer(platform_scheduler_5hz, 5);
-  // create_timer(platform_scheduler_1hz, 1);
+  // Setup timers
+  create_timer(platform_scheduler_4khz, 4000);
+  create_timer(platform_scheduler_2khz, 2000);
+  create_timer(platform_scheduler_1khz, 1000);
+  create_timer(platform_scheduler_500hz, 500);
+  create_timer(platform_scheduler_250hz, 250);
+  create_timer(platform_scheduler_100hz, 100);
+  create_timer(platform_scheduler_50hz, 50);
+  create_timer(platform_scheduler_25hz, 25);
+  create_timer(platform_scheduler_10hz, 10);
+  create_timer(platform_scheduler_5hz, 5);
+  create_timer(platform_scheduler_1hz, 1);
 
-  // // Setup platform modules
-  // platform_setup();
+  // Setup platform modules
+  platform_setup();
 
   while (1) {
-    // platform_loop();
+    platform_loop();
     platform_delay(10);
   }
 }
@@ -404,8 +396,8 @@ void core1() {
 void app_main(void) {
   ESP_LOGI(TAG, "Start program");
 
-  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 2, &task_hangle_1, 0);
-  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 1, &task_hangle_2, 1);
+  xTaskCreatePinnedToCore(core0, "Core 0", 4096, NULL, 10, &task_hangle_1, 0);
+  xTaskCreatePinnedToCore(core1, "Core 1", 4096, NULL, 10, &task_hangle_2, 1);
 
   while (1) { platform_delay(1000); }
 }
