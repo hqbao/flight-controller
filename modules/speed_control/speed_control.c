@@ -32,9 +32,9 @@ static void sc_update(uint8_t *data, size_t size) {
 	platform_dshot_send(DSHOT_PORT4, g_output_speed[3]);
 #elif SPEED_CONTROL_PROTOCOL == 2
 	platform_pwm_send(PWM_PORT1, g_output_speed[0]);
-	platform_pwm_send(PWM_PORT1, g_output_speed[1]);
-	platform_pwm_send(PWM_PORT1, g_output_speed[2]);
-	platform_pwm_send(PWM_PORT1, g_output_speed[3]);
+	platform_pwm_send(PWM_PORT2, g_output_speed[1]);
+	platform_pwm_send(PWM_PORT3, g_output_speed[2]);
+	platform_pwm_send(PWM_PORT4, g_output_speed[3]);
 #endif
 }
 

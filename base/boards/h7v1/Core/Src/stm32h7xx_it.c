@@ -353,6 +353,20 @@ void TIM8_UP_TIM13_IRQHandler(void)
 
 	platform_scheduler_1khz(NULL);
 
+	static int counter_for_500hz = 0;
+	if (counter_for_500hz >= 2) {
+		counter_for_500hz = 0;
+		platform_scheduler_500hz(NULL);
+	}
+	counter_for_500hz++;
+
+	static int counter_for_250hz = 0;
+	if (counter_for_250hz >= 4) {
+		counter_for_250hz = 0;
+		platform_scheduler_250hz(NULL);
+	}
+	counter_for_250hz++;
+
 	static int counter_for_100hz = 0;
 	if (counter_for_100hz >= 10) {
 		counter_for_100hz = 0;
@@ -360,12 +374,33 @@ void TIM8_UP_TIM13_IRQHandler(void)
 	}
 	counter_for_100hz++;
 
+	static int counter_for_50hz = 0;
+	if (counter_for_50hz >= 20) {
+		counter_for_50hz = 0;
+		platform_scheduler_50hz(NULL);
+	}
+	counter_for_50hz++;
+
 	static int counter_for_25hz = 0;
 	if (counter_for_25hz >= 40) {
 		counter_for_25hz = 0;
 		platform_scheduler_25hz(NULL);
 	}
 	counter_for_25hz++;
+
+	static int counter_for_10hz = 0;
+	if (counter_for_10hz >= 100) {
+		counter_for_10hz = 0;
+		platform_scheduler_10hz(NULL);
+	}
+	counter_for_10hz++;
+
+	static int counter_for_5hz = 0;
+	if (counter_for_5hz >= 200) {
+		counter_for_5hz = 0;
+		platform_scheduler_5hz(NULL);
+	}
+	counter_for_5hz++;
 
 	static int counter_for_1hz = 0;
 	if (counter_for_1hz >= 1000) {
