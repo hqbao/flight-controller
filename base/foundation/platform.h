@@ -35,6 +35,10 @@ typedef enum {
 	PWM_PORT2,
 	PWM_PORT3,
 	PWM_PORT4,
+	PWM_PORT5,
+	PWM_PORT6,
+	PWM_PORT7,
+	PWM_PORT8,
 } pwm_port_t;
 
 typedef enum {
@@ -42,6 +46,10 @@ typedef enum {
 	DSHOT_PORT2,
 	DSHOT_PORT3,
 	DSHOT_PORT4,
+	DSHOT_PORT5,
+	DSHOT_PORT6,
+	DSHOT_PORT7,
+	DSHOT_PORT8,
 } dshot_port_t;
 
 typedef enum {
