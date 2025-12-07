@@ -158,6 +158,10 @@ static void loop_1hz(uint8_t *data, size_t size) {
 		}
 		counter_2s++;
 	}
+
+	if (g_imu_calibrated == 0) {
+		platform_toggle_led(0);
+	}
 }
 
 static void angular_state_update(uint8_t *data, size_t size) {
@@ -169,6 +173,10 @@ static void loop_10hz(uint8_t *data, size_t size) {
 		(int)g_angular_state.roll, 
 		(int)g_angular_state.pitch, 
 		(int)g_angular_state.yaw);
+
+	if (g_imu_calibrated == 1 && g_state == DISARMED) {
+		platform_toggle_led(0);
+	}
 }
 
 void state_detector_setup(void) {

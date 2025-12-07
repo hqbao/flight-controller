@@ -7,8 +7,16 @@
 #include <pid_control.h>
 #include <macro.h>
 
+#define MOTOR_TYPE 2 // 1: BRUSHED, 2: BRUSHLESS
+
+#if MOTOR_TYPE == 1
+#define MIN_SPEED 40
+#define MAX_SPEED 1000
+#elif  MOTOR_TYPE == 2
 #define MIN_SPEED 120
 #define MAX_SPEED 1800
+#endif // MOTOR_TYPE
+
 #define PID_FREQ 1000
 
 typedef enum {
@@ -123,10 +131,10 @@ static void attitude_control_loop(uint8_t *data, size_t size) {
 		}
 	}
 	else if (g_state == TESTING) {
-		g_output_speed[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw * 20, 0, MAX_SPEED);
-		g_output_speed[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt * 20, 0, MAX_SPEED);
-		g_output_speed[2] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll * 20, 0, MAX_SPEED);
-		g_output_speed[3] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch * 20, 0, MAX_SPEED);
+		g_output_speed[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[2] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[3] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
 	}
 
 	publish(SPEED_CONTROL_UPDATE, (uint8_t*)g_output_speed, sizeof(int) * 4);
