@@ -67,8 +67,8 @@ static void state_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	g_optflow.dx = (double)(*(int*)&data[4]) * coef3;
-	g_optflow.dy = (double)(*(int*)&data[0]) * coef3;
+	g_optflow.dx = (double)(*(int*)&data[0]) * coef3;
+	g_optflow.dy = (double)(*(int*)&data[4]) * coef3;
 	g_optflow.z = (double)(*(int*)&data[8]);
 
 	g_pos_true.x += g_optflow.dx;

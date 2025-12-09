@@ -7,7 +7,7 @@
 #include "icm42688p_i2c.h"
 #include "icm42688p_spi.h"
 
-#define IMU_FREQ 1000
+#define IMU_FREQ 4000
 #define CALIBRATION_FREQ (IMU_FREQ * 2) // 2 seconds
 #define IMU_MOTION 100
 #define SSF_GYRO (16.4)
@@ -148,7 +148,7 @@ void imu_setup(void) {
 		AFS_2G, GFS_2000DPS, 
 		AODR_500Hz, GODR_32kHz, 
 		accel_mode_LN, gyro_mode_LN);
-	subscribe(SCHEDULER_1KHZ, imu1_loop);
+	subscribe(SCHEDULER_4KHZ, imu1_loop);
 	subscribe(SCHEDULER_10HZ, imu1_loop_10hz);
 	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
 	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
