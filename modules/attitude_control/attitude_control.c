@@ -7,14 +7,14 @@
 #include <pid_control.h>
 #include <macro.h>
 
-#define MOTOR_TYPE 2 // 1: BRUSHED, 2: BRUSHLESS
+#define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
 
 #if MOTOR_TYPE == 1
-#define MIN_SPEED 40
-#define MAX_SPEED 1000
-#elif  MOTOR_TYPE == 2
 #define MIN_SPEED 120
 #define MAX_SPEED 1800
+#elif  MOTOR_TYPE == 2
+#define MIN_SPEED 80
+#define MAX_SPEED 3000
 #endif // MOTOR_TYPE
 
 #define PID_FREQ 1000
