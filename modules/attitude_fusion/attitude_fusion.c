@@ -6,7 +6,7 @@
 #include <fusion1.h>
 
 #define MAX_IMU_ACCEL 16384
-#define IMU_FREQ 4000
+#define IMU_FREQ 2000
 #define DEG2RAD 0.01745329251
 #define RAD2DEG 57.2957795131
 #define DT (1.0 / IMU_FREQ)

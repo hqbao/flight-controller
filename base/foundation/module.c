@@ -19,8 +19,8 @@ void platform_setup(void) {
 	//test_setup();
 	speed_control_setup();
 	imu_setup();
-	air_pressure_setup();
-	compass_setup();
+	//air_pressure_setup();
+	//compass_setup();
 	attitude_fusion_setup();
 	attitude_control_setup();
 	nav_fusion_setup();

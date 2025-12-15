@@ -52,7 +52,7 @@ static uint8_t g_target_data[32] = {0};
 
 static double g_yaw_veloc = 0;
 
-static double nav_veloc_z_scale = 2.5;
+static double nav_veloc_z_scale = 2.0;
 
 int g_moving_state_roll = 0; // 0: Released, 1: Just control
 int g_moving_state_pitch = 0;
@@ -65,31 +65,35 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	g_downward_range = (double)(*(int*)&data[8]);
-	if (g_state == LANDING) {
-		if (g_downward_range < 2000) {
-			if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down
-				g_landing_speed += 1;
-			} else if (g_downward_range - g_downward_range_prev < -20) { // Too high speed
-				g_landing_speed -= 5;
+	if (data[1] == 0) { // Downward
+		g_downward_range = (double)(*(int*)&data[12]);
+		if (g_state == LANDING) {
+			if (g_downward_range < 2000) {
+				if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down
+					g_landing_speed += 1;
+				} else if (g_downward_range - g_downward_range_prev < -20) { // Too high speed
+					g_landing_speed -= 5;
+				}
 			}
+			g_downward_range_prev = g_downward_range;
 		}
-		g_downward_range_prev = g_downward_range;
 	}
 }
 
 static void pid_setup(void) {
 	pid_control_init(&g_pid_nav_x);
-	pid_control_set_p_gain(&g_pid_nav_x, 1.6);
+	pid_control_set_p_gain(&g_pid_nav_x, 1.0);
 	pid_control_set_d_gain(&g_pid_nav_x, 0.2);
 	pid_control_set_i_gain(&g_pid_nav_x, 0, 1.0);
 	pid_control_set_smooth(&g_pid_nav_x, 1.0, 1.0, 1.0);
+	pid_control_set_o_limit(&g_pid_nav_x, 45);
 
 	pid_control_init(&g_pid_nav_y);
-	pid_control_set_p_gain(&g_pid_nav_y, 1.6);
+	pid_control_set_p_gain(&g_pid_nav_y, 1.0);
 	pid_control_set_d_gain(&g_pid_nav_y, 0.2);
 	pid_control_set_i_gain(&g_pid_nav_y, 0, 1.0);
 	pid_control_set_smooth(&g_pid_nav_y, 1.0, 1.0, 1.0);
+	pid_control_set_o_limit(&g_pid_nav_y, 45);
 
 	pid_control_init(&g_pid_nav_z);
 	pid_control_set_p_gain(&g_pid_nav_z, 25);

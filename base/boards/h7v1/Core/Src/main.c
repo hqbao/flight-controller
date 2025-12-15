@@ -72,8 +72,10 @@ DMA_HandleTypeDef hdma_tim2_ch2;
 DMA_HandleTypeDef hdma_tim2_ch3;
 DMA_HandleTypeDef hdma_tim2_ch4;
 
+UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_uart4_rx;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart3_rx;
 
@@ -99,6 +101,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -129,6 +132,7 @@ static dshot_ex_t g_dshot_exs[4];
 
 static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0};
 static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0};
+static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0};
 
 void platform_toggle_led(char led) {
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
@@ -290,85 +294,57 @@ static void handle_db_msg(uart_rx_t *msg) {
 	}
 }
 
+static void read_uart_byte(uart_rx_t *g_uart_rx) {
+	if (g_uart_rx->stage == 5) {
+		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
+		g_uart_rx->buffer_idx++;
+		// Plus 2-byte class-id, 2-byte length and 2-byte checksum
+		if (g_uart_rx->buffer_idx == (int) g_uart_rx->payload_size + 6) {
+			g_uart_rx->stage = 0;
+			handle_db_msg(g_uart_rx);
+		}
+	} else if (g_uart_rx->stage == 0) {
+		if (g_uart_rx->byte == 'd' || g_uart_rx->byte == 'b') {
+			g_uart_rx->header[0] = g_uart_rx->byte;
+			g_uart_rx->stage = 1;
+		}
+	} else if (g_uart_rx->stage == 1) {
+		if (g_uart_rx->byte == 'b' || g_uart_rx->byte == 'd') {
+			g_uart_rx->header[1] = g_uart_rx->byte;
+			g_uart_rx->buffer_idx = 0;
+			g_uart_rx->stage = 2;
+		} else g_uart_rx->stage = 0;
+	} else if (g_uart_rx->stage == 2) {
+		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
+		g_uart_rx->buffer_idx = 1;
+		g_uart_rx->stage = 3;
+	} else if (g_uart_rx->stage == 3) {
+		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
+		g_uart_rx->buffer_idx = 2;
+		g_uart_rx->stage = 4;
+	} else if (g_uart_rx->stage == 4) {
+		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
+		g_uart_rx->buffer_idx++;
+		if (g_uart_rx->buffer_idx == 4) {
+			g_uart_rx->payload_size = *(uint16_t*)&g_uart_rx->buffer[2];
+			g_uart_rx->stage = 5;
+		}
+	} else {
+		g_uart_rx->stage = 0;
+	}
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART1) {
-		if (g_uart_rx1.stage == 5) {
-			g_uart_rx1.buffer[g_uart_rx1.buffer_idx] = g_uart_rx1.byte;
-			g_uart_rx1.buffer_idx++;
-			// Plus 2-byte class-id, 2-byte length and 2-byte checksum
-			if (g_uart_rx1.buffer_idx == (int) g_uart_rx1.payload_size + 6) {
-				g_uart_rx1.stage = 0;
-				handle_db_msg(&g_uart_rx1);
-			}
-		} else if (g_uart_rx1.stage == 0) {
-			if (g_uart_rx1.byte == 'd' || g_uart_rx1.byte == 'b') {
-				g_uart_rx1.header[0] = g_uart_rx1.byte;
-				g_uart_rx1.stage = 1;
-			}
-		} else if (g_uart_rx1.stage == 1) {
-			if (g_uart_rx1.byte == 'b' || g_uart_rx1.byte == 'd') {
-				g_uart_rx1.header[1] = g_uart_rx1.byte;
-				g_uart_rx1.buffer_idx = 0;
-				g_uart_rx1.stage = 2;
-			} else g_uart_rx1.stage = 0;
-		} else if (g_uart_rx1.stage == 2) {
-			g_uart_rx1.buffer[g_uart_rx1.buffer_idx] = g_uart_rx1.byte;
-			g_uart_rx1.buffer_idx = 1;
-			g_uart_rx1.stage = 3;
-		} else if (g_uart_rx1.stage == 3) {
-			g_uart_rx1.buffer[g_uart_rx1.buffer_idx] = g_uart_rx1.byte;
-			g_uart_rx1.buffer_idx = 2;
-			g_uart_rx1.stage = 4;
-		} else if (g_uart_rx1.stage == 4) {
-			g_uart_rx1.buffer[g_uart_rx1.buffer_idx] = g_uart_rx1.byte;
-			g_uart_rx1.buffer_idx++;
-			if (g_uart_rx1.buffer_idx == 4) {
-				g_uart_rx1.payload_size = * (uint16_t * )&g_uart_rx1.buffer[2];
-				g_uart_rx1.stage = 5;
-			}
-		} else {
-			g_uart_rx1.stage = 0;
-		}
+		read_uart_byte(&g_uart_rx1);
 	}
 
 	if (huart->Instance == USART3) {
-		if (g_uart_rx2.stage == 5) {
-			g_uart_rx2.buffer[g_uart_rx2.buffer_idx] = g_uart_rx2.byte;
-			g_uart_rx2.buffer_idx++;
-			// Plus 2-byte class-id, 2-byte length and 2-byte checksum
-			if (g_uart_rx2.buffer_idx == (int) g_uart_rx2.payload_size + 6) {
-				g_uart_rx2.stage = 0;
-				handle_db_msg(&g_uart_rx2);
-			}
-		} else if (g_uart_rx2.stage == 0) {
-			if (g_uart_rx2.byte == 'd' || g_uart_rx2.byte == 'b') {
-				g_uart_rx2.header[0] = g_uart_rx2.byte;
-				g_uart_rx2.stage = 1;
-			}
-		} else if (g_uart_rx2.stage == 1) {
-			if (g_uart_rx2.byte == 'b' || g_uart_rx2.byte == 'd') {
-				g_uart_rx2.header[1] = g_uart_rx2.byte;
-				g_uart_rx2.buffer_idx = 0;
-				g_uart_rx2.stage = 2;
-			} else g_uart_rx2.stage = 0;
-		} else if (g_uart_rx2.stage == 2) {
-			g_uart_rx2.buffer[g_uart_rx2.buffer_idx] = g_uart_rx2.byte;
-			g_uart_rx2.buffer_idx = 1;
-			g_uart_rx2.stage = 3;
-		} else if (g_uart_rx2.stage == 3) {
-			g_uart_rx2.buffer[g_uart_rx2.buffer_idx] = g_uart_rx2.byte;
-			g_uart_rx2.buffer_idx = 2;
-			g_uart_rx2.stage = 4;
-		} else if (g_uart_rx2.stage == 4) {
-			g_uart_rx2.buffer[g_uart_rx2.buffer_idx] = g_uart_rx2.byte;
-			g_uart_rx2.buffer_idx++;
-			if (g_uart_rx2.buffer_idx == 4) {
-				g_uart_rx2.payload_size = * (uint16_t * )&g_uart_rx2.buffer[2];
-				g_uart_rx2.stage = 5;
-			}
-		} else {
-			g_uart_rx2.stage = 0;
-		}
+		read_uart_byte(&g_uart_rx2);
+	}
+
+	if (huart->Instance == UART4) {
+		read_uart_byte(&g_uart_rx3);
 	}
 }
 
@@ -512,6 +488,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_Delay(100);
@@ -522,6 +499,7 @@ int main(void)
   // Start UART communication
   HAL_UART_Receive_DMA(&huart1, &g_uart_rx1.byte, 1);
   HAL_UART_Receive_DMA(&huart3, &g_uart_rx2.byte, 1);
+  HAL_UART_Receive_DMA(&huart4, &g_uart_rx3.byte, 1);
 
   // PPM input capture
   HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);
@@ -616,7 +594,7 @@ void PeriphCommonClock_Config(void)
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2C4|RCC_PERIPHCLK_I2C3
                               |RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_USART1
-                              |RCC_PERIPHCLK_USART3;
+                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_USART3;
   PeriphClkInitStruct.PLL3.PLL3M = 12;
   PeriphClkInitStruct.PLL3.PLL3N = 480;
   PeriphClkInitStruct.PLL3.PLL3P = 2;
@@ -1179,6 +1157,54 @@ static void MX_TIM16_Init(void)
 }
 
 /**
+  * @brief UART4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART4_Init(void)
+{
+
+  /* USER CODE BEGIN UART4_Init 0 */
+
+  /* USER CODE END UART4_Init 0 */
+
+  /* USER CODE BEGIN UART4_Init 1 */
+
+  /* USER CODE END UART4_Init 1 */
+  huart4.Instance = UART4;
+  huart4.Init.BaudRate = 19200;
+  huart4.Init.WordLength = UART_WORDLENGTH_8B;
+  huart4.Init.StopBits = UART_STOPBITS_1;
+  huart4.Init.Parity = UART_PARITY_NONE;
+  huart4.Init.Mode = UART_MODE_TX_RX;
+  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart4.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart4.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart4.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart4, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart4, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART4_Init 2 */
+
+  /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -1321,6 +1347,9 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream3_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
+  /* DMA2_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
   /* DMA2_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
@@ -1396,14 +1425,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA11 PA12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF6_UART4;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PD5 PD6 */
   GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6;

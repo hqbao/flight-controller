@@ -10,6 +10,7 @@
 #define DISARM_TIME_WHEN_LANDING 50
 #define DISARM_IF_EXCEEDED_ANGLE_RAGE 60
 #define ALLOWED_LANDING_RANGE 500
+#define TOOK_OFF_RANGE 100
 
 typedef enum {
 	DISARMED = 0,
@@ -63,7 +64,9 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	g_downward_range = (double)(*(int*)&data[8]);
+	if (data[1] == 0) { // Downward
+		g_downward_range = (double)(*(int*)&data[12]);
+	}
 }
 
 static void on_imu_calibration_result(uint8_t *data, size_t size) {
@@ -100,7 +103,7 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	}
 
 	if (g_state == TAKING_OFF) {
-		if (g_downward_range > 100) {
+		if (g_downward_range > TOOK_OFF_RANGE) {
 			g_state = FLYING;
 		}
 	}

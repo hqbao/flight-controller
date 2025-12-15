@@ -7,7 +7,7 @@
 #include <math.h>
 #include <macro.h>
 
-#define IMU_FREQ 4000
+#define IMU_FREQ 2000
 #define NAV_FREQ 1000
 #define MAX_IMU_ACCEL 16384
 
@@ -40,6 +40,8 @@ static double g_air_pressure_alt = 0;
 static double g_alt = 0;
 static double g_alt_prev = 0;
 static double g_alt_d = 0;
+static optflow_t g_optflow_down = {0, 0, 0};
+static optflow_t g_optflow_up = {0, 0, 0};
 static optflow_t g_optflow = {0, 0, 0};
 static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_linear_veloc = {0, 0, 0};
@@ -67,9 +69,19 @@ static void state_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	g_optflow.dx = (double)(*(int*)&data[0]) * coef3;
-	g_optflow.dy = (double)(*(int*)&data[4]) * coef3;
-	g_optflow.z = (double)(*(int*)&data[8]);
+	if (data[1] == 0) { // Downward
+		g_optflow_down.dx = (double)(*(int*)&data[4]) * coef3;
+		g_optflow_down.dy = (double)(*(int*)&data[8]) * coef3;
+		g_optflow_down.z  = (double)(*(int*)&data[12]);
+	} else if (data[1] == 1) { // Upward
+		g_optflow_up.dx = (double)(*(int*)&data[4]) * coef3;
+		g_optflow_up.dy = -(double)(*(int*)&data[8]) * coef3;
+		g_optflow_up.z  = (double)(*(int*)&data[12]);
+	}
+
+	g_optflow.dx = g_optflow_down.dx + g_optflow_up.dx;
+	g_optflow.dy = g_optflow_down.dy + g_optflow_up.dy;
+	g_optflow.z  = g_optflow_down.z;
 
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;

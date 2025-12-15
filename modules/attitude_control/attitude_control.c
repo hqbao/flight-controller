@@ -10,7 +10,7 @@
 #define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
 
 #if MOTOR_TYPE == 1
-#define MIN_SPEED 120
+#define MIN_SPEED 150
 #define MAX_SPEED 1800
 #elif  MOTOR_TYPE == 2
 #define MIN_SPEED 80
