@@ -40,8 +40,6 @@ static double g_air_pressure_alt = 0;
 static double g_alt = 0;
 static double g_alt_prev = 0;
 static double g_alt_d = 0;
-static optflow_t g_optflow_down = {0, 0, 0};
-static optflow_t g_optflow_up = {0, 0, 0};
 static optflow_t g_optflow = {0, 0, 0};
 static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_linear_veloc = {0, 0, 0};
@@ -54,8 +52,8 @@ static vector3d_t g_pos_final = {0, 0, 0};
 
 static double coef1 = 1.25;
 static double coef2 = 20;
-static double coef3 = 0.01;
-static double coef41 = 0.01;
+static double coef3 = 0.002;
+static double coef41 = 0.02;
 static double coef421 = 0.01;
 static double coef422 = 0.005;
 static double coef43 = 100;
@@ -70,18 +68,13 @@ static void state_control_update(uint8_t *data, size_t size) {
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (data[1] == 0) { // Downward
-		g_optflow_down.dx = (double)(*(int*)&data[4]) * coef3;
-		g_optflow_down.dy = (double)(*(int*)&data[8]) * coef3;
-		g_optflow_down.z  = (double)(*(int*)&data[12]);
+		g_optflow.dx = (double)(*(int*)&data[4]) * coef3;
+		g_optflow.dy = (double)(*(int*)&data[8]) * coef3;
+		g_optflow.z  = (double)(*(int*)&data[12]);
 	} else if (data[1] == 1) { // Upward
-		g_optflow_up.dx = (double)(*(int*)&data[4]) * coef3;
-		g_optflow_up.dy = -(double)(*(int*)&data[8]) * coef3;
-		g_optflow_up.z  = (double)(*(int*)&data[12]);
+		g_optflow.dx = (double)(*(int*)&data[4]) * coef3;
+		g_optflow.dy = -(double)(*(int*)&data[8]) * coef3;
 	}
-
-	g_optflow.dx = g_optflow_down.dx + g_optflow_up.dx;
-	g_optflow.dy = g_optflow_down.dy + g_optflow_up.dy;
-	g_optflow.z  = g_optflow_down.z;
 
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
@@ -89,7 +82,7 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_linear_veloc.x += coef41 * (g_optflow.dx - g_linear_veloc.x);
 	g_linear_veloc.y += coef41 * (g_optflow.dy - g_linear_veloc.y);
 
-	if (g_rc_state_ctl.mode == 1) {
+	if (g_rc_state_ctl.mode == 1 && data[1] == 0) {
 		g_alt = g_optflow.z;
 		if (g_rc_state_ctl_prev.mode != 1) {
 			g_alt_prev = g_alt;
