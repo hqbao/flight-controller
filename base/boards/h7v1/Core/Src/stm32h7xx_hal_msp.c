@@ -567,7 +567,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     /* TIM2_CH1 Init */
     hdma_tim2_ch1.Instance = DMA1_Stream3;
     hdma_tim2_ch1.Init.Request = DMA_REQUEST_TIM2_CH1;
-    hdma_tim2_ch1.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_tim2_ch1.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_tim2_ch1.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_tim2_ch1.Init.MemInc = DMA_MINC_ENABLE;
     hdma_tim2_ch1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
@@ -588,7 +588,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     /* TIM2_CH2 Init */
     hdma_tim2_ch2.Instance = DMA1_Stream5;
     hdma_tim2_ch2.Init.Request = DMA_REQUEST_TIM2_CH2;
-    hdma_tim2_ch2.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_tim2_ch2.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_tim2_ch2.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_tim2_ch2.Init.MemInc = DMA_MINC_ENABLE;
     hdma_tim2_ch2.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
@@ -609,7 +609,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     /* TIM2_CH3 Init */
     hdma_tim2_ch3.Instance = DMA2_Stream2;
     hdma_tim2_ch3.Init.Request = DMA_REQUEST_TIM2_CH3;
-    hdma_tim2_ch3.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_tim2_ch3.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_tim2_ch3.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_tim2_ch3.Init.MemInc = DMA_MINC_ENABLE;
     hdma_tim2_ch3.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
@@ -630,7 +630,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     /* TIM2_CH4 Init */
     hdma_tim2_ch4.Instance = DMA2_Stream3;
     hdma_tim2_ch4.Init.Request = DMA_REQUEST_TIM2_CH4;
-    hdma_tim2_ch4.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_tim2_ch4.Init.Direction = DMA_MEMORY_TO_PERIPH;
     hdma_tim2_ch4.Init.PeriphInc = DMA_PINC_DISABLE;
     hdma_tim2_ch4.Init.MemInc = DMA_MINC_ENABLE;
     hdma_tim2_ch4.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
@@ -638,7 +638,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* htim_base)
     hdma_tim2_ch4.Init.Mode = DMA_NORMAL;
     hdma_tim2_ch4.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_tim2_ch4.Init.FIFOMode = DMA_FIFOMODE_ENABLE;
-    hdma_tim2_ch4.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
+    hdma_tim2_ch4.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_1QUARTERFULL;
     hdma_tim2_ch4.Init.MemBurst = DMA_MBURST_SINGLE;
     hdma_tim2_ch4.Init.PeriphBurst = DMA_PBURST_SINGLE;
     if (HAL_DMA_Init(&hdma_tim2_ch4) != HAL_OK)
@@ -776,7 +776,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
     PA2     ------> TIM2_CH3
     PA3     ------> TIM2_CH4
     */
-    GPIO_InitStruct.Pin = GPIO_PIN_0|Motor_8_Pin|GPIO_PIN_2|GPIO_PIN_3;
+    GPIO_InitStruct.Pin = Motor_5_Pin|Motor_6_Pin|Motor_7_Pin|Motor_8_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

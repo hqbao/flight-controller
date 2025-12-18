@@ -92,6 +92,7 @@ static void MX_I2C1_Init(void);
 static void MX_I2C3_Init(void);
 static void MX_I2C4_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_TIM2_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_TIM13_Init(void);
@@ -99,9 +100,8 @@ static void MX_TIM14_Init(void);
 static void MX_TIM16_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_UART4_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -121,7 +121,7 @@ typedef struct {
 } uart_rx_t;
 
 static I2C_HandleTypeDef* i2c_ports[3] = {&hi2c1, &hi2c3, &hi2c4};
-static UART_HandleTypeDef* uart_ports[2] = {&huart1, &huart3};
+static UART_HandleTypeDef* uart_ports[3] = {&huart1, &huart3, &huart4};
 static TIM_HandleTypeDef* g_pwm_timers[8] = {&htim1, &htim1, &htim1, &htim1, &htim2, &htim2, &htim2, &htim2};
 static uint32_t g_pwm_timer_channels[8] = {TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4, TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4};
 static TIM_TypeDef *g_pwm_time_bases[8] = {TIM1, TIM1, TIM1, TIM1, TIM2, TIM2, TIM2, TIM2};
@@ -479,6 +479,7 @@ int main(void)
   MX_I2C3_Init();
   MX_I2C4_Init();
   MX_TIM1_Init();
+  MX_TIM2_Init();
   MX_TIM6_Init();
   MX_TIM7_Init();
   MX_TIM13_Init();
@@ -486,9 +487,8 @@ int main(void)
   MX_TIM16_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
-  MX_SPI1_Init();
-  MX_TIM2_Init();
   MX_UART4_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_Delay(100);

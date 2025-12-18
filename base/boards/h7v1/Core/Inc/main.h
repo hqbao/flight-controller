@@ -59,7 +59,13 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define Motor_8_Pin GPIO_PIN_1
+#define Motor_5_Pin GPIO_PIN_0
+#define Motor_5_GPIO_Port GPIOA
+#define Motor_6_Pin GPIO_PIN_1
+#define Motor_6_GPIO_Port GPIOA
+#define Motor_7_Pin GPIO_PIN_2
+#define Motor_7_GPIO_Port GPIOA
+#define Motor_8_Pin GPIO_PIN_3
 #define Motor_8_GPIO_Port GPIOA
 #define Motor_1_Pin GPIO_PIN_9
 #define Motor_1_GPIO_Port GPIOE
