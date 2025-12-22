@@ -7,8 +7,7 @@
 #include <math.h>
 #include <macro.h>
 
-#define IMU_FREQ 2000
-#define NAV_FREQ 1000
+#define NAV_FREQ 500
 #define MAX_IMU_ACCEL 16384
 
 typedef enum {
@@ -131,21 +130,21 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_accel.x = v.x * MAX_IMU_ACCEL;
 	g_linear_accel.y = v.y * MAX_IMU_ACCEL;
 	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
-
-	g_linear_veloc.x += 1.0 / IMU_FREQ * g_linear_accel.x;
-	g_linear_veloc.y += 1.0 / IMU_FREQ * g_linear_accel.y;
-	g_linear_veloc.z += 1.0 / IMU_FREQ * g_linear_accel.z;
-
-	g_pos.x += coef1 / IMU_FREQ * g_linear_veloc.x;
-	g_pos.y += coef1 / IMU_FREQ * g_linear_veloc.y;
-	//g_pos.z += coef1 / IMU_FREQ * g_linear_veloc.z;
-
-	g_pos.x += coef2 / IMU_FREQ * (g_pos_true.x - g_pos.x);
-	g_pos.y += coef2 / IMU_FREQ * (g_pos_true.y - g_pos.y);
-	g_pos.z += coef2 / IMU_FREQ * (g_pos_true.z - g_pos.z);
 }
 
-static void loop_1khz(uint8_t *data, size_t size) {
+static void loop_500hz(uint8_t *data, size_t size) {
+	g_linear_veloc.x += 1.0 / NAV_FREQ * g_linear_accel.x;
+	g_linear_veloc.y += 1.0 / NAV_FREQ * g_linear_accel.y;
+	g_linear_veloc.z += 1.0 / NAV_FREQ * g_linear_accel.z;
+
+	g_pos.x += coef1 / NAV_FREQ * g_linear_veloc.x;
+	g_pos.y += coef1 / NAV_FREQ * g_linear_veloc.y;
+	//g_pos.z += coef1 / NAV_FREQ * g_linear_veloc.z;
+
+	g_pos.x += coef2 / NAV_FREQ * (g_pos_true.x - g_pos.x);
+	g_pos.y += coef2 / NAV_FREQ * (g_pos_true.y - g_pos.y);
+	g_pos.z += coef2 / NAV_FREQ * (g_pos_true.z - g_pos.z);
+
 	vector3d_sub(&g_pos_final, &g_pos, &g_pos_bias);
 	vector3d_scale(&g_pos_final, &g_pos_final, scale1);
 	g_pos_final.x = -g_pos_final.x;
@@ -180,7 +179,7 @@ static void state_update(uint8_t *data, size_t size) {
 }
 
 void nav_fusion_setup(void) {
-	subscribe(SCHEDULER_1KHZ, loop_1khz);
+	subscribe(SCHEDULER_500HZ, loop_500hz);
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);

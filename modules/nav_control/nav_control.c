@@ -7,7 +7,7 @@
 #include <pid_control.h>
 #include <macro.h>
 
-#define NAV_FREQ 1000
+#define NAV_FREQ 500
 #define CTL_FREQ 100
 #define MIN_LANDING_SPEED 50
 
