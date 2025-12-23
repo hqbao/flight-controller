@@ -42,7 +42,7 @@ typedef struct {
 	double yaw;
 } angle3d_t;
 
-static int g_output_speed[4] = {0, 0, 0, 0};
+static int g_output_speed[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static angle3d_t g_angular_state = {0, 0, 0};
 static angle3d_t g_angular_target = {0, 0, 0};
 static state_t g_state = DISARMED;
@@ -101,14 +101,26 @@ static void pid_loop(void) {
 	pid_control_update(&g_pid_att_roll, 	g_angular_state.roll, 	g_angular_target.roll, dt);
 	pid_control_update(&g_pid_att_pitch,	g_angular_state.pitch, 	g_angular_target.pitch, dt);
 	pid_control_update(&g_pid_att_yaw, 		g_angular_state.yaw, 	g_set_point_yaw, dt);
+
 	double m1 = g_take_off_speed - g_altitude + g_pid_att_roll.output - g_pid_att_pitch.output - g_pid_att_yaw.output;
 	double m2 = g_take_off_speed - g_altitude - g_pid_att_roll.output - g_pid_att_pitch.output + g_pid_att_yaw.output;
 	double m3 = g_take_off_speed - g_altitude - g_pid_att_roll.output + g_pid_att_pitch.output - g_pid_att_yaw.output;
 	double m4 = g_take_off_speed - g_altitude + g_pid_att_roll.output + g_pid_att_pitch.output + g_pid_att_yaw.output;
+
+	double m5 = g_take_off_speed - g_altitude + g_pid_att_roll.output - g_pid_att_pitch.output + g_pid_att_yaw.output;
+	double m6 = g_take_off_speed - g_altitude - g_pid_att_roll.output - g_pid_att_pitch.output - g_pid_att_yaw.output;
+	double m7 = g_take_off_speed - g_altitude - g_pid_att_roll.output + g_pid_att_pitch.output + g_pid_att_yaw.output;
+	double m8 = g_take_off_speed - g_altitude + g_pid_att_roll.output + g_pid_att_pitch.output - g_pid_att_yaw.output;
+
 	g_output_speed[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
 	g_output_speed[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
 	g_output_speed[2] = LIMIT((int)m3, MIN_SPEED, MAX_SPEED);
 	g_output_speed[3] = LIMIT((int)m4, MIN_SPEED, MAX_SPEED);
+
+	g_output_speed[4] = LIMIT((int)m5, MIN_SPEED, MAX_SPEED);
+	g_output_speed[5] = LIMIT((int)m6, MIN_SPEED, MAX_SPEED);
+	g_output_speed[6] = LIMIT((int)m7, MIN_SPEED, MAX_SPEED);
+	g_output_speed[7] = LIMIT((int)m8, MIN_SPEED, MAX_SPEED);
 }
 
 static void attitude_control_loop(uint8_t *data, size_t size) {
@@ -117,12 +129,20 @@ static void attitude_control_loop(uint8_t *data, size_t size) {
 		g_output_speed[1] = 0;
 		g_output_speed[2] = 0;
 		g_output_speed[3] = 0;
+		g_output_speed[4] = 0;
+		g_output_speed[5] = 0;
+		g_output_speed[6] = 0;
+		g_output_speed[7] = 0;
 	}
 	else if (g_state == READY) {
 		g_output_speed[0] = MIN_SPEED;
 		g_output_speed[1] = MIN_SPEED;
 		g_output_speed[2] = MIN_SPEED;
 		g_output_speed[3] = MIN_SPEED;
+		g_output_speed[4] = MIN_SPEED;
+		g_output_speed[5] = MIN_SPEED;
+		g_output_speed[6] = MIN_SPEED;
+		g_output_speed[7] = MIN_SPEED;
 	}
 	else if (g_state == TAKING_OFF || g_state == FLYING || g_state == LANDING) {
 		pid_loop();
@@ -135,9 +155,13 @@ static void attitude_control_loop(uint8_t *data, size_t size) {
 		g_output_speed[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
 		g_output_speed[2] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
 		g_output_speed[3] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[4] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[5] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[6] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[7] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
 	}
 
-	publish(SPEED_CONTROL_UPDATE, (uint8_t*)g_output_speed, sizeof(int) * 4);
+	publish(SPEED_CONTROL_UPDATE, (uint8_t*)g_output_speed, sizeof(int) * 8);
 }
 
 static void reset(void) {

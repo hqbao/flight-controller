@@ -15,11 +15,19 @@ static void sc_setup(uint8_t *data, size_t size) {
 	platform_dshot_init(DSHOT_PORT2);
 	platform_dshot_init(DSHOT_PORT3);
 	platform_dshot_init(DSHOT_PORT4);
+	platform_dshot_init(DSHOT_PORT5);
+	platform_dshot_init(DSHOT_PORT6);
+	platform_dshot_init(DSHOT_PORT7);
+	platform_dshot_init(DSHOT_PORT8);
 #elif SPEED_CONTROL_PROTOCOL == 2
 	platform_pwm_init(PWM_PORT1);
 	platform_pwm_init(PWM_PORT2);
 	platform_pwm_init(PWM_PORT3);
 	platform_pwm_init(PWM_PORT4);
+	platform_pwm_init(PWM_PORT5);
+	platform_pwm_init(PWM_PORT6);
+	platform_pwm_init(PWM_PORT7);
+	platform_pwm_init(PWM_PORT8);
 #endif
 }
 
@@ -30,11 +38,19 @@ static void sc_update(uint8_t *data, size_t size) {
 	platform_dshot_send(DSHOT_PORT2, g_output_speed[1]);
 	platform_dshot_send(DSHOT_PORT3, g_output_speed[2]);
 	platform_dshot_send(DSHOT_PORT4, g_output_speed[3]);
+	platform_dshot_send(DSHOT_PORT5, g_output_speed[4]);
+	platform_dshot_send(DSHOT_PORT6, g_output_speed[5]);
+	platform_dshot_send(DSHOT_PORT7, g_output_speed[6]);
+	platform_dshot_send(DSHOT_PORT8, g_output_speed[7]);
 #elif SPEED_CONTROL_PROTOCOL == 2
 	platform_pwm_send(PWM_PORT1, g_output_speed[0]);
 	platform_pwm_send(PWM_PORT2, g_output_speed[1]);
 	platform_pwm_send(PWM_PORT3, g_output_speed[2]);
 	platform_pwm_send(PWM_PORT4, g_output_speed[3]);
+	platform_pwm_send(PWM_PORT5, g_output_speed[4]);
+	platform_pwm_send(PWM_PORT6, g_output_speed[5]);
+	platform_pwm_send(PWM_PORT7, g_output_speed[6]);
+	platform_pwm_send(PWM_PORT8, g_output_speed[7]);
 #endif
 }
 
