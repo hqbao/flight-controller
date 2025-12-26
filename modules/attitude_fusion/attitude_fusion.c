@@ -6,10 +6,11 @@
 #include <fusion1.h>
 
 #define MAX_IMU_ACCEL 16384
-#define IMU_FREQ 2000
+#define GYRO_FREQ 2000
+#define ACCEL_FREQ 500
 #define DEG2RAD 0.01745329251
 #define RAD2DEG 57.2957795131
-#define DT (1.0 / IMU_FREQ)
+#define DT (1.0 / GYRO_FREQ)
 #define DEG2RAD_BY_DT (DEG2RAD * DT)
 
 #define ACCEL_OFFSET_X 0
@@ -84,15 +85,15 @@ static void accel_update(uint8_t *data, size_t size) {
 }
 
 static void init(void) {
-	fusion1_init(&g_f11, 4.0, 0.5, IMU_FREQ);
+	fusion1_init(&g_f11, 4.0, 0.5, ACCEL_FREQ);
 	g_f11.accel_scale = MAX_IMU_ACCEL;
 	//g_f11.no_correction = 1;
 
-	fusion1_init(&g_f12, 4.0, 0.5, IMU_FREQ);
+	fusion1_init(&g_f12, 4.0, 0.5, ACCEL_FREQ);
 	fusion1_predict(&g_f12, M_PI_2, 0, 0);
 	//g_f12.no_correction = 1;
 
-	fusion1_init(&g_f13, 4.0, 0.5, IMU_FREQ);
+	fusion1_init(&g_f13, 4.0, 0.5, ACCEL_FREQ);
 	fusion1_predict(&g_f13, 0, -M_PI_2, 0);
 	//g_f13.no_correction = 1;
 }

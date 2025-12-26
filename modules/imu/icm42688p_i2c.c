@@ -5,72 +5,82 @@ void icm42688p_init_i2c(icm42688p_t *icm42688p,
     uint8_t accel_scale, uint8_t gyro_scale,
 	uint8_t accel_odr, uint8_t gyro_odr, 
     uint8_t accel_mode, uint8_t gyro_mode) {
-    // Ensure register bank 0 is selected
+
+    // ---------------- BANK 0 CONFIGURATION ----------------
     icm42688p->buffer[0] = ICM42688_REG_BANK_SEL;
     icm42688p->buffer[1] = 0x00;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Verify WHO_AM_I (optional but recommended)
-    icm42688p->buffer[0] = ICM42688_WHO_AM_I;
-    platform_i2c_write_read(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 1, &icm42688p->buffer[1], 1, 1000);
-    print("WHO_AM_I = 0x%02X\n", icm42688p->buffer[1]);
+    // [Change 1] ENABLE Accel Analog Anti-Aliasing Filter (AAF)
+    // Bit 0 = 0 (ACCEL_UI_AAF_DIS = Enabled)
+    icm42688p->buffer[0] = ICM42688_ACCEL_CONFIG1;
+    icm42688p->buffer[1] = 0x00;
+    platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Set power modes (gyro in low-noise mode, accel off if not needed)
+    // Set power modes
     icm42688p->buffer[0] = ICM42688_PWR_MGMT0;
-    icm42688p->buffer[1] = (gyro_mode << 2) | accel_mode;  // gyro_mode = 0x03 (LN mode), accel_mode = 0x00 (off)
+    icm42688p->buffer[1] = (gyro_mode << 2) | accel_mode;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
     platform_delay(1);
 
-    // Configure accelerometer (if used, else skip)
+    // Configure Accel Scale & ODR
     if (accel_mode != 0x00) {
         icm42688p->buffer[0] = ICM42688_ACCEL_CONFIG0;
         icm42688p->buffer[1] = (accel_scale << 5) | accel_odr;
         platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
     }
 
-    // Configure gyro: 8 kHz ODR + desired scale (e.g., 2000dps)
+    // Configure Gyro Scale & ODR
     icm42688p->buffer[0] = ICM42688_GYRO_CONFIG0;
-    icm42688p->buffer[1] = (gyro_scale << 5) | gyro_odr;  // gyro_odr = 0x08 (8 kHz)
+    icm42688p->buffer[1] = (gyro_scale << 5) | gyro_odr;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Set gyro bandwidth to ODR/2 (4 kHz) for minimal filtering
+    // [Change 2] ENABLE Digital Low Pass Filters for BOTH
+    // Gyro BW (Bits 7:4)  = 1 (ODR/4 - Standard LPF, low latency)
+    // Accel BW (Bits 3:0) = 4 (ODR/32 - Smooth LPF for Position Hold)
+    // Value = 0x14 - gyro: 0001 accel: 0100
     icm42688p->buffer[0] = ICM42688_GYRO_ACCEL_CONFIG0;
-    icm42688p->buffer[1] = 0x07;  // Gyro BW = 000 (ODR/2), Accel BW = 111 (ODR/320)
+    icm42688p->buffer[1] = 0x33;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Enable FIFO for gyro data (critical for 8 kHz streaming)
+    // Enable FIFO
     icm42688p->buffer[0] = ICM42688_FIFO_CONFIG1;
-    icm42688p->buffer[1] = 0x03;  // FIFO mode + gyro data stored
+    icm42688p->buffer[1] = 0x03;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
+    // Enable Timestamp
     icm42688p->buffer[0] = ICM42688_TMST_CONFIG;
-    icm42688p->buffer[1] = 0x01; // Enable temp compensation
+    icm42688p->buffer[1] = 0x01;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Configure interrupts (data-ready on INT1)
+    // Configure Interrupts
     icm42688p->buffer[0] = ICM42688_INT_CONFIG;
-    icm42688p->buffer[1] = 0x18 | 0x03;  // Push-pull, pulsed, active HIGH
+    icm42688p->buffer[1] = 0x18 | 0x03;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
     icm42688p->buffer[0] = ICM42688_INT_SOURCE0;
-    icm42688p->buffer[1] = 0x08;  // Data-ready interrupt to INT1
+    icm42688p->buffer[1] = 0x08;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Bank 2
+    // ---------------- BANK 2 CONFIGURATION ----------------
     icm42688p->buffer[0] = ICM42688_REG_BANK_SEL;
     icm42688p->buffer[1] = 0x02;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
+    // [Change 3] ENABLE Gyro Analog AAF
+    // Bit 1 = 0 (Enable AAF)
+    // Bit 0 = 0 (Enable Notch - inactive if params are 0)
+    // Value = 0x00
     icm42688p->buffer[0] = ICM42688_GYRO_CONFIG_STATIC2;
-    icm42688p->buffer[1] = 0x00; // Disable AA filter
+    icm42688p->buffer[1] = 0x00;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Return to Bank 0
+    // ---------------- CLEANUP ----------------
     icm42688p->buffer[0] = ICM42688_REG_BANK_SEL;
     icm42688p->buffer[1] = 0x00;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
-    // Prepare for reading (temperature register as placeholder)
+    // Prepare for reading
     icm42688p->buffer[0] = ICM42688_TEMP_DATA1;
 }
 

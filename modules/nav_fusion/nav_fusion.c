@@ -7,7 +7,7 @@
 #include <math.h>
 #include <macro.h>
 
-#define NAV_FREQ 500
+#define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
 
 typedef enum {
@@ -51,6 +51,7 @@ static vector3d_t g_pos = {0, 0, 0};
 static vector3d_t g_pos_bias = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 
+static double coef0 = 1.0;
 static double coef1 = 1.25;
 static double coef2 = 20;
 static double coef3 = 0.01;
@@ -60,7 +61,7 @@ static double coef422 = 0.005;
 static double coef43 = 100;
 static double coef51 = 0.05;
 static double coef52 = 0.005;
-static double scale1 = 0.2;
+static double coef6 = 0.2;
 static double threshold1 = 300;
 
 static void state_control_update(uint8_t *data, size_t size) {
@@ -87,9 +88,9 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_linear_veloc.x += coef41 * (g_optflow.dx - g_linear_veloc.x);
 	g_linear_veloc.y += coef41 * (g_optflow.dy - g_linear_veloc.y);
 
-	if (g_rc_state_ctl.mode == 1 && data[1] == 0) {
+	if (g_rc_state_ctl.mode == 0 && data[1] == 0) {
 		g_alt = g_optflow.z;
-		if (g_rc_state_ctl_prev.mode != 1) {
+		if (g_rc_state_ctl_prev.mode != 0) {
 			g_alt_prev = g_alt;
 		}
 
@@ -110,9 +111,9 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		g_air_pressure_alt += coef52 * (g_air_pressure_alt_raw - g_air_pressure_alt);
 	}
 
-	if (g_rc_state_ctl.mode == 0) {
+	if (g_rc_state_ctl.mode == 1) {
 		g_alt = g_air_pressure_alt;
-		if (g_rc_state_ctl_prev.mode != 0) {
+		if (g_rc_state_ctl_prev.mode != 1) {
 			g_alt_prev = g_alt;
 		}
 
@@ -130,23 +131,21 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_accel.x = v.x * MAX_IMU_ACCEL;
 	g_linear_accel.y = v.y * MAX_IMU_ACCEL;
 	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
-}
 
-static void loop_500hz(uint8_t *data, size_t size) {
-	g_linear_veloc.x += 1.0 / NAV_FREQ * g_linear_accel.x;
-	g_linear_veloc.y += 1.0 / NAV_FREQ * g_linear_accel.y;
-	g_linear_veloc.z += 1.0 / NAV_FREQ * g_linear_accel.z;
+	g_linear_veloc.x += coef0 / ACCEL_FREQ * g_linear_accel.x;
+	g_linear_veloc.y += coef0 / ACCEL_FREQ * g_linear_accel.y;
+	g_linear_veloc.z += coef0 / ACCEL_FREQ * g_linear_accel.z;
 
-	g_pos.x += coef1 / NAV_FREQ * g_linear_veloc.x;
-	g_pos.y += coef1 / NAV_FREQ * g_linear_veloc.y;
+	g_pos.x += coef1 / ACCEL_FREQ * g_linear_veloc.x;
+	g_pos.y += coef1 / ACCEL_FREQ * g_linear_veloc.y;
 	//g_pos.z += coef1 / NAV_FREQ * g_linear_veloc.z;
 
-	g_pos.x += coef2 / NAV_FREQ * (g_pos_true.x - g_pos.x);
-	g_pos.y += coef2 / NAV_FREQ * (g_pos_true.y - g_pos.y);
-	g_pos.z += coef2 / NAV_FREQ * (g_pos_true.z - g_pos.z);
+	g_pos.x += coef2 / ACCEL_FREQ * (g_pos_true.x - g_pos.x);
+	g_pos.y += coef2 / ACCEL_FREQ * (g_pos_true.y - g_pos.y);
+	g_pos.z += coef2 / ACCEL_FREQ * (g_pos_true.z - g_pos.z);
 
 	vector3d_sub(&g_pos_final, &g_pos, &g_pos_bias);
-	vector3d_scale(&g_pos_final, &g_pos_final, scale1);
+	vector3d_scale(&g_pos_final, &g_pos_final, coef6);
 	g_pos_final.x = -g_pos_final.x;
 	g_pos_final.y = -g_pos_final.y;
 
@@ -160,9 +159,9 @@ static void loop_500hz(uint8_t *data, size_t size) {
 
 	publish(NAV_POSITION_UPDATE, (uint8_t*)&g_nav_pos_msg, sizeof(vector3d_t) * 2);
 
-	int number1 = g_air_pressure_alt_raw;
-	int number2 = g_pos_true.z;
-	int number3 = g_pos.z;
+	int number1 = g_linear_veloc.x * 1000;
+	int number2 = g_linear_veloc.y * 1000;
+	int number3 = g_linear_veloc.z * 1000;
 	static uint8_t g_msg[16] = {0};
 	memcpy(&g_msg[0], &number1, 4);
 	memcpy(&g_msg[4], &number2, 4);
@@ -179,7 +178,6 @@ static void state_update(uint8_t *data, size_t size) {
 }
 
 void nav_fusion_setup(void) {
-	subscribe(SCHEDULER_500HZ, loop_500hz);
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);

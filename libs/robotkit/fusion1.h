@@ -12,7 +12,7 @@ typedef struct {
     vector3d_t v_true;
     vector3d_t v_linear_acc;
     vector3d_t v_linear_acc_smooth;
-    double freq;
+    double freq; // Correction frequency
     double k0;
     double k1;
     double k2;

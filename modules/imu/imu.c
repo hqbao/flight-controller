@@ -7,8 +7,8 @@
 #include "icm42688p_i2c.h"
 #include "icm42688p_spi.h"
 
-#define IMU_FREQ 2000
-#define CALIBRATION_FREQ (IMU_FREQ * 2) // 2 seconds
+#define GYRO_FREQ 2000
+#define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
 #define IMU_MOTION 100
 #define SSF_GYRO (16.4)
 
@@ -45,14 +45,6 @@ static imu_t g_imu1 = {
 	SENSOR_IMU1_GYRO_UPDATE,
 	SENSOR_IMU1_ACCEL_UPDATE
 };
-
-static void publish_data(imu_t *imu) {
-	imu->gyro_accel[3] = imu->gyro_accel[3] / SSF_GYRO;
-	imu->gyro_accel[4] = imu->gyro_accel[4] / SSF_GYRO;
-	imu->gyro_accel[5] = imu->gyro_accel[5] / SSF_GYRO;
-	publish(imu->topic_gyro_update, (uint8_t*)&imu->gyro_accel[3], 12);
-	publish(imu->topic_accel_update, (uint8_t*)imu->gyro_accel, 12);
-}
 
 static void calibrate(imu_t *imu) {
 	imu->gyro_calibration[0] += imu->gyro_accel[3];
@@ -102,13 +94,14 @@ static void imu1_loop(uint8_t *data, size_t size) {
 
 static void imu1_data_udpate(void) {	
 	if (g_imu1.mode == ready) {
-		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
-		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
-		g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
 		g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
 		g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
 		g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
-		publish_data(&g_imu1);
+
+		g_imu1.gyro_accel[3] = g_imu1.gyro_accel[3] / SSF_GYRO;
+		g_imu1.gyro_accel[4] = g_imu1.gyro_accel[4] / SSF_GYRO;
+		g_imu1.gyro_accel[5] = g_imu1.gyro_accel[5] / SSF_GYRO;
+		publish(g_imu1.topic_gyro_update, (uint8_t*)&g_imu1.gyro_accel[3], 12);
 	}
 	else if (g_imu1.mode == calibrating) {
 		calibrate(&g_imu1);
@@ -129,6 +122,15 @@ static void imu1_spi_data_udpate(uint8_t *data, size_t size) {
 	}
 }
 
+static void publish_accel_loop(uint8_t *data, size_t size) {
+	if (g_imu1.mode == ready) {
+		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
+		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
+		g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
+		publish(g_imu1.topic_accel_update, (uint8_t*)g_imu1.gyro_accel, 12);
+	}
+}
+
 static void imu1_loop_10hz(uint8_t *data, size_t size) {
 	if (g_imu1.mode == init) {
 		print("Ignored data: %d\t%d\t%d\n", 
@@ -146,9 +148,10 @@ static void imu1_loop_10hz(uint8_t *data, size_t size) {
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
 		AFS_2G, GFS_2000DPS, 
-		AODR_500Hz, GODR_32kHz, 
+		AODR_500Hz, GODR_2kHz,
 		accel_mode_LN, gyro_mode_LN);
 	subscribe(SCHEDULER_2KHZ, imu1_loop);
+	subscribe(SCHEDULER_500HZ, publish_accel_loop);
 	subscribe(SCHEDULER_10HZ, imu1_loop_10hz);
 	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
 	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
