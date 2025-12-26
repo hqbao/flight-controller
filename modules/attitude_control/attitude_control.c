@@ -75,22 +75,22 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 
 static void pid_setup(void) {
 	pid_control_init(&g_pid_att_roll);
-	pid_control_set_p_gain(&g_pid_att_roll, 40);
-	pid_control_set_d_gain(&g_pid_att_roll, 8);
+	pid_control_set_p_gain(&g_pid_att_roll, 20);
+	pid_control_set_d_gain(&g_pid_att_roll, 5);
 	pid_control_set_i_gain(&g_pid_att_roll, 1.0, 1.0);
 	pid_control_set_i_limit(&g_pid_att_roll, 5);
 	pid_control_set_smooth(&g_pid_att_roll, 1.0, 0.5, 1.0);
 
 	pid_control_init(&g_pid_att_pitch);
-	pid_control_set_p_gain(&g_pid_att_pitch, 40);
-	pid_control_set_d_gain(&g_pid_att_pitch, 8);
+	pid_control_set_p_gain(&g_pid_att_pitch, 20);
+	pid_control_set_d_gain(&g_pid_att_pitch, 5);
 	pid_control_set_i_gain(&g_pid_att_pitch, 1.0, 1.0);
 	pid_control_set_i_limit(&g_pid_att_pitch, 5);
 	pid_control_set_smooth(&g_pid_att_pitch, 1.0, 0.5, 1.0);
 
 	pid_control_init(&g_pid_att_yaw);
 	pid_control_set_p_gain(&g_pid_att_yaw, 40);
-	pid_control_set_d_gain(&g_pid_att_yaw, 8);
+	pid_control_set_d_gain(&g_pid_att_yaw, 10);
 	pid_control_set_i_gain(&g_pid_att_yaw, 1.0, 1.0);
 	pid_control_set_i_limit(&g_pid_att_yaw, 5);
 	pid_control_set_smooth(&g_pid_att_yaw, 1.0, 0.5, 1.0);
