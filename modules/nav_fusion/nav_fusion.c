@@ -159,14 +159,14 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 
 	publish(NAV_POSITION_UPDATE, (uint8_t*)&g_nav_pos_msg, sizeof(vector3d_t) * 2);
 
-	int number1 = g_linear_veloc.x * 1000;
-	int number2 = g_linear_veloc.y * 1000;
-	int number3 = g_linear_veloc.z * 1000;
-	static uint8_t g_msg[16] = {0};
-	memcpy(&g_msg[0], &number1, 4);
-	memcpy(&g_msg[4], &number2, 4);
-	memcpy(&g_msg[8], &number3, 4);
-	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
+	// int number1 = g_linear_veloc.x * 1000;
+	// int number2 = g_linear_veloc.y * 1000;
+	// int number3 = g_linear_veloc.z * 1000;
+	// static uint8_t g_msg[16] = {0};
+	// memcpy(&g_msg[0], &number1, 4);
+	// memcpy(&g_msg[4], &number2, 4);
+	// memcpy(&g_msg[8], &number3, 4);
+	// publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
 }
 
 static void state_update(uint8_t *data, size_t size) {
