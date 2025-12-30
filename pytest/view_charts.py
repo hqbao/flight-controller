@@ -7,6 +7,7 @@ from serial import Serial
 import numpy as np
 from matplotlib import animation
 import serial.tools.list_ports
+import struct
 
 g_baud_rate = 9600
 g_serial_port = None
@@ -22,16 +23,17 @@ if g_serial_port is None:
 
 max_win_size = 128
 g_line = np.linspace(start=0, stop=1, num=max_win_size)
-g_val1 = np.zeros(max_win_size, int)
-g_val2 = np.zeros(max_win_size, int)
-g_val3 = np.zeros(max_win_size, int)
-g_val4 = np.zeros(max_win_size, int)
-g_val5 = np.zeros(max_win_size, int)
-g_val6 = np.zeros(max_win_size, int)
+g_val1 = np.zeros(max_win_size, float)
+g_val2 = np.zeros(max_win_size, float)
+g_val3 = np.zeros(max_win_size, float)
+g_val4 = np.zeros(max_win_size, float)
+g_val5 = np.zeros(max_win_size, float)
+g_val6 = np.zeros(max_win_size, float)
 g_cur_idx = 0
 
 g_clazz = 0x00
 g_clazz_id = 0x00
+g_payload_size = 0
 
 def run_db_reader(in_queue):
   with Serial(g_serial_port, g_baud_rate, timeout=3) as stream:
@@ -50,25 +52,51 @@ def run_db_reader(in_queue):
           in_queue.put((clazz, ID, payload))
 
 def run_parser():
-  global g_val, g_cur_idx, g_clazz
+  global g_val, g_cur_idx, g_clazz, g_payload_size
   while True:
     try:
-      g_clazz, g_clazz_id, payload = queue1.get(timeout=0.001)
+      g_clazz, g_clazz_id, payload = queue1.get(timeout=0.01)
       if g_clazz == 0x00:
-        z1 = int.from_bytes(payload[:4], 'little', signed='True')
-        z2 = int.from_bytes(payload[4:8], 'little', signed='True')
-        z3 = int.from_bytes(payload[8:12], 'little', signed='True')
-        z4 = int.from_bytes(payload[12:16], 'little', signed='True')
-        z5 = int.from_bytes(payload[16:20], 'little', signed='True')
-        z6 = int.from_bytes(payload[20:24], 'little', signed='True')
-        # print(z1, z2, z3, z4, z5, z6)
+        g_payload_size = len(payload)
 
-        g_val1[g_cur_idx] = z1
-        g_val2[g_cur_idx] = z2
-        g_val3[g_cur_idx] = z3
-        g_val4[g_cur_idx] = z4
-        g_val5[g_cur_idx] = z5
-        g_val6[g_cur_idx] = z6
+        if g_payload_size >= 4:
+          z1, = struct.unpack('<f', payload[:4])
+          g_val1[g_cur_idx] = z1
+
+        if g_payload_size >= 8:
+          z1, z2 = struct.unpack('<ff', payload[:8])
+          g_val1[g_cur_idx] = z1
+          g_val2[g_cur_idx] = z2
+
+        if g_payload_size >= 12:
+          z1, z2, z3 = struct.unpack('<fff', payload[:12])
+          g_val1[g_cur_idx] = z1
+          g_val2[g_cur_idx] = z2
+          g_val3[g_cur_idx] = z3
+        
+        if g_payload_size >= 16:
+          z1, z2, z3, z4 = struct.unpack('<ffff', payload[:16])
+          g_val1[g_cur_idx] = z1
+          g_val2[g_cur_idx] = z2
+          g_val3[g_cur_idx] = z3
+          g_val4[g_cur_idx] = z4
+
+        if g_payload_size >= 20:
+          z1, z2, z3, z4, z5 = struct.unpack('<fffff', payload[:20])
+          g_val1[g_cur_idx] = z1
+          g_val2[g_cur_idx] = z2
+          g_val3[g_cur_idx] = z3
+          g_val4[g_cur_idx] = z4
+          g_val5[g_cur_idx] = z5
+
+        if g_payload_size >= 24:
+          z1, z2, z3, z4, z5, z6 = struct.unpack('<ffffff', payload[:24])
+          g_val1[g_cur_idx] = z1
+          g_val2[g_cur_idx] = z2
+          g_val3[g_cur_idx] = z3
+          g_val4[g_cur_idx] = z4
+          g_val5[g_cur_idx] = z5
+          g_val6[g_cur_idx] = z6
 
         g_cur_idx += 1
         if (g_cur_idx >= max_win_size): 
@@ -87,24 +115,39 @@ in_thread2.start()
 fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
 def animate(i):
-  global g_clazz, g_line, g_val1, g_val2, g_val3, g_val4, g_val5, g_val6
+  global g_clazz, g_line, g_val1, g_val2, g_val3, g_val4, g_val5, g_val6, g_payload_size
 
   ax.cla() # clear the previous image
 
   if g_clazz == 0x00:
-    val1 = np.concatenate((g_val1[g_cur_idx:], g_val1[:g_cur_idx]))
-    val2 = np.concatenate((g_val2[g_cur_idx:], g_val2[:g_cur_idx]))
-    val3 = np.concatenate((g_val3[g_cur_idx:], g_val3[:g_cur_idx]))
-    # val4 = np.concatenate((g_val4[g_cur_idx:], g_val4[:g_cur_idx]))
-    # val5 = np.concatenate((g_val5[g_cur_idx:], g_val5[:g_cur_idx]))
-    # val6 = np.concatenate((g_val6[g_cur_idx:], g_val6[:g_cur_idx]))
-    ax.plot(g_line, val1, color='red')
-    ax.plot(g_line, val2, color='orange')
-    ax.plot(g_line, val3, color='purple')
-    # ax.plot(g_line, val4, color='blue')
-    # ax.plot(g_line, val5, color='green')
-    # ax.plot(g_line, val6, color='cyan')
-    # ax.set_ylim([-2000, 2000])
+    if g_payload_size >= 4:
+      val1 = np.concatenate((g_val1[g_cur_idx:], g_val1[:g_cur_idx]))
+      ax.plot(g_line, val1, color='red')
+
+    if g_payload_size >= 8:
+      val2 = np.concatenate((g_val2[g_cur_idx:], g_val2[:g_cur_idx]))
+      ax.plot(g_line, val2, color='orange')
+
+    if g_payload_size >= 12:
+      val3 = np.concatenate((g_val3[g_cur_idx:], g_val3[:g_cur_idx]))
+      ax.plot(g_line, val3, color='purple')
+
+    if g_payload_size >= 16:
+      val4 = np.concatenate((g_val4[g_cur_idx:], g_val4[:g_cur_idx]))
+      ax.plot(g_line, val4, color='blue')
+
+    if g_payload_size >= 20:
+      val5 = np.concatenate((g_val5[g_cur_idx:], g_val5[:g_cur_idx]))
+      ax.plot(g_line, val5, color='green')
+
+    if g_payload_size >= 24:
+      val6 = np.concatenate((g_val6[g_cur_idx:], g_val6[:g_cur_idx]))
+      ax.plot(g_line, val6, color='cyan')
+
+    ax.set_ylim([-1, 1])
+    ax.set_xlabel('Sample')
+    ax.set_ylabel('Value')
+    ax.set_title('Compass/Attitude Data')
 
 anim = animation.FuncAnimation(fig, animate, frames=len(g_line) + 1, interval=1, blit=False)
 plt.show()
