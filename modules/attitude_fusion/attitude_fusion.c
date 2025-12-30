@@ -87,6 +87,7 @@ static void accel_update(uint8_t *data, size_t size) {
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 }
 
+#if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Pack v_pred and v_true into MONITOR_DATA message
 	   Format: 6 float32 values (v_pred.x, v_pred.y, v_pred.z, v_true.x, v_true.y, v_true.z) */
@@ -109,6 +110,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 	
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
+#endif
 
 static void init(void) {
 	fusion1_init(&g_f11, 4.0, 0.5, ACCEL_FREQ);

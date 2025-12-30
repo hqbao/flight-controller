@@ -149,6 +149,7 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	publish(SENSOR_COMPASS, (uint8_t*)&compass_data, sizeof(compass_data_t));
 }
 
+#if ENABLE_COMPASS_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Send calibrated compass data as MONITOR_DATA */
 	uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
@@ -158,6 +159,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 	
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
+#endif
 
 void compass_setup(void) {
 	BMMdev.read = i2c_read;
