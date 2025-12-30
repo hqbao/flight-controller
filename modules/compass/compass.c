@@ -3,19 +3,36 @@
 #include <platform.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 #include "bmm350.h"
 
-#include <stdio.h>
-#include <math.h>
+/* Macro to enable/disable sending MONITOR_DATA via logger */
+#define ENABLE_COMPASS_MONITOR_LOG 1
+#define MIN_SAMPLES 100
+#define MIN_RANGE 50.0f
+#define TARGET 1.0f
+#define EPS 1e-6f
 
 typedef struct {
-    double x;
-    double y;
-    double z;
+	double x;
+	double y;
+	double z;
 } compass_data_t;
 
 struct bmm350_dev BMMdev = {0};
 struct bmm350_mag_temp_data mag_temp_data;
+
+/* Static variables for calibrated compass values */
+static float g_compass_scaled_x = 0.0f;
+static float g_compass_scaled_y = 0.0f;
+static float g_compass_scaled_z = 0.0f;
+
+/* Calibration tracking variables */
+static float min_x = 1e30f, max_x = -1e30f;
+static float min_y = 1e30f, max_y = -1e30f;
+static float min_z = 1e30f, max_z = -1e30f;
+static int samples = 0;
+static bool calibrated = false;
 
 BMM350_INTF_RET_TYPE i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
 	platform_i2c_write_read(I2C_PORT2, BMM350_I2C_ADSEL_SET_LOW_, &reg_addr, 1, reg_data, len, 4);
@@ -44,25 +61,11 @@ void delay_us(uint32_t period, void *intf_ptr) {
 
 static void loop_25hz(uint8_t *data, size_t size) {
 	bmm350_get_compensated_mag_xyz_temp_data(&mag_temp_data, &BMMdev);
-	compass_data_t compass_data = {
-		.x = mag_temp_data.x,
-		.y = mag_temp_data.y,
-		.z = mag_temp_data.z
-	};
-	publish(SENSOR_COMPASS, (uint8_t*)&compass_data, sizeof(compass_data_t));
-	/* Track running min/max and send scaled values mapped into [-1000,1000].
-	   We keep publishing SENSOR_COMPASS (original doubles) for internal use,
-	   and send MONITOR_DATA as three float32 values scaled to target range. */
+	
+	/* Track running min/max and calibrate values mapped into [-1,1] */
 	float x_f = (float)mag_temp_data.x;
 	float y_f = (float)mag_temp_data.y;
 	float z_f = (float)mag_temp_data.z;
-
-	/* static running observations */
-	static float min_x = 1e30f, max_x = -1e30f;
-	static float min_y = 1e30f, max_y = -1e30f;
-	static float min_z = 1e30f, max_z = -1e30f;
-	static int samples = 0;
-	const int PRINT_EVERY = 200;
 
 	if (x_f < min_x) min_x = x_f;
 	if (x_f > max_x) max_x = x_f;
@@ -72,16 +75,24 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	if (z_f > max_z) max_z = z_f;
 
 	samples++;
-	if ((samples % PRINT_EVERY) == 0) {
-		platform_console("MAG OBS ranges after %d samples:\n", samples);
-		platform_console("  X: %f .. %f\n", min_x, max_x);
-		platform_console("  Y: %f .. %f\n", min_y, max_y);
-		platform_console("  Z: %f .. %f\n", min_z, max_z);
+	
+	/* Check if calibration condition is met */
+	if (!calibrated) {
+		float range_x = max_x - min_x;
+		float range_y = max_y - min_y;
+		float range_z = max_z - min_z;
+		
+		if (range_x >= MIN_RANGE && range_y >= MIN_RANGE && range_z >= MIN_RANGE) {
+			calibrated = true;
+		}
+	}
+	
+	/* Only publish if calibrated */
+	if (!calibrated) {
+		return;
 	}
 
 	/* Map each axis linearly from [min,max] -> [-TARGET, TARGET] */
-	const float TARGET = 1000.0f;
-	const float EPS = 1e-6f;
 	float sx = 0.0f, sy = 0.0f, sz = 0.0f;
 
 	float range_x = max_x - min_x;
@@ -110,11 +121,28 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	if (sy < -TARGET) sy = -TARGET;
 	if (sz > TARGET) sz = TARGET;
 	if (sz < -TARGET) sz = -TARGET;
+	
+	/* Store calibrated values in global variables */
+	g_compass_scaled_x = sx;
+	g_compass_scaled_y = sy;
+	g_compass_scaled_z = sz;
+	
+	/* Publish calibrated values */
+	compass_data_t compass_data = {
+		.x = sx,
+		.y = sy,
+		.z = sz
+	};
+	publish(SENSOR_COMPASS, (uint8_t*)&compass_data, sizeof(compass_data_t));
+}
 
+static void loop_logger(uint8_t *data, size_t size) {
+	/* Send calibrated compass data as MONITOR_DATA */
 	uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
-	memcpy(&out_msg[0], &sx, sizeof(float));
-	memcpy(&out_msg[4], &sy, sizeof(float));
-	memcpy(&out_msg[8], &sz, sizeof(float));
+	memcpy(&out_msg[0], &g_compass_scaled_x, sizeof(float));
+	memcpy(&out_msg[4], &g_compass_scaled_y, sizeof(float));
+	memcpy(&out_msg[8], &g_compass_scaled_z, sizeof(float));
+	
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
 
@@ -131,4 +159,7 @@ void compass_setup(void) {
 	bmm350_set_powermode(BMM350_NORMAL_MODE, &BMMdev);
 
 	subscribe(SCHEDULER_25HZ, loop_25hz);
+	#if ENABLE_COMPASS_MONITOR_LOG
+	subscribe(SCHEDULER_25HZ, loop_logger);
+	#endif
 }

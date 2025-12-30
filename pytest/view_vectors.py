@@ -30,17 +30,20 @@ if g_serial_port is None:
 ser = serial.Serial(g_serial_port, g_baud_rate)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
-# 3D quiver will be created on first update
-q = None
+# 3D quivers will be created on first update
+q1 = None
+q2 = None
 
 # Data queue for inter-thread communication
 queue1 = queue.Queue()
 
-# Global variables to store parsed 3D vector data
-g_vec_x = 0.0
-g_vec_y = 0.0
-g_vec_z = 0.0
-g_angle_deg = 0.0
+# Global variables to store parsed 3D vector data (vector 1 and vector 2)
+g_vec1_x = 0.0
+g_vec1_y = 0.0
+g_vec1_z = 0.0
+g_vec2_x = 0.0
+g_vec2_y = 0.0
+g_vec2_z = 0.0
 
 def run_db_reader(in_queue):
   with Serial(g_serial_port, g_baud_rate, timeout=3) as stream:
@@ -108,36 +111,56 @@ def run_db_reader(in_queue):
 def run_parser():
     """
     Parses messages from the queue and updates global vector data.
-    Expects 3x float32 little-endian payloads (x, y, z components).
+    Supports:
+    - 12-byte payloads: 3x float32 (single vector)
+    - 24-byte payloads: 6x float32 (two vectors)
     """
-    global g_vec_x, g_vec_y
+    global g_vec1_x, g_vec1_y, g_vec1_z, g_vec2_x, g_vec2_y, g_vec2_z
     while True:
         try:
-            clazz, ID, payload = queue1.get(timeout=0.01) # Small timeout to allow main thread to run
+            clazz, ID, payload = queue1.get(timeout=0.01)
 
-            # Accept MONITOR_DATA formatted payloads: 3x float32 (x,y,z)
-            # Logger sends messages with Class=0x00 and a 12-byte payload for vector data.
+            # Accept MONITOR_DATA formatted payloads with Class=0x00
             if clazz == 0x00:
                 if len(payload) == 12:
-                    # payload is 3x float32 little-endian (raw values)
+                    # Single vector: 3x float32
                     x_f, y_f, z_f = struct.unpack('<fff', payload)
                     new_x = float(x_f)
                     new_y = float(y_f)
                     new_z = float(z_f)
 
-                    # Validate that values are within expected range [-1000, 1000]
-                    if abs(new_x) > 1000.0 or abs(new_y) > 1000.0 or abs(new_z) > 1000.0:
+                    # Validate that values are within expected range [-1, 1]
+                    if abs(new_x) > 1.0 or abs(new_y) > 1.0 or abs(new_z) > 1.0:
                         continue
 
-                    # Directly assign the new values
-                    global g_vec_x, g_vec_y, g_vec_z, g_angle_deg
-                    g_vec_x = new_x
-                    g_vec_y = new_y
-                    g_vec_z = new_z
+                    # Assign to vector 1
+                    g_vec1_x = new_x
+                    g_vec1_y = new_y
+                    g_vec1_z = new_z
+                    
+                elif len(payload) == 24:
+                    # Two vectors: 6x float32 (v1.x, v1.y, v1.z, v2.x, v2.y, v2.z)
+                    x1_f, y1_f, z1_f, x2_f, y2_f, z2_f = struct.unpack('<ffffff', payload)
+                    new_x1 = float(x1_f)
+                    new_y1 = float(y1_f)
+                    new_z1 = float(z1_f)
+                    new_x2 = float(x2_f)
+                    new_y2 = float(y2_f)
+                    new_z2 = float(z2_f)
+                    print(f"Received vectors: V1=({new_x1:.3f}, {new_y1:.3f}, {new_z1:.3f}), V2=({new_x2:.3f}, {new_y2:.3f}, {new_z2:.3f})")
 
-                    # Angle in degrees (0..360), atan2(y,x)
-                    g_angle_deg = (math.degrees(math.atan2(g_vec_y, g_vec_x)) + 360.0) % 360.0
-            # Add other message ID handlers here if needed
+                    # Validate that values are within expected range [-1, 1]
+                    if (abs(new_x1) > 1.0 or abs(new_y1) > 1.0 or abs(new_z1) > 1.0 or
+                        abs(new_x2) > 1.0 or abs(new_y2) > 1.0 or abs(new_z2) > 1.0):
+                        continue
+
+                    # Assign to both vectors
+                    g_vec1_x = new_x1
+                    g_vec1_y = new_y1
+                    g_vec1_z = new_z1
+                    g_vec2_x = new_x2
+                    g_vec2_y = new_y2
+                    g_vec2_z = new_z2
             
         except queue.Empty:
             pass
@@ -149,27 +172,31 @@ def run_parser():
 def update(frame):
     """
     This function is called by the animation to update the 3D vector plot.
+    Displays two vectors in different colors.
     """
-    global q, g_vec_x, g_vec_y, g_vec_z
+    global q1, q2, g_vec1_x, g_vec1_y, g_vec1_z, g_vec2_x, g_vec2_y, g_vec2_z
 
-    u = g_vec_x
-    v = g_vec_y
-    w = g_vec_z
-
-    # Remove previous quiver and draw a new one
+    # Remove previous quivers
     try:
-        if q is not None:
-            q.remove()
+        if q1 is not None:
+            q1.remove()
+        if q2 is not None:
+            q2.remove()
     except Exception:
         pass
 
-    # origin at (0,0,0), direction (u,v,w)
-    q = ax.quiver([0], [0], [0], [u], [v], [w], length=0.8, normalize=False)
+    # Draw vector 1 in red
+    q1 = ax.quiver([0], [0], [0], [g_vec1_x], [g_vec1_y], [g_vec1_z], 
+                    length=0.8, normalize=False, color='red', alpha=0.8, arrow_length_ratio=0.2)
+    
+    # Draw vector 2 in blue
+    q2 = ax.quiver([0], [0], [0], [g_vec2_x], [g_vec2_y], [g_vec2_z], 
+                    length=0.8, normalize=False, color='blue', alpha=0.8, arrow_length_ratio=0.2)
 
     # Update axes and labels
-    ax.set_xlim(-1000, 1000)
-    ax.set_ylim(-1000, 1000)
-    ax.set_zlim(-1000, 1000)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_zlim(-1, 1)
     try:
         ax.set_box_aspect((1, 1, 1))
     except Exception:
@@ -178,10 +205,11 @@ def update(frame):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
-    # Update title with angle and magnitude
-    magnitude = math.hypot(g_vec_x, g_vec_y, g_vec_z)
-    ax.set_title(f'Angle: {g_angle_deg:.1f}° — |vec|={magnitude:.3f}')
-    return q,
+    # Update title with magnitudes
+    mag1 = math.hypot(g_vec1_x, g_vec1_y, g_vec1_z)
+    mag2 = math.hypot(g_vec2_x, g_vec2_y, g_vec2_z)
+    ax.set_title(f'Vector 1 (red): |vec|={mag1:.3f} | Vector 2 (blue): |vec|={mag2:.3f}')
+    return q1, q2,
 
 def main():
     """
@@ -189,13 +217,12 @@ def main():
     """
     # Start the serial reader and parser threads
     reader_thread = Thread(target=run_db_reader, args=(queue1,))
-    reader_thread.daemon = True # Allow main program to exit even if thread is still running
+    reader_thread.daemon = True
     reader_thread.start()
 
     parser_thread = Thread(target=run_parser, args=())
     parser_thread.daemon = True
     parser_thread.start()
-
 
     # Setup 3D axes limits and labels
     ax.set_xlim(-1, 1)
@@ -208,13 +235,13 @@ def main():
         ax.set_box_aspect((1, 1, 1))
     except Exception:
         pass
-    ax.set_title('3D Vector Viewer')
+    ax.set_title('3D Vectors Viewer')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
     # Create the animation
-    ani = animation.FuncAnimation(fig, update, blit=False, interval=50, cache_frame_data=False) # interval in ms
+    ani = animation.FuncAnimation(fig, update, blit=False, interval=50, cache_frame_data=False)
 
     # Show the plot
     plt.show()

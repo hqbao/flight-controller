@@ -5,6 +5,9 @@
 #include <math.h>
 #include <fusion1.h>
 
+/* Macro to enable/disable sending MONITOR_DATA via logger */
+#define ENABLE_ATTITUDE_MONITOR_LOG 0
+
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 2000
 #define ACCEL_FREQ 500
@@ -84,6 +87,29 @@ static void accel_update(uint8_t *data, size_t size) {
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 }
 
+static void loop_logger(uint8_t *data, size_t size) {
+	/* Pack v_pred and v_true into MONITOR_DATA message
+	   Format: 6 float32 values (v_pred.x, v_pred.y, v_pred.z, v_true.x, v_true.y, v_true.z) */
+	static uint8_t out_msg[24]; /* 6 * 4 bytes (float32) */
+	
+	// Cast double to float before packing
+	float pred_x = (float)g_f11.v_pred.x;
+	float pred_y = (float)g_f11.v_pred.y;
+	float pred_z = (float)g_f11.v_pred.z;
+	float true_x = (float)g_f11.v_true.x;
+	float true_y = (float)g_f11.v_true.y;
+	float true_z = (float)g_f11.v_true.z;
+	
+	memcpy(&out_msg[0], &pred_x, sizeof(float));
+	memcpy(&out_msg[4], &pred_y, sizeof(float));
+	memcpy(&out_msg[8], &pred_z, sizeof(float));
+	memcpy(&out_msg[12], &true_x, sizeof(float));
+	memcpy(&out_msg[16], &true_y, sizeof(float));
+	memcpy(&out_msg[20], &true_z, sizeof(float));
+	
+	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
+}
+
 static void init(void) {
 	fusion1_init(&g_f11, 4.0, 0.5, ACCEL_FREQ);
 	g_f11.accel_scale = MAX_IMU_ACCEL;
@@ -102,5 +128,8 @@ void attitude_fusion_setup(void) {
 	init();
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
+	#if ENABLE_ATTITUDE_MONITOR_LOG
+	subscribe(SCHEDULER_25HZ, loop_logger);
+	#endif
 }
 
