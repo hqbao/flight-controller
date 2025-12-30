@@ -19,8 +19,14 @@ static void logger_loop_25hz(uint8_t *data, size_t size) {
 	memcpy(&g_output_msg[buf_idx], &g_payload, g_payload_size); buf_idx += g_payload_size;
 
 	uint16_t payload_size = buf_idx - 6;
-	memcpy(&g_output_msg[4], &payload_size, 2); // 2-byte checksum
-	memset(&g_output_msg[buf_idx], 0, 2); // 2-byte checksum, no use
+	memcpy(&g_output_msg[4], &payload_size, 2);
+	
+	// Calculate checksum: sum of ID + Class + length bytes + payload bytes
+	uint16_t checksum = g_output_msg[2] + g_output_msg[3] + g_output_msg[4] + g_output_msg[5];
+	for (int i = 6; i < buf_idx; i++) {
+		checksum += g_output_msg[i];
+	}
+	memcpy(&g_output_msg[buf_idx], &checksum, 2);
 
 	platform_uart_send(UART_PORT1, g_output_msg, buf_idx + 2);
 }
