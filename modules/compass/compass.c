@@ -10,6 +10,7 @@
 #define ENABLE_COMPASS_MONITOR_LOG 1
 #define MIN_SAMPLES 100
 #define MIN_RANGE 50.0f
+#define MAX_RANGE 500.0f
 #define TARGET 1.0f
 #define EPS 1e-6f
 
@@ -62,17 +63,29 @@ void delay_us(uint32_t period, void *intf_ptr) {
 static void loop_25hz(uint8_t *data, size_t size) {
 	bmm350_get_compensated_mag_xyz_temp_data(&mag_temp_data, &BMMdev);
 	
-	/* Track running min/max and calibrate values mapped into [-1,1] */
+	/* Track running min/max with range sanity check */
 	float x_f = (float)mag_temp_data.x;
 	float y_f = (float)mag_temp_data.y;
 	float z_f = (float)mag_temp_data.z;
 
-	if (x_f < min_x) min_x = x_f;
-	if (x_f > max_x) max_x = x_f;
-	if (y_f < min_y) min_y = y_f;
-	if (y_f > max_y) max_y = y_f;
-	if (z_f < min_z) min_z = z_f;
-	if (z_f > max_z) max_z = z_f;
+	/* Update min/max only if new range doesn't exceed MAX_RANGE */
+	if (x_f < min_x) {
+		if ((max_x - x_f) <= MAX_RANGE) min_x = x_f;
+	} else if (x_f > max_x) {
+		if ((x_f - min_x) <= MAX_RANGE) max_x = x_f;
+	}
+
+	if (y_f < min_y) {
+		if ((max_y - y_f) <= MAX_RANGE) min_y = y_f;
+	} else if (y_f > max_y) {
+		if ((y_f - min_y) <= MAX_RANGE) max_y = y_f;
+	}
+
+	if (z_f < min_z) {
+		if ((max_z - z_f) <= MAX_RANGE) min_z = z_f;
+	} else if (z_f > max_z) {
+		if ((z_f - min_z) <= MAX_RANGE) max_z = z_f;
+	}
 
 	samples++;
 	
