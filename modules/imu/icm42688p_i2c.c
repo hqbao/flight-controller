@@ -36,11 +36,11 @@ void icm42688p_init_i2c(icm42688p_t *icm42688p,
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
     // [Change 2] ENABLE Digital Low Pass Filters for BOTH
-    // Gyro BW (Bits 7:4)  = 1 (ODR/4 - Standard LPF, low latency)
+    // Gyro BW (Bits 7:4)  = 4 (ODR/32 - Smooth LPF)
     // Accel BW (Bits 3:0) = 4 (ODR/32 - Smooth LPF for Position Hold)
-    // Value = 0x14 - gyro: 0001 accel: 0100
+    // Value = 0x44 - gyro: 0100 accel: 0100
     icm42688p->buffer[0] = ICM42688_GYRO_ACCEL_CONFIG0;
-    icm42688p->buffer[1] = 0x33;
+    icm42688p->buffer[1] = 0x44;
     platform_i2c_write(icm42688p->i2c_port, ICM42688_ADDRESS, icm42688p->buffer, 2);
 
     // Enable FIFO

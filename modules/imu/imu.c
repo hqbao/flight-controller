@@ -148,7 +148,7 @@ static void imu1_loop_10hz(uint8_t *data, size_t size) {
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
 		AFS_2G, GFS_2000DPS, 
-		AODR_500Hz, GODR_2kHz,
+		AODR_500Hz, GODR_4kHz,
 		accel_mode_LN, gyro_mode_LN);
 	subscribe(SCHEDULER_2KHZ, imu1_loop);
 	subscribe(SCHEDULER_500HZ, publish_accel_loop);
