@@ -52,7 +52,7 @@ static uint8_t g_target_data[32] = {0};
 
 static double g_yaw_veloc = 0;
 
-static double nav_veloc_z_scale = 2.0;
+static double nav_veloc_z_scale = 1.5;
 
 int g_moving_state_roll = 0; // 0: Released, 1: Just control
 int g_moving_state_pitch = 0;
@@ -130,7 +130,7 @@ static void state_update(uint8_t *data, size_t size) {
 	}
 }
 
-static void loop_1khz(uint8_t *data, size_t size) {
+static void loop_nav_publish(uint8_t *data, size_t size) {
 	double nav_roll 	= g_pid_nav_y.output;
 	double nav_pitch 	= g_pid_nav_x.output;
 	double nav_yaw 		= g_yaw_veloc;
@@ -194,6 +194,6 @@ void nav_control_setup(void) {
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(COMMAND_SET_MOVE_IN, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SCHEDULER_1KHZ, loop_1khz);
+	subscribe(SCHEDULER_500HZ, loop_nav_publish);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
 }
