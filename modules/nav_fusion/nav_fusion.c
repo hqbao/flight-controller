@@ -10,7 +10,7 @@
 /* Macro to enable/disable sending MONITOR_DATA via logger */
 #define ENABLE_NAV_FUSION_MONITOR_LOG 0
 
-#define ACCEL_FREQ 250
+#define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
 
 typedef enum {

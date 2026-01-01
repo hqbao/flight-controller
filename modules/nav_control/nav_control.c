@@ -7,7 +7,7 @@
 #include <pid_control.h>
 #include <macro.h>
 
-#define NAV_FREQ 250
+#define NAV_FREQ 500
 #define CTL_FREQ 100
 #define MIN_LANDING_SPEED 50
 
@@ -194,6 +194,6 @@ void nav_control_setup(void) {
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(COMMAND_SET_MOVE_IN, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SCHEDULER_250HZ, loop_nav_publish);
+	subscribe(SCHEDULER_500HZ, loop_nav_publish);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
 }
