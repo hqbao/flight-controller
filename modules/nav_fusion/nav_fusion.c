@@ -7,6 +7,9 @@
 #include <math.h>
 #include <macro.h>
 
+/* Macro to enable/disable sending MONITOR_DATA via logger */
+#define ENABLE_NAV_FUSION_MONITOR_LOG 0
+
 #define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
 
@@ -158,15 +161,6 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	memcpy(&g_nav_pos_msg[sizeof(vector3d_t)], &g_linear_veloc_final, sizeof(vector3d_t));
 
 	publish(NAV_POSITION_UPDATE, (uint8_t*)&g_nav_pos_msg, sizeof(vector3d_t) * 2);
-
-	// int number1 = g_linear_veloc.x * 1000;
-	// int number2 = g_linear_veloc.y * 1000;
-	// int number3 = g_linear_veloc.z * 1000;
-	// static uint8_t g_msg[16] = {0};
-	// memcpy(&g_msg[0], &number1, 4);
-	// memcpy(&g_msg[4], &number2, 4);
-	// memcpy(&g_msg[8], &number3, 4);
-	// publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
 }
 
 static void state_update(uint8_t *data, size_t size) {
@@ -177,11 +171,26 @@ static void state_update(uint8_t *data, size_t size) {
 	}
 }
 
+#if ENABLE_NAV_FUSION_MONITOR_LOG
+static void loop_logger(uint8_t *data, size_t size) {
+	int number1 = g_linear_veloc.x * 1000;
+	int number2 = g_linear_veloc.y * 1000;
+	int number3 = g_linear_veloc.z * 1000;
+	static uint8_t g_msg[16] = {0};
+	memcpy(&g_msg[0], &number1, 4);
+	memcpy(&g_msg[4], &number2, 4);
+	memcpy(&g_msg[8], &number3, 4);
+	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
+}
+#endif
+
 void nav_fusion_setup(void) {
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(COMMAND_SET_STATE, state_control_update);
+#if ENABLE_NAV_FUSION_MONITOR_LOG
+	subscribe(SCHEDULER_25HZ, loop_logger);
+#endif
 }
-
