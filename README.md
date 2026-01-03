@@ -70,14 +70,14 @@ flight-controller/
 │   └── local_storage/         # Persistent configuration storage
 │
 └── pytest/                    # Python3 visualization and testing tools
-    ├── view_vectors.py        # 3D vector viewer (dual vectors)
-    └── view_charts.py         # Time-series plotting (up to 6 channels)
+    ├── calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
+    ├── calibrate_compass.py   # Compass calibration (Ellipsoid Fit)
+    ├── view_attitude.py       # 3D attitude visualization
+    ├── view_position.py       # 3D position visualization
+    └── view_charts.py         # Real-time sensor data plotting
 ```
 
-## Sensor Calibration
 
-### Compass (BMM350)
-- **Calibration Method:** Continuous min/max tracking during motion
 - **Threshold:** Requires ≥50 µT range on each axis to enable publishing
 - **Output Range:** [-1.0, +1.0] unit vectors (normalized)
 - **Max Range Check:** Outliers beyond 500 µT are rejected to prevent corruption
@@ -100,11 +100,13 @@ Frame structure: 'd' 'b' [ID] [Class] [Length_LE] [Payload] [Checksum_LE]
 
 ### Python Viewers
 
-**view_vectors.py** - 3D vector visualization
-- Displays two 3D vectors in real-time using matplotlib
-- Red vector: First 3 float32 values (e.g., compass)
-- Blue vector: Second 3 float32 values (e.g., attitude)
-- Validates values in range [-1, 1]
+**view_attitude.py** - 3D Attitude Visualization
+- Displays the drone's orientation in 3D space.
+- Useful for tuning PID loops and verifying sensor fusion.
+
+**view_position.py** - 3D Position Visualization
+- Plots the estimated position and velocity vectors.
+- Useful for testing optical flow and navigation logic.
 
 **view_charts.py** - Time-series plotting
 - Plots up to 6 float32 time-series (128-sample history)
@@ -182,29 +184,31 @@ subscribe(SCHEDULER_25HZ, callback_function);
 
 ## Macros for Feature Control
 
-| Macro | Default | Purpose |
+These macros (found in respective module `.c` files) control which data is streamed to the `MONITOR_DATA` topic for visualization. Only one should be enabled at a time to avoid data corruption.
+
+| Macro | Module | Purpose |
 | :--- | :--- | :--- |
-| `ENABLE_COMPASS_MONITOR_LOG` | 0 | Send compass data to MONITOR_DATA |
-| `ENABLE_ATTITUDE_MONITOR_LOG` | 1 | Send attitude (v_pred, v_true) to MONITOR_DATA |
+| `ENABLE_ACCEL_MONITOR_LOG` | `imu.c` | Stream raw accelerometer data for calibration |
+| `ENABLE_COMPASS_MONITOR_LOG` | `compass.c` | Stream raw (2) or calibrated (1) compass data |
+| `ENABLE_ATTITUDE_MONITOR_LOG` | `attitude_fusion.c` | Stream estimated attitude vectors |
+| `ENABLE_NAV_FUSION_MONITOR_LOG` | `nav_fusion.c` | Stream estimated position (1) or velocity (2) |
+| `ENABLE_IMU_MONITOR_LOG` | `imu.c` | (Deprecated) Stream raw IMU data |
 
-## Example: Viewing Compass Data
+## Visualization Tools
 
-1. **Enable compass logging** in [modules/compass/compass.c](modules/compass/compass.c):
-   ```c
-   #define ENABLE_COMPASS_MONITOR_LOG 1
-   ```
+The `pytest/` directory contains tools to visualize the drone's state in real-time.
 
-2. **Build and flash** firmware to STM32H7
-
-3. **Run Python viewer**:
+1. **Install dependencies:**
    ```bash
-   cd pytest
-   python3 view_vectors.py
+   pip install pyserial matplotlib numpy
    ```
 
-4. **Rotate the device** to calibrate (move through 50+ µT range on all axes)
+2. **Run a Viewer:**
+   *   **Attitude**: `python3 view_attitude.py` (Shows 3D orientation)
+   *   **Position**: `python3 view_position.py` (Shows 3D position/velocity)
+   *   **Charts**: `python3 view_charts.py` (Shows raw sensor graphs)
 
-5. **Observe calibrated compass vectors** in red and attitude vectors in blue
+3. **Note**: Ensure the corresponding `ENABLE_..._MONITOR_LOG` macro is enabled in the firmware module you want to visualize.
 
 ## Sensor Calibration
 
@@ -260,7 +264,7 @@ Corrects for Hard Iron (offsets) and Soft Iron (distortions) effects.
 ## Testing & Debugging
 
 - Use `pytest/view_charts.py` to monitor raw sensor values
-- Use `pytest/view_vectors.py` to validate 3D vector outputs
+- Use `pytest/view_attitude.py` to validate attitude estimation
 - Enable debug output on UART for real-time monitoring
 - Check module logs for calibration status and error conditions
 
