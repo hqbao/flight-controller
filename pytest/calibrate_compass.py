@@ -13,7 +13,7 @@ import time
 SERIAL_PORT = None
 BAUD_RATE = 9600
 MONITOR_DATA_ID = 0x00  # From logger.c
-PLOT_LIMIT = 75
+PLOT_LIMIT = 1
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
@@ -284,10 +284,12 @@ def main():
             data_np = np.array(raw_data_points)
             scat_raw._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
             
-            # Fixed scale
-            ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
-            ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
-            ax.set_zlim(-PLOT_LIMIT, PLOT_LIMIT)
+            # Dynamic scale
+            max_val = np.max(np.abs(data_np))
+            limit = max(PLOT_LIMIT, max_val * 1.2)
+            ax.set_xlim(-limit, limit)
+            ax.set_ylim(-limit, limit)
+            ax.set_zlim(-limit, limit)
             
             # Realtime calibration every 1s
             if run_calibration and time.time() - last_calibration_time > 1.0 and len(raw_data_points) > 20:
