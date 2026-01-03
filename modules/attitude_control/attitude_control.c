@@ -40,7 +40,7 @@
 
 // Smoothing
 #define ATT_SMOOTH_INPUT 1.0
-#define ATT_SMOOTH_P_TERM 0.5
+#define ATT_SMOOTH_P_TERM 1.0
 #define ATT_SMOOTH_OUTPUT 1.0
 #define ATT_GAIN_TIME 1.0
 

@@ -13,7 +13,7 @@
 
 /* PID Gains */
 // Navigation XY (Position)
-#define NAV_XY_P 2.5
+#define NAV_XY_P 2.0
 #define NAV_XY_I 0.0
 #define NAV_XY_D 0.2
 #define NAV_XY_I_LIMIT 1.0
