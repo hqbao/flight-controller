@@ -26,10 +26,11 @@
 #define NAV_Z_I_LIMIT 1.0
 
 // Smoothing
-#define NAV_SMOOTH_P 1.0
-#define NAV_SMOOTH_D 1.0
-#define NAV_SMOOTH_I 1.0
-#define NAV_Z_SMOOTH_I 0.0025
+#define NAV_SMOOTH_INPUT 1.0
+#define NAV_SMOOTH_P_TERM 1.0
+#define NAV_SMOOTH_OUTPUT 1.0
+#define NAV_XY_GAIN_TIME 1.0
+#define NAV_Z_SMOOTH_OUTPUT 0.0025
 
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
@@ -117,22 +118,25 @@ static void pid_setup(void) {
 	pid_control_init(&g_pid_nav_x);
 	pid_control_set_p_gain(&g_pid_nav_x, NAV_XY_P);
 	pid_control_set_d_gain(&g_pid_nav_x, NAV_XY_D);
-	pid_control_set_i_gain(&g_pid_nav_x, NAV_XY_I, NAV_XY_I_LIMIT);
-	pid_control_set_smooth(&g_pid_nav_x, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_SMOOTH_I);
+	pid_control_set_i_gain(&g_pid_nav_x, NAV_XY_I, NAV_XY_GAIN_TIME);
+	pid_control_set_i_limit(&g_pid_nav_x, NAV_XY_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_x, NAV_SMOOTH_INPUT, NAV_SMOOTH_P_TERM, NAV_SMOOTH_OUTPUT);
 	pid_control_set_o_limit(&g_pid_nav_x, NAV_XY_O_LIMIT);
 
 	pid_control_init(&g_pid_nav_y);
 	pid_control_set_p_gain(&g_pid_nav_y, NAV_XY_P);
 	pid_control_set_d_gain(&g_pid_nav_y, NAV_XY_D);
-	pid_control_set_i_gain(&g_pid_nav_y, NAV_XY_I, NAV_XY_I_LIMIT);
-	pid_control_set_smooth(&g_pid_nav_y, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_SMOOTH_I);
+	pid_control_set_i_gain(&g_pid_nav_y, NAV_XY_I, NAV_XY_GAIN_TIME);
+	pid_control_set_i_limit(&g_pid_nav_y, NAV_XY_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_y, NAV_SMOOTH_INPUT, NAV_SMOOTH_P_TERM, NAV_SMOOTH_OUTPUT);
 	pid_control_set_o_limit(&g_pid_nav_y, NAV_XY_O_LIMIT);
 
 	pid_control_init(&g_pid_nav_z);
 	pid_control_set_p_gain(&g_pid_nav_z, NAV_Z_P);
 	pid_control_set_d_gain(&g_pid_nav_z, NAV_Z_D);
-	pid_control_set_i_gain(&g_pid_nav_z, NAV_Z_I, NAV_Z_I_LIMIT);
-	pid_control_set_smooth(&g_pid_nav_z, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_Z_SMOOTH_I);
+	pid_control_set_i_gain(&g_pid_nav_z, NAV_Z_I, 1.0);
+	pid_control_set_i_limit(&g_pid_nav_z, NAV_Z_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_z, NAV_SMOOTH_INPUT, NAV_SMOOTH_P_TERM, NAV_Z_SMOOTH_OUTPUT);
 }
 
 static void nav_control_loop(void) {

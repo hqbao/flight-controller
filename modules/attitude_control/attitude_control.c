@@ -38,10 +38,11 @@
 #define ATT_YAW_D 10.0
 #define ATT_YAW_I_LIMIT 5.0
 
-// Smoothing (P, D, I)
-#define ATT_SMOOTH_P 1.0
-#define ATT_SMOOTH_D 0.5
-#define ATT_SMOOTH_I 1.0
+// Smoothing
+#define ATT_SMOOTH_INPUT 1.0
+#define ATT_SMOOTH_P_TERM 0.5
+#define ATT_SMOOTH_OUTPUT 1.0
+#define ATT_GAIN_TIME 1.0
 
 typedef enum {
 	DISARMED = 0,
@@ -101,23 +102,23 @@ static void pid_setup(void) {
 	pid_control_init(&g_pid_att_roll);
 	pid_control_set_p_gain(&g_pid_att_roll, ATT_ROLL_P);
 	pid_control_set_d_gain(&g_pid_att_roll, ATT_ROLL_D);
-	pid_control_set_i_gain(&g_pid_att_roll, ATT_ROLL_I, 1.0);
+	pid_control_set_i_gain(&g_pid_att_roll, ATT_ROLL_I, ATT_GAIN_TIME);
 	pid_control_set_i_limit(&g_pid_att_roll, ATT_ROLL_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_roll, ATT_SMOOTH_P, ATT_SMOOTH_D, ATT_SMOOTH_I);
+	pid_control_set_smooth(&g_pid_att_roll, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
 
 	pid_control_init(&g_pid_att_pitch);
 	pid_control_set_p_gain(&g_pid_att_pitch, ATT_PITCH_P);
 	pid_control_set_d_gain(&g_pid_att_pitch, ATT_PITCH_D);
-	pid_control_set_i_gain(&g_pid_att_pitch, ATT_PITCH_I, 1.0);
+	pid_control_set_i_gain(&g_pid_att_pitch, ATT_PITCH_I, ATT_GAIN_TIME);
 	pid_control_set_i_limit(&g_pid_att_pitch, ATT_PITCH_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_pitch, ATT_SMOOTH_P, ATT_SMOOTH_D, ATT_SMOOTH_I);
+	pid_control_set_smooth(&g_pid_att_pitch, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
 
 	pid_control_init(&g_pid_att_yaw);
 	pid_control_set_p_gain(&g_pid_att_yaw, ATT_YAW_P);
 	pid_control_set_d_gain(&g_pid_att_yaw, ATT_YAW_D);
-	pid_control_set_i_gain(&g_pid_att_yaw, ATT_YAW_I, 1.0);
+	pid_control_set_i_gain(&g_pid_att_yaw, ATT_YAW_I, ATT_GAIN_TIME);
 	pid_control_set_i_limit(&g_pid_att_yaw, ATT_YAW_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_yaw, ATT_SMOOTH_P, ATT_SMOOTH_D, ATT_SMOOTH_I);
+	pid_control_set_smooth(&g_pid_att_yaw, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
 }
 
 static void pid_loop(void) {
