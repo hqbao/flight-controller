@@ -119,7 +119,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 #endif
 
 #define FUSION_GAIN_KP 4.0
-#define FUSION_GAIN_KI 0.5
+#define FUSION_GAIN_KI 0.25
 
 static void init(void) {
 	fusion1_init(&g_f11, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
