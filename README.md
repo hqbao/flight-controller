@@ -206,6 +206,57 @@ subscribe(SCHEDULER_25HZ, callback_function);
 
 5. **Observe calibrated compass vectors** in red and attitude vectors in blue
 
+## Sensor Calibration
+
+Accurate sensor calibration is critical for stable flight. Follow these procedures for the Accelerometer and Magnetometer.
+
+### 1. Accelerometer Calibration (Static Multi-Position)
+Corrects for sensor bias and axis scaling/misalignment.
+
+1.  **Prepare Firmware**:
+    *   Open `modules/imu/imu.c`.
+    *   Set `#define ENABLE_ACCEL_MONITOR_LOG 1`.
+    *   Build and flash the firmware.
+2.  **Run Tool**:
+    *   Connect the drone via USB.
+    *   Run: `python3 pytest/calibrate_accel.py`
+3.  **Capture Data**:
+    *   Place the drone **STATIC** in an orientation (e.g., Flat).
+    *   Click **"Capture Position"** and wait for it to finish.
+    *   Rotate the drone to a new orientation (Left, Right, Nose Up, Nose Down, Upside Down).
+    *   Repeat for at least **6 different positions** covering the sphere.
+4.  **Compute & Save**:
+    *   Click **"Compute Calib"**.
+    *   Copy the resulting **Bias Vector (B)** and **Scale Matrix (S)**.
+    *   Paste them into the `g_imu1` struct in `modules/imu/imu.c`.
+    *   Set `#define ENABLE_ACCEL_MONITOR_LOG 0` and re-flash.
+
+### 2. Compass Calibration (Ellipsoid Fit)
+Corrects for Hard Iron (offsets) and Soft Iron (distortions) effects.
+
+1.  **Prepare Firmware**:
+    *   Open `modules/compass/compass.c`.
+    *   Set `#define ENABLE_COMPASS_MONITOR_LOG 2` (Raw Mode).
+    *   Build and flash the firmware.
+2.  **Run Tool**:
+    *   Connect the drone via USB.
+    *   Run: `python3 pytest/calibrate_compass.py`
+3.  **Capture Data**:
+    *   Click **"Start Stream"**.
+    *   Rotate the drone in **ALL directions** (Figure-8 motion).
+    *   Ensure you cover the entire surface of the sphere.
+    *   Watch the "Corrected Data" (Green) plot converge to a perfect sphere.
+4.  **Save**:
+    *   Stop the stream.
+    *   Copy the resulting **Hard Iron Bias (B)** and **Soft Iron Matrix (S)**.
+    *   Paste them into `g_mag_offset` and `g_mag_scale` in `modules/compass/compass.c`.
+    *   Set `#define ENABLE_COMPASS_MONITOR_LOG 0` and re-flash.
+
+### 3. Gyroscope Calibration
+*   **Automatic**: Performed automatically on every boot.
+*   **Requirement**: Keep the drone **completely stationary** for 2 seconds after powering on.
+*   **Logic**: The system checks for stability (max spread < 2 dps). If moved, it retries.
+
 ## Testing & Debugging
 
 - Use `pytest/view_charts.py` to monitor raw sensor values

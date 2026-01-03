@@ -164,7 +164,19 @@ def main():
     # Text for results
     text_ax = plt.axes([0.76, 0.2, 0.23, 0.6])
     text_ax.axis('off')
-    info_text = text_ax.text(0, 1, "Press Start to collect data...", fontsize=9, va='top', fontfamily='monospace')
+    instructions = (
+        "INSTRUCTIONS:\n\n"
+        "1. Connect drone via USB.\n"
+        "2. Click 'Start Stream'.\n"
+        "3. Rotate drone in ALL\n"
+        "   directions (Figure-8).\n"
+        "   Cover the full sphere.\n"
+        "4. Watch 'Corrected Data'\n"
+        "   (Green) become a sphere.\n"
+        "5. Stop Stream.\n"
+        "6. Copy B and S to compass.c."
+    )
+    info_text = text_ax.text(0, 1, instructions, fontsize=9, va='top', fontfamily='monospace')
     
     # --- Button Layout ---
     # Row 1: Views (Top, Bottom, Front, Back, Left, Right)

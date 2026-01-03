@@ -181,7 +181,22 @@ def main():
     # Text for results
     text_ax = plt.axes([0.76, 0.2, 0.23, 0.6])
     text_ax.axis('off')
-    info_text = text_ax.text(0, 1, "1. Place drone in a stable position.\n2. Click 'Capture Position'.\n3. Repeat for 6+ orientations.", fontsize=9, va='top', fontfamily='monospace')
+    instructions = (
+        "INSTRUCTIONS:\n\n"
+        "1. Connect drone via USB.\n"
+        "2. Place drone STATIC in\n"
+        "   an orientation (e.g. Flat).\n"
+        "3. Click 'Capture Position'.\n"
+        "   Wait for completion.\n"
+        "4. Rotate to a NEW side\n"
+        "   (Left, Right, Front, Back,\n"
+        "   Upside Down).\n"
+        "5. Repeat steps 2-4 for\n"
+        "   at least 6 positions.\n"
+        "6. Click 'Compute Calib'.\n"
+        "7. Copy B and S to imu.c."
+    )
+    info_text = text_ax.text(0, 1, instructions, fontsize=9, va='top', fontfamily='monospace')
     
     # --- Button Layout ---
     # Row 1: Views (Top, Bottom, Front, Back, Left, Right)

@@ -8,6 +8,49 @@
 #include "icm42688p_spi.h"
 #include <string.h>
 
+/* 
+ * --- IMU CALIBRATION GUIDE ---
+ * 
+ * 1. GYROSCOPE CALIBRATION (Automatic)
+ *    - Performed automatically on startup or when triggered.
+ *    - Requires the device to be completely stationary for 2 seconds.
+ *    - Logic: Collects samples for 2s. If the spread (Max - Min) of any axis 
+ *      exceeds IMU_MOTION (32 LSB ~ 2 dps), calibration fails and retries.
+ *    - Result: Updates gyro_offset[3], [4], [5].
+ * 
+ * 2. ACCELEROMETER CALIBRATION (Manual)
+ *    - Requires external Python tool: pytest/calibrate_accel.py
+ *    - Steps:
+ *      a. Set ENABLE_ACCEL_MONITOR_LOG to 1 in this file.
+ *      b. Flash firmware and connect via USB.
+ *      c. Run 'python3 pytest/calibrate_accel.py'.
+ *      d. Place drone in 6+ static positions (flat, sides, nose up/down, etc).
+ *         Click "Capture Position" for each.
+ *      e. Click "Compute Calib".
+ *      f. Copy the resulting Bias (B) and Scale Matrix (S) into the 
+ *         g_imu1 struct initialization below.
+ *         - Bias (B) goes to gyro_offset[0], [1], [2].
+ *         - Scale (S) goes to accel_scale[3][3].
+ *      g. Set ENABLE_ACCEL_MONITOR_LOG back to 0.
+ * 
+ * 3. MATHEMATICAL MODEL
+ *    The calibration applies the following linear correction:
+ *    
+ *    V_cal = S * (V_raw - B)
+ *    
+ *    Where:
+ *    - V_raw: Raw sensor reading vector [x, y, z]
+ *    - B (Bias): Offset vector [bx, by, bz]
+ *      Corrects zero-g offset errors so the sphere is centered at (0,0,0).
+ *    - S (Scale Matrix): 3x3 Matrix
+ *      [ Sxx Sxy Sxz ]
+ *      [ Syx Syy Syz ]
+ *      [ Szx Szy Szz ]
+ *      Corrects for scale factor errors (sensitivity) and axis misalignment 
+ *      (non-orthogonality). It transforms the ellipsoid of raw data into 
+ *      a perfect sphere of radius 1g.
+ */
+
 /* Macro to enable/disable sending MONITOR_DATA via logger */
 #define ENABLE_ACCEL_MONITOR_LOG 1
 
@@ -40,18 +83,34 @@ typedef struct {
 } imu_t;
 
 static imu_t g_imu1 = {
-	{{0}, I2C_PORT1, SPI_PORT1, 0},
-	{0, 0, 0, 0, 0, 0},
-	{0},
-	{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
-	{0},
-	{0},
-	{0},
-	0,
-	init,
-	SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
-	SENSOR_IMU1_GYRO_UPDATE,
-	SENSOR_IMU1_ACCEL_UPDATE
+	.imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0},
+	.gyro_accel = {0},
+
+	/* --- ACCELEROMETER CALIBRATION DATA --- */
+	/* 1. Bias Vector (B) */
+	/* Copy Bx, By, Bz into the first 3 slots. Leave the last 3 as 0 (Gyro runtime offsets). */
+	.gyro_offset = {
+		0.0f, 0.0f, 0.0f,  /* Bx, By, Bz */
+		0.0f, 0.0f, 0.0f   /* Gyro Offsets (Do not edit) */
+	},
+
+	/* 2. Scale Matrix (S) */
+	/* Copy the 3x3 Matrix here */
+	.accel_scale = {
+		{1.0f, 0.0f, 0.0f},
+		{0.0f, 1.0f, 0.0f},
+		{0.0f, 0.0f, 1.0f}
+	},
+	/* -------------------------------------- */
+
+	.gyro_calibration = {0},
+	.gyro_min = {0},
+	.gyro_max = {0},
+	.gyro_calibration_counter = 0,
+	.mode = init,
+	.topic_gyro_calibration_update = SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
+	.topic_gyro_update = SENSOR_IMU1_GYRO_UPDATE,
+	.topic_accel_update = SENSOR_IMU1_ACCEL_UPDATE
 };
 
 static void calibrate(imu_t *imu) {

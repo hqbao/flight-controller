@@ -6,6 +6,48 @@
 #include <math.h>
 #include "bmm350.h"
 
+/* 
+ * --- COMPASS CALIBRATION GUIDE ---
+ * 
+ * 1. SETUP
+ *    - Set ENABLE_COMPASS_MONITOR_LOG to 2 (Raw Data) in this file.
+ *    - Flash firmware and connect via USB.
+ *    - Run 'python3 pytest/calibrate_compass.py'.
+ * 
+ * 2. DATA COLLECTION
+ *    - Click "Start Stream" in the Python tool.
+ *    - Rotate the drone in ALL directions (figure-8 motion).
+ *    - Ensure you cover the entire sphere surface.
+ *    - Collect at least 1000+ points.
+ * 
+ * 3. CALIBRATION
+ *    - The tool automatically computes B (Bias) and S (Scale) in real-time.
+ *    - Once the "Corrected Data" (Green) forms a perfect sphere centered at 0,
+ *      stop the stream.
+ * 
+ * 4. SAVING
+ *    - Copy the resulting Hard Iron Bias (B) and Soft Iron Matrix (S) 
+ *      into the g_mag_offset and g_mag_scale variables below.
+ *    - Set ENABLE_COMPASS_MONITOR_LOG back to 0 (or 1 for debug).
+ * 
+ * 5. MATHEMATICAL MODEL
+ *    The calibration applies the following linear correction:
+ *    
+ *    V_cal = S * (V_raw - B)
+ *    
+ *    Where:
+ *    - V_raw: Raw magnetometer reading vector [x, y, z]
+ *    - B (Hard Iron Bias): Offset vector [bx, by, bz]
+ *      Corrects for permanent magnetic fields on the PCB (e.g. nearby screws, traces).
+ *      Shifts the sphere center to (0,0,0).
+ *    - S (Soft Iron Matrix): 3x3 Matrix
+ *      [ Sxx Sxy Sxz ]
+ *      [ Syx Syy Syz ]
+ *      [ Szx Szy Szz ]
+ *      Corrects for ferromagnetic materials that distort the magnetic field 
+ *      (stretching/squashing the sphere into an ellipsoid).
+ */
+
 /* Macro to enable/disable sending MONITOR_DATA via logger 
  * 0: Disable
  * 1: Calibrated
