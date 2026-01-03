@@ -13,7 +13,7 @@
 
 #define GYRO_FREQ 1000
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
-#define IMU_MOTION 100
+#define IMU_MOTION 32
 #define SSF_GYRO (16.4)
 
 typedef enum {
@@ -29,7 +29,8 @@ typedef struct {
 	float gyro_accel[6];
 	float gyro_offset[6];
 	int64_t gyro_calibration[3];
-	int16_t gyro_calibration_check[3];
+	float gyro_min[3];
+	float gyro_max[3];
 	int16_t gyro_calibration_counter;
 	imu_mode_t mode;
 	topic_t topic_gyro_calibration_update;
@@ -43,6 +44,7 @@ static imu_t g_imu1 = {
 	{0},
 	{0},
 	{0},
+	{0},
 	0,
 	init,
 	SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
@@ -51,27 +53,40 @@ static imu_t g_imu1 = {
 };
 
 static void calibrate(imu_t *imu) {
-	imu->gyro_calibration[0] += imu->gyro_accel[3];
-	imu->gyro_calibration[1] += imu->gyro_accel[4];
-	imu->gyro_calibration[2] += imu->gyro_accel[5];
+	float gx = imu->gyro_accel[3];
+	float gy = imu->gyro_accel[4];
+	float gz = imu->gyro_accel[5];
+
+	imu->gyro_calibration[0] += gx;
+	imu->gyro_calibration[1] += gy;
+	imu->gyro_calibration[2] += gz;
+
+	// Update Min/Max for stability check
+	if (gx < imu->gyro_min[0]) imu->gyro_min[0] = gx;
+	if (gx > imu->gyro_max[0]) imu->gyro_max[0] = gx;
+	
+	if (gy < imu->gyro_min[1]) imu->gyro_min[1] = gy;
+	if (gy > imu->gyro_max[1]) imu->gyro_max[1] = gy;
+	
+	if (gz < imu->gyro_min[2]) imu->gyro_min[2] = gz;
+	if (gz > imu->gyro_max[2]) imu->gyro_max[2] = gz;
+
 	imu->gyro_calibration_counter++;
 
-	// Check motionless
-	char failed = 0;
-	if (fabs(imu->gyro_accel[3] - imu->gyro_calibration_check[0]) > IMU_MOTION) failed = 1;
-	if (fabs(imu->gyro_accel[4] - imu->gyro_calibration_check[1]) > IMU_MOTION) failed = 1;
-	if (fabs(imu->gyro_accel[5] - imu->gyro_calibration_check[2]) > IMU_MOTION) failed = 1;
-	imu->gyro_calibration_check[0] = imu->gyro_accel[3];
-	imu->gyro_calibration_check[1] = imu->gyro_accel[4];
-	imu->gyro_calibration_check[2] = imu->gyro_accel[5];
-	if (failed == 1) {
-		imu->mode = init;
-		uint8_t result = 0;
-		publish(imu->topic_gyro_calibration_update, (uint8_t*)&result, 1);
-		return;
-	}
-
 	if (imu->gyro_calibration_counter >= CALIBRATION_FREQ) {
+		// Check stability (Max - Min < Threshold)
+		// Threshold: 32 LSB (~2 dps) spread allowed over 2 seconds
+		if ((imu->gyro_max[0] - imu->gyro_min[0] > IMU_MOTION) ||
+			(imu->gyro_max[1] - imu->gyro_min[1] > IMU_MOTION) ||
+			(imu->gyro_max[2] - imu->gyro_min[2] > IMU_MOTION)) {
+			
+			// Failed: Reset and retry
+			imu->mode = init;
+			uint8_t result = 0;
+			publish(imu->topic_gyro_calibration_update, (uint8_t*)&result, 1);
+			return;
+		}
+
 		imu->gyro_offset[3] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[0];
 		imu->gyro_offset[4] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[1];
 		imu->gyro_offset[5] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[2];
@@ -86,9 +101,12 @@ static void imu1_calibrate(uint8_t *data, size_t size) {
 	g_imu1.gyro_calibration[0] = 0;
 	g_imu1.gyro_calibration[1] = 0;
 	g_imu1.gyro_calibration[2] = 0;
-	g_imu1.gyro_calibration_check[0] = g_imu1.gyro_accel[3];
-	g_imu1.gyro_calibration_check[1] = g_imu1.gyro_accel[4];
-	g_imu1.gyro_calibration_check[2] = g_imu1.gyro_accel[5];
+	
+	// Initialize Min/Max with current values
+	g_imu1.gyro_min[0] = g_imu1.gyro_max[0] = g_imu1.gyro_accel[3];
+	g_imu1.gyro_min[1] = g_imu1.gyro_max[1] = g_imu1.gyro_accel[4];
+	g_imu1.gyro_min[2] = g_imu1.gyro_max[2] = g_imu1.gyro_accel[5];
+	
 	g_imu1.mode = calibrating;
 }
 

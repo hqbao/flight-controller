@@ -99,7 +99,7 @@ static void pid_setup(void) {
 	pid_control_set_p_gain(&g_pid_nav_z, 20);
 	pid_control_set_d_gain(&g_pid_nav_z, 10);
 	pid_control_set_i_gain(&g_pid_nav_z, 0, 1.0);
-	pid_control_set_smooth(&g_pid_nav_z, 1.0, 1.0, 0.005);
+	pid_control_set_smooth(&g_pid_nav_z, 1.0, 1.0, 0.0025);
 }
 
 static void nav_control_loop(void) {
