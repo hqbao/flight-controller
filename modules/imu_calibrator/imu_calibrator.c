@@ -6,17 +6,20 @@
 #define POSITION_MIN 	10000
 #define POSITION_CENTER 15000
 #define POSITION_MAX 	20000
+#define SERVO_SCALE     5000
 
 static vector3d_t g_attitude = {0, 0, 1};
 static char g_imu_available = 0;
 
 static void attitude_vector_update(uint8_t *data, size_t size) {
-	g_attitude = *(vector3d_t*)data;
+    if (size >= sizeof(vector3d_t)) {
+	    memcpy(&g_attitude, data, sizeof(vector3d_t));
+    }
 }
 
 static void imu_calibrator_loop(uint8_t *data, size_t size) {
-	int x = g_attitude.x * 5000;
-	int y = g_attitude.y * 5000;
+	int x = g_attitude.x * SERVO_SCALE;
+	int y = g_attitude.y * SERVO_SCALE;
 
 	platform_pwm_send(PWM_PORT1, POSITION_CENTER + x);
 	platform_pwm_send(PWM_PORT2, POSITION_CENTER + y);

@@ -8,7 +8,9 @@
 static uint8_t g_local_data[LOCAL_STORAGE_SIZE + 4] = {0}; // data + 4-byte checksum
 
 static void local_storage_save(uint8_t *data, size_t size) {
-	memcpy(g_local_data, data, LOCAL_STORAGE_SIZE);
+    size_t copy_size = (size < LOCAL_STORAGE_SIZE) ? size : LOCAL_STORAGE_SIZE;
+	memcpy(g_local_data, data, copy_size);
+    // TODO: Implement actual flash write
 }
 
 static void local_storage_load(uint8_t *data, size_t size) {

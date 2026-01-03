@@ -11,6 +11,41 @@
 #define CTL_FREQ 100
 #define MIN_LANDING_SPEED 50
 
+/* PID Gains */
+// Navigation XY (Position)
+#define NAV_XY_P 2.5
+#define NAV_XY_I 0.0
+#define NAV_XY_D 0.2
+#define NAV_XY_I_LIMIT 1.0
+#define NAV_XY_O_LIMIT 45.0
+
+// Navigation Z (Altitude)
+#define NAV_Z_P 20.0
+#define NAV_Z_I 0.0
+#define NAV_Z_D 10.0
+#define NAV_Z_I_LIMIT 1.0
+
+// Smoothing
+#define NAV_SMOOTH_P 1.0
+#define NAV_SMOOTH_D 1.0
+#define NAV_SMOOTH_I 1.0
+#define NAV_Z_SMOOTH_I 0.0025
+
+/* Landing Control */
+#define LANDING_RANGE_THRESHOLD 2000.0
+#define LANDING_SPEED_INC 1.0
+#define LANDING_SPEED_DEC 5.0
+#define LANDING_DESCENT_RATE_THRESHOLD -20.0
+
+/* RC Control */
+#define RC_DEADBAND 0.1
+#define RC_XY_SCALE 0.5
+#define RC_Z_SCALE 4.0
+#define RC_YAW_SCALE -0.5
+
+/* Velocity Scaling */
+#define NAV_VELOC_Z_SCALE 1.5
+
 typedef enum {
 	DISARMED = 0,
 	ARMED,
@@ -52,8 +87,6 @@ static uint8_t g_target_data[32] = {0};
 
 static double g_yaw_veloc = 0;
 
-static double nav_veloc_z_scale = 1.5;
-
 int g_moving_state_roll = 0; // 0: Released, 1: Just control
 int g_moving_state_pitch = 0;
 int g_moving_state_alt = 0;
@@ -68,11 +101,11 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (data[1] == 0) { // Downward
 		g_downward_range = (double)(*(int*)&data[12]);
 		if (g_state == LANDING) {
-			if (g_downward_range < 2000) {
+			if (g_downward_range < LANDING_RANGE_THRESHOLD) {
 				if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down
-					g_landing_speed += 1;
-				} else if (g_downward_range - g_downward_range_prev < -20) { // Too high speed
-					g_landing_speed -= 5;
+					g_landing_speed += LANDING_SPEED_INC;
+				} else if (g_downward_range - g_downward_range_prev < LANDING_DESCENT_RATE_THRESHOLD) { // Too high speed
+					g_landing_speed -= LANDING_SPEED_DEC;
 				}
 			}
 			g_downward_range_prev = g_downward_range;
@@ -82,24 +115,24 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 
 static void pid_setup(void) {
 	pid_control_init(&g_pid_nav_x);
-	pid_control_set_p_gain(&g_pid_nav_x, 2.5);
-	pid_control_set_d_gain(&g_pid_nav_x, 0.2);
-	pid_control_set_i_gain(&g_pid_nav_x, 0, 1.0);
-	pid_control_set_smooth(&g_pid_nav_x, 1.0, 1.0, 1.0);
-	pid_control_set_o_limit(&g_pid_nav_x, 45);
+	pid_control_set_p_gain(&g_pid_nav_x, NAV_XY_P);
+	pid_control_set_d_gain(&g_pid_nav_x, NAV_XY_D);
+	pid_control_set_i_gain(&g_pid_nav_x, NAV_XY_I, NAV_XY_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_x, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_SMOOTH_I);
+	pid_control_set_o_limit(&g_pid_nav_x, NAV_XY_O_LIMIT);
 
 	pid_control_init(&g_pid_nav_y);
-	pid_control_set_p_gain(&g_pid_nav_y, 2.5);
-	pid_control_set_d_gain(&g_pid_nav_y, 0.2);
-	pid_control_set_i_gain(&g_pid_nav_y, 0, 1.0);
-	pid_control_set_smooth(&g_pid_nav_y, 1.0, 1.0, 1.0);
-	pid_control_set_o_limit(&g_pid_nav_y, 45);
+	pid_control_set_p_gain(&g_pid_nav_y, NAV_XY_P);
+	pid_control_set_d_gain(&g_pid_nav_y, NAV_XY_D);
+	pid_control_set_i_gain(&g_pid_nav_y, NAV_XY_I, NAV_XY_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_y, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_SMOOTH_I);
+	pid_control_set_o_limit(&g_pid_nav_y, NAV_XY_O_LIMIT);
 
 	pid_control_init(&g_pid_nav_z);
-	pid_control_set_p_gain(&g_pid_nav_z, 20);
-	pid_control_set_d_gain(&g_pid_nav_z, 10);
-	pid_control_set_i_gain(&g_pid_nav_z, 0, 1.0);
-	pid_control_set_smooth(&g_pid_nav_z, 1.0, 1.0, 0.0025);
+	pid_control_set_p_gain(&g_pid_nav_z, NAV_Z_P);
+	pid_control_set_d_gain(&g_pid_nav_z, NAV_Z_D);
+	pid_control_set_i_gain(&g_pid_nav_z, NAV_Z_I, NAV_Z_I_LIMIT);
+	pid_control_set_smooth(&g_pid_nav_z, NAV_SMOOTH_P, NAV_SMOOTH_D, NAV_Z_SMOOTH_I);
 }
 
 static void nav_control_loop(void) {
@@ -134,7 +167,7 @@ static void loop_nav_publish(uint8_t *data, size_t size) {
 	double nav_roll 	= g_pid_nav_y.output;
 	double nav_pitch 	= g_pid_nav_x.output;
 	double nav_yaw 		= g_yaw_veloc;
-	double nav_alt 		= g_pid_nav_z.output + g_nav_veloc.z * nav_veloc_z_scale;
+	double nav_alt 		= g_pid_nav_z.output + g_nav_veloc.z * NAV_VELOC_Z_SCALE;
 
 	memcpy(&g_target_data[0], 	&nav_roll, 8);
 	memcpy(&g_target_data[8],	&nav_pitch, 8);
@@ -144,23 +177,23 @@ static void loop_nav_publish(uint8_t *data, size_t size) {
 }
 
 static void loop_100hz(uint8_t *data, size_t size) {
-	if (fabs(g_rc_att_ctl.pitch) > 0.1) {
+	if (fabs(g_rc_att_ctl.pitch) > RC_DEADBAND) {
 		if (g_moving_state_pitch == 0) {
 			g_pos_bias.x = g_pos_target.x - g_pos_final.x;
 			g_moving_state_pitch = CTL_FREQ;
 		}
-		g_pos_target.x = g_pos_final.x + g_pos_bias.x + g_rc_att_ctl.pitch * 0.5;
+		g_pos_target.x = g_pos_final.x + g_pos_bias.x + g_rc_att_ctl.pitch * RC_XY_SCALE;
 	} else if (g_moving_state_pitch == CTL_FREQ) {
 		g_pos_target.x = g_pos_final.x + g_pos_bias.x;
 		g_moving_state_pitch = 0;
 	}
 
-	if (fabs(g_rc_att_ctl.roll) > 0.1) {
+	if (fabs(g_rc_att_ctl.roll) > RC_DEADBAND) {
 		if (g_moving_state_roll == 0) {
 			g_pos_bias.y = g_pos_target.y - g_pos_final.y;
 			g_moving_state_roll = CTL_FREQ;
 		}
-		g_pos_target.y = g_pos_final.y + g_pos_bias.y + g_rc_att_ctl.roll * 0.5;
+		g_pos_target.y = g_pos_final.y + g_pos_bias.y + g_rc_att_ctl.roll * RC_XY_SCALE;
 	} else if (g_moving_state_roll == CTL_FREQ) {
 		g_pos_target.y = g_pos_final.y + g_pos_bias.y;
 		g_moving_state_roll = 0;
@@ -169,20 +202,20 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	if (g_state == LANDING) {
 		g_pos_target.z = g_pos_final.z + g_pos_bias.z - g_landing_speed;
 	} else {
-		if (fabs(g_rc_att_ctl.alt) > 0.1) {
+		if (fabs(g_rc_att_ctl.alt) > RC_DEADBAND) {
 			if (g_moving_state_alt == 0) {
 				g_pos_bias.z = g_pos_target.z - g_pos_final.z;
 				g_moving_state_alt = CTL_FREQ;
 			}
-			g_pos_target.z = g_pos_final.z + g_pos_bias.z + g_rc_att_ctl.alt * 4.0;
+			g_pos_target.z = g_pos_final.z + g_pos_bias.z + g_rc_att_ctl.alt * RC_Z_SCALE;
 		} else if (g_moving_state_alt > 0) {
 			g_pos_target.z = g_pos_final.z + g_pos_bias.z;
 			g_moving_state_alt -= 1;
 		}
 	}
 
-	if (fabs(g_rc_att_ctl.yaw) > 0.1) {
-		g_yaw_veloc = g_rc_att_ctl.yaw * (-0.5);
+	if (fabs(g_rc_att_ctl.yaw) > RC_DEADBAND) {
+		g_yaw_veloc = g_rc_att_ctl.yaw * RC_YAW_SCALE;
 	} else {
 		g_yaw_veloc = 0;
 	}
