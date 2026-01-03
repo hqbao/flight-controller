@@ -27,8 +27,10 @@ if SERIAL_PORT is None:
 
 # --- Global State ---
 data_queue = queue.Queue()
-raw_data_points = []
-is_collecting = False
+raw_data_points = [] # List of averaged points (one per position)
+current_position_samples = [] # Temporary samples for the current position
+is_capturing = False
+SAMPLES_PER_POSITION = 100
 calibration_result = (np.zeros(3), np.eye(3))
 last_calibration_time = 0
 
@@ -159,12 +161,11 @@ def calibrate_accelerometer(data):
 
 # --- GUI ---
 def main():
-    global is_collecting, raw_data_points, calibration_result, last_calibration_time
+    global is_capturing, raw_data_points, current_position_samples, calibration_result, last_calibration_time
     
     # State flags
     show_raw = True
     show_calib = True
-    run_calibration = True
     
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
@@ -174,18 +175,18 @@ def main():
     ax.set_box_aspect((1, 1, 1))  # Ensure 1:1:1 aspect ratio
     plt.subplots_adjust(bottom=0.25, right=0.75) # Increased bottom margin for buttons
     
-    scat_raw = ax.scatter([], [], [], c='r', marker='o', s=5, label='Raw Data')
-    scat_corr = ax.scatter([], [], [], c='g', marker='o', s=5, label='Corrected Data')
+    scat_raw = ax.scatter([], [], [], c='r', marker='o', s=20, label='Captured Positions')
+    scat_corr = ax.scatter([], [], [], c='g', marker='o', s=20, label='Corrected Positions')
     
     # Text for results
     text_ax = plt.axes([0.76, 0.2, 0.23, 0.6])
     text_ax.axis('off')
-    info_text = text_ax.text(0, 1, "Press Start to collect data...", fontsize=9, va='top', fontfamily='monospace')
+    info_text = text_ax.text(0, 1, "1. Place drone in a stable position.\n2. Click 'Capture Position'.\n3. Repeat for 6+ orientations.", fontsize=9, va='top', fontfamily='monospace')
     
     # --- Button Layout ---
     # Row 1: Views (Top, Bottom, Front, Back, Left, Right)
-    # Row 2: Toggles (Raw, Calib, Algo, Stream)
-    # Row 3: Actions (Reset B/S, Clear Data)
+    # Row 2: Toggles (Raw, Calib)
+    # Row 3: Actions (Capture, Calibrate, Reset, Clear)
     
     # Row 1: Views
     views = {
@@ -230,29 +231,55 @@ def main():
         plt.draw()
     btn_calib.on_clicked(toggle_calib)
     
-    # Toggle Algo
-    btn_algo_ax = plt.axes([start_x + (width*1.5 + gap)*2, row2_y, width*1.5, 0.05])
-    btn_algo = Button(btn_algo_ax, 'Stop Algo')
-    def toggle_algo(event):
-        nonlocal run_calibration
-        run_calibration = not run_calibration
-        btn_algo.label.set_text('Stop Algo' if run_calibration else 'Run Algo')
-    btn_algo.on_clicked(toggle_algo)
-    
-    # Toggle Stream (Collection)
-    btn_stream_ax = plt.axes([start_x + (width*1.5 + gap)*3, row2_y, width*1.5, 0.05])
-    btn_stream = Button(btn_stream_ax, 'Start Stream') # Default off
-    def toggle_stream(event):
-        global is_collecting
-        is_collecting = not is_collecting
-        btn_stream.label.set_text('Stop Stream' if is_collecting else 'Start Stream')
-    btn_stream.on_clicked(toggle_stream)
-
     # Row 3: Actions
     row3_y = 0.01
     
+    # Capture Position
+    btn_capture_ax = plt.axes([start_x, row3_y, width*2, 0.05])
+    btn_capture = Button(btn_capture_ax, 'Capture Position')
+    def capture_position(event):
+        global is_capturing, current_position_samples
+        if not is_capturing:
+            is_capturing = True
+            current_position_samples = []
+            btn_capture.label.set_text('Capturing...')
+            print("Capturing position...")
+    btn_capture.on_clicked(capture_position)
+
+    # Compute Calibration
+    btn_calc_ax = plt.axes([start_x + width*2 + gap, row3_y, width*2, 0.05])
+    btn_calc = Button(btn_calc_ax, 'Compute Calib')
+    def compute_calibration(event):
+        global calibration_result
+        if len(raw_data_points) < 6:
+            print("Need at least 6 positions for calibration.")
+            return
+            
+        data_np = np.array(raw_data_points)
+        res = calibrate_accelerometer(data_np)
+        if res is not None:
+            B, S = res
+            calibration_result = (B, S)
+            print("Calibration computed successfully.")
+            
+            # Update text
+            B_str = f"[{B[0]:.2f}, {B[1]:.2f}, {B[2]:.2f}]"
+            S_str = "\n".join([f"[{r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}]" for r in S])
+            info_text.set_text(f"Positions: {len(raw_data_points)}\n\nBias B:\n{B_str}\n\nScale/Rot Matrix S:\n{S_str}")
+            
+            # Update corrected plot
+            raw_centered = (data_np - B).T
+            corrected = np.dot(S, raw_centered).T
+            avg_radius = np.mean(np.linalg.norm(raw_centered, axis=0))
+            corrected_scaled = corrected * avg_radius
+            scat_corr._offsets3d = (corrected_scaled[:, 0], corrected_scaled[:, 1], corrected_scaled[:, 2])
+            plt.draw()
+        else:
+            print("Calibration failed (not enough spread?).")
+    btn_calc.on_clicked(compute_calibration)
+    
     # Reset B/S
-    btn_reset_ax = plt.axes([start_x, row3_y, width*2, 0.05])
+    btn_reset_ax = plt.axes([start_x + (width*2 + gap)*2, row3_y, width*2, 0.05])
     btn_reset = Button(btn_reset_ax, 'Reset B & S')
     def reset_calibration(event):
         global calibration_result
@@ -261,24 +288,22 @@ def main():
         
         B_str = f"[{B[0]:.2f}, {B[1]:.2f}, {B[2]:.2f}]"
         S_str = "\n".join([f"[{r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}]" for r in S])
-        info_text.set_text(f"Points: {len(raw_data_points)}\n\nBias B:\n{B_str}\n\nScale/Rot Matrix S:\n{S_str}")
+        info_text.set_text(f"Positions: {len(raw_data_points)}\n\nBias B:\n{B_str}\n\nScale/Rot Matrix S:\n{S_str}")
         
-        # Reset corrected plot to raw (if visible)
-        if len(raw_data_points) > 0:
-            data_np = np.array(raw_data_points)
-            scat_corr._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
-            plt.draw()
+        scat_corr._offsets3d = ([], [], [])
+        plt.draw()
         print("Calibration parameters reset.")
     btn_reset.on_clicked(reset_calibration)
     
     # Clear Data
-    btn_clear_ax = plt.axes([start_x + width*2 + gap, row3_y, width*2, 0.05])
-    btn_clear = Button(btn_clear_ax, 'Clear All Points')
+    btn_clear_ax = plt.axes([start_x + (width*2 + gap)*3, row3_y, width*2, 0.05])
+    btn_clear = Button(btn_clear_ax, 'Clear Points')
     def clear_points(event):
         global raw_data_points
         raw_data_points = []
         scat_raw._offsets3d = ([], [], [])
         scat_corr._offsets3d = ([], [], [])
+        info_text.set_text("Points cleared.\nReady to capture.")
         print("Points cleared.")
         plt.draw()
     btn_clear.on_clicked(clear_points)
@@ -289,54 +314,36 @@ def main():
     ax.legend()
     
     while True:
-        points_added = False
         while not data_queue.empty():
             pt = data_queue.get()
-            if is_collecting:
-                raw_data_points.append(pt)
-                points_added = True
-        
-        if points_added:
-            data_np = np.array(raw_data_points)
-            scat_raw._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
             
-            # Fixed scale
-            ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
-            ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
-            ax.set_zlim(-PLOT_LIMIT, PLOT_LIMIT)
-            
-            # Realtime calibration every 1s
-            if run_calibration and time.time() - last_calibration_time > 1.0 and len(raw_data_points) > 20:
-                res = calibrate_accelerometer(data_np)
-                if res is not None:
-                    B, S = res
-                    calibration_result = (B, S)
-                last_calibration_time = time.time()
-            
-            # Always update corrected points display if we have B and S (even if algo is stopped)
-            if len(raw_data_points) > 0:
-                B, S = calibration_result
-                
-                # Update text
-                B_str = f"[{B[0]:.2f}, {B[1]:.2f}, {B[2]:.2f}]"
-                S_str = "\n".join([f"[{r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}]" for r in S])
-                
-                raw_centered = (data_np - B).T
-                corrected = np.dot(S, raw_centered).T
-                
-                # Scale corrected data to match the average magnitude of raw data for better visualization
-                avg_radius = np.mean(np.linalg.norm(raw_centered, axis=0))
-                corrected_scaled = corrected * avg_radius
-                
-                scat_corr._offsets3d = (corrected_scaled[:, 0], corrected_scaled[:, 1], corrected_scaled[:, 2])
-                
-                # Display latest calibrated point
-                if len(corrected) > 0:
-                    last_pt = corrected[-1]
-                    info_text.set_text(f"Points: {len(raw_data_points)}\n\n"
-                                     f"Bias B:\n{B_str}\n\n"
-                                     f"Scale/Rot Matrix S:\n{S_str}\n\n"
-                                     f"Latest Calibrated (Unit):\n[{last_pt[0]:.3f}, {last_pt[1]:.3f}, {last_pt[2]:.3f}]")
+            if is_capturing:
+                current_position_samples.append(pt)
+                if len(current_position_samples) >= SAMPLES_PER_POSITION:
+                    # Finished capturing this position
+                    avg_pt = np.mean(current_position_samples, axis=0)
+                    raw_data_points.append(avg_pt)
+                    
+                    print(f"Position {len(raw_data_points)} captured: {avg_pt}")
+                    
+                    # Reset capture state
+                    is_capturing = False
+                    current_position_samples = []
+                    btn_capture.label.set_text('Capture Position')
+                    
+                    # Update Raw Plot
+                    data_np = np.array(raw_data_points)
+                    scat_raw._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
+                    
+                    # Auto-scale
+                    max_range = np.max(np.abs(data_np)) if len(data_np) > 0 else PLOT_LIMIT
+                    limit = max(max_range * 1.2, PLOT_LIMIT)
+                    ax.set_xlim(-limit, limit)
+                    ax.set_ylim(-limit, limit)
+                    ax.set_zlim(-limit, limit)
+                    
+                    info_text.set_text(f"Positions: {len(raw_data_points)}\n\nReady for next position.")
+                    plt.draw()
 
         plt.pause(0.05)
         if not plt.fignum_exists(fig.number):

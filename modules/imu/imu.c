@@ -9,7 +9,7 @@
 #include <string.h>
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_IMU_MONITOR_LOG 0
+#define ENABLE_ACCEL_MONITOR_LOG 1
 
 #define GYRO_FREQ 1000
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
@@ -28,6 +28,7 @@ typedef struct {
 	imu_sensor_t imu_sensor;
 	float gyro_accel[6];
 	float gyro_offset[6];
+	float accel_scale[3][3];
 	int64_t gyro_calibration[3];
 	float gyro_min[3];
 	float gyro_max[3];
@@ -42,6 +43,7 @@ static imu_t g_imu1 = {
 	{{0}, I2C_PORT1, SPI_PORT1, 0},
 	{0, 0, 0, 0, 0, 0},
 	{0},
+	{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
 	{0},
 	{0},
 	{0},
@@ -146,14 +148,21 @@ static void imu1_spi_data_udpate(uint8_t *data, size_t size) {
 
 static void publish_accel_loop(uint8_t *data, size_t size) {
 	if (g_imu1.mode == ready) {
-		g_imu1.gyro_accel[0] -= g_imu1.gyro_offset[0];
-		g_imu1.gyro_accel[1] -= g_imu1.gyro_offset[1];
-		g_imu1.gyro_accel[2] -= g_imu1.gyro_offset[2];
+		// Apply Offset
+		float ax = g_imu1.gyro_accel[0] - g_imu1.gyro_offset[0];
+		float ay = g_imu1.gyro_accel[1] - g_imu1.gyro_offset[1];
+		float az = g_imu1.gyro_accel[2] - g_imu1.gyro_offset[2];
+
+		// Apply Scale Matrix
+		g_imu1.gyro_accel[0] = g_imu1.accel_scale[0][0] * ax + g_imu1.accel_scale[0][1] * ay + g_imu1.accel_scale[0][2] * az;
+		g_imu1.gyro_accel[1] = g_imu1.accel_scale[1][0] * ax + g_imu1.accel_scale[1][1] * ay + g_imu1.accel_scale[1][2] * az;
+		g_imu1.gyro_accel[2] = g_imu1.accel_scale[2][0] * ax + g_imu1.accel_scale[2][1] * ay + g_imu1.accel_scale[2][2] * az;
+
 		publish(g_imu1.topic_accel_update, (uint8_t*)g_imu1.gyro_accel, 12);
 	}
 }
 
-#if ENABLE_IMU_MONITOR_LOG
+#if ENABLE_ACCEL_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Pack raw accel into MONITOR_DATA message
 	   Format: 3 float32 values (ax, ay, az) */
@@ -181,7 +190,7 @@ void imu_setup(void) {
 	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
 	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
-#if ENABLE_IMU_MONITOR_LOG
+#if ENABLE_ACCEL_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
 }
