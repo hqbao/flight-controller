@@ -16,10 +16,6 @@
 #define DT (1.0 / GYRO_FREQ)
 #define DEG2RAD_BY_DT (DEG2RAD * DT)
 
-#define ACCEL_OFFSET_X 0
-#define ACCEL_OFFSET_Y 0
-#define ACCEL_OFFSET_Z 0
-
 typedef struct {
 	double roll;
 	double pitch;
@@ -71,9 +67,9 @@ static void gyro_update(uint8_t *data, size_t size) {
 }
 
 static void accel_update(uint8_t *data, size_t size) {
-	float ax = -(*(float*)&data[4]) - ACCEL_OFFSET_X;
-	float ay = -(*(float*)&data[0]) - ACCEL_OFFSET_Y;
-	float az = (*(float*)&data[8]) - ACCEL_OFFSET_Z;
+	float ax = -(*(float*)&data[4]);
+	float ay = -(*(float*)&data[0]);
+	float az = (*(float*)&data[8]);
 
 	vector3d_init(&g_imu1_accel, ax, ay, az);
 	fusion1_update(&g_f11, g_imu1_accel.x, g_imu1_accel.y, g_imu1_accel.z);
@@ -130,8 +126,8 @@ void attitude_fusion_setup(void) {
 	init();
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
-	#if ENABLE_ATTITUDE_MONITOR_LOG
+#if ENABLE_ATTITUDE_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
-	#endif
+#endif
 }
 

@@ -6,6 +6,10 @@
 #include "icm42688p.h"
 #include "icm42688p_i2c.h"
 #include "icm42688p_spi.h"
+#include <string.h>
+
+/* Macro to enable/disable sending MONITOR_DATA via logger */
+#define ENABLE_IMU_MONITOR_LOG 1
 
 #define GYRO_FREQ 1000
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
@@ -131,19 +135,23 @@ static void publish_accel_loop(uint8_t *data, size_t size) {
 	}
 }
 
-static void imu1_loop_10hz(uint8_t *data, size_t size) {
-	if (g_imu1.mode == init) {
-		print("Ignored data: %d\t%d\t%d\n", 
-			(int)g_imu1.gyro_accel[3], 
-			(int)g_imu1.gyro_accel[4], 
-			(int)g_imu1.gyro_accel[5]);
-	} else if (g_imu1.mode == calibrating) {
-		print("Calibrating: %d\t%d\t%d\n", 
-			(int)g_imu1.gyro_accel[3], 
-			(int)g_imu1.gyro_accel[4], 
-			(int)g_imu1.gyro_accel[5]);
-	}
+#if ENABLE_IMU_MONITOR_LOG
+static void loop_logger(uint8_t *data, size_t size) {
+	/* Pack raw accel into MONITOR_DATA message
+	   Format: 3 float32 values (ax, ay, az) */
+	static uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
+	
+	float ax = g_imu1.gyro_accel[0];
+	float ay = g_imu1.gyro_accel[1];
+	float az = g_imu1.gyro_accel[2];
+	
+	memcpy(&out_msg[0], &ax, sizeof(float));
+	memcpy(&out_msg[4], &ay, sizeof(float));
+	memcpy(&out_msg[8], &az, sizeof(float));
+	
+	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
+#endif
 
 void imu_setup(void) {
 	icm42688p_init(&g_imu1.imu_sensor,
@@ -152,8 +160,10 @@ void imu_setup(void) {
 		accel_mode_LN, gyro_mode_LN);
 	subscribe(SCHEDULER_1KHZ, imu1_loop);
 	subscribe(SCHEDULER_500HZ, publish_accel_loop);
-	subscribe(SCHEDULER_10HZ, imu1_loop_10hz);
 	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_udpate);
 	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_udpate);
 	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
+#if ENABLE_IMU_MONITOR_LOG
+	subscribe(SCHEDULER_25HZ, loop_logger);
+#endif
 }
