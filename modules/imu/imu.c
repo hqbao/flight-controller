@@ -9,7 +9,7 @@
 #include <string.h>
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_IMU_MONITOR_LOG 1
+#define ENABLE_IMU_MONITOR_LOG 0
 
 #define GYRO_FREQ 1000
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds

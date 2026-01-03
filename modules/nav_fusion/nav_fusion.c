@@ -54,33 +54,41 @@ static vector3d_t g_pos = {0, 0, 0};
 static vector3d_t g_pos_bias = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 
-static double coef0 = 1.0;
-static double coef1 = 1.25;
-static double coef2 = 20;
-static double coef3 = 0.01;
-static double coef41 = 0.01;
-static double coef421 = 0.01;
-static double coef422 = 0.005;
-static double coef43 = 100;
-static double coef51 = 0.05;
-static double coef52 = 0.005;
-static double coef6 = 0.2;
-static double threshold1 = 300;
+/* Tuning Parameters */
+#define POS_CORRECTION_GAIN     15.0
+#define OPTFLOW_UNIT_SCALE      0.01
+#define VEL_XY_CORRECTION_GAIN  0.01
+#define VEL_Z_OPT_CORRECTION    0.01
+#define VEL_Z_BARO_CORRECTION   0.005
+#define ALT_DERIVATIVE_SCALE    100.0
+#define BARO_ALPHA_HIGH_ACCEL   0.05
+#define BARO_ALPHA_LOW_ACCEL    0.005
+#define OUTPUT_POS_SCALE        0.2
+#define ACCEL_Z_THRESHOLD       300.0
 
 static void state_control_update(uint8_t *data, size_t size) {
 	memcpy(&g_rc_state_ctl, data, size);
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
+	int32_t raw_dx, raw_dy, raw_z;
+
 	if (data[1] == 0) { // Downward
-		g_optflow_down.dx = (double)(*(int*)&data[4]) * coef3;
-		g_optflow_down.dy = (double)(*(int*)&data[8]) * coef3;
+		memcpy(&raw_dx, &data[4], sizeof(int32_t));
+		memcpy(&raw_dy, &data[8], sizeof(int32_t));
+		memcpy(&raw_z, &data[12], sizeof(int32_t));
+
+		g_optflow_down.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
+		g_optflow_down.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_down.dx;
 		g_optflow.dy = g_optflow_down.dy;
-		g_optflow.z  = (double)(*(int*)&data[12]);
+		g_optflow.z  = (double)raw_z;
 	} else if (data[1] == 1) { // Upward
-		g_optflow_up.dx = (double)(*(int*)&data[4]) * coef3;
-		g_optflow_up.dy = (double)(*(int*)&data[8]) * coef3;
+		memcpy(&raw_dx, &data[4], sizeof(int32_t));
+		memcpy(&raw_dy, &data[8], sizeof(int32_t));
+
+		g_optflow_up.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
+		g_optflow_up.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_up.dx;
 		g_optflow.dy = -g_optflow_up.dy;
 	}
@@ -88,8 +96,8 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
 
-	g_linear_veloc.x += coef41 * (g_optflow.dx - g_linear_veloc.x);
-	g_linear_veloc.y += coef41 * (g_optflow.dy - g_linear_veloc.y);
+	g_linear_veloc.x += VEL_XY_CORRECTION_GAIN * (g_optflow.dx - g_linear_veloc.x);
+	g_linear_veloc.y += VEL_XY_CORRECTION_GAIN * (g_optflow.dy - g_linear_veloc.y);
 
 	if (g_rc_state_ctl.mode == 0 && data[1] == 0) {
 		g_alt = g_optflow.z;
@@ -99,7 +107,7 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 
 		g_alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		g_linear_veloc.z += coef421 * (g_alt_d * coef43 - g_linear_veloc.z);
+		g_linear_veloc.z += VEL_Z_OPT_CORRECTION * (g_alt_d * ALT_DERIVATIVE_SCALE - g_linear_veloc.z);
 		g_pos_true.z += g_alt_d;
 
 		g_rc_state_ctl_prev.mode = g_rc_state_ctl.mode;
@@ -108,10 +116,10 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 
 static void air_pressure_update(uint8_t *data, size_t size) {
 	g_air_pressure_alt_raw = *(double*)data;
-	if (fabs(g_linear_accel.z) > threshold1) {
-		g_air_pressure_alt += coef51 * (g_air_pressure_alt_raw - g_air_pressure_alt);
+	if (fabs(g_linear_accel.z) > ACCEL_Z_THRESHOLD) {
+		g_air_pressure_alt += BARO_ALPHA_HIGH_ACCEL * (g_air_pressure_alt_raw - g_air_pressure_alt);
 	} else {
-		g_air_pressure_alt += coef52 * (g_air_pressure_alt_raw - g_air_pressure_alt);
+		g_air_pressure_alt += BARO_ALPHA_LOW_ACCEL * (g_air_pressure_alt_raw - g_air_pressure_alt);
 	}
 
 	if (g_rc_state_ctl.mode == 1) {
@@ -122,7 +130,7 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 
 		g_alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		g_linear_veloc.z += coef422 * (g_alt_d * coef43 - g_linear_veloc.z);
+		g_linear_veloc.z += VEL_Z_BARO_CORRECTION * (g_alt_d * ALT_DERIVATIVE_SCALE - g_linear_veloc.z);
 		g_pos_true.z += g_alt_d;
 
 		g_rc_state_ctl_prev.mode = g_rc_state_ctl.mode;
@@ -135,20 +143,20 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_accel.y = v.y * MAX_IMU_ACCEL;
 	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
 
-	g_linear_veloc.x += coef0 / ACCEL_FREQ * g_linear_accel.x;
-	g_linear_veloc.y += coef0 / ACCEL_FREQ * g_linear_accel.y;
-	g_linear_veloc.z += coef0 / ACCEL_FREQ * g_linear_accel.z;
+	g_linear_veloc.x += 1.0 / ACCEL_FREQ * g_linear_accel.x;
+	g_linear_veloc.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
+	g_linear_veloc.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
 
-	g_pos.x += coef1 / ACCEL_FREQ * g_linear_veloc.x;
-	g_pos.y += coef1 / ACCEL_FREQ * g_linear_veloc.y;
-	//g_pos.z += coef1 / NAV_FREQ * g_linear_veloc.z;
+	g_pos.x += 1.0 / ACCEL_FREQ * g_linear_veloc.x;
+	g_pos.y += 1.0 / ACCEL_FREQ * g_linear_veloc.y;
+	//g_pos.z += 1.0 / NAV_FREQ * g_linear_veloc.z;
 
-	g_pos.x += coef2 / ACCEL_FREQ * (g_pos_true.x - g_pos.x);
-	g_pos.y += coef2 / ACCEL_FREQ * (g_pos_true.y - g_pos.y);
-	g_pos.z += coef2 / ACCEL_FREQ * (g_pos_true.z - g_pos.z);
+	g_pos.x += POS_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos.x);
+	g_pos.y += POS_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos.y);
+	g_pos.z += POS_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos.z);
 
 	vector3d_sub(&g_pos_final, &g_pos, &g_pos_bias);
-	vector3d_scale(&g_pos_final, &g_pos_final, coef6);
+	vector3d_scale(&g_pos_final, &g_pos_final, OUTPUT_POS_SCALE);
 	g_pos_final.x = -g_pos_final.x;
 	g_pos_final.y = -g_pos_final.y;
 

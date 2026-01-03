@@ -82,14 +82,14 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 
 static void pid_setup(void) {
 	pid_control_init(&g_pid_nav_x);
-	pid_control_set_p_gain(&g_pid_nav_x, 2.0);
+	pid_control_set_p_gain(&g_pid_nav_x, 2.5);
 	pid_control_set_d_gain(&g_pid_nav_x, 0.2);
 	pid_control_set_i_gain(&g_pid_nav_x, 0, 1.0);
 	pid_control_set_smooth(&g_pid_nav_x, 1.0, 1.0, 1.0);
 	pid_control_set_o_limit(&g_pid_nav_x, 45);
 
 	pid_control_init(&g_pid_nav_y);
-	pid_control_set_p_gain(&g_pid_nav_y, 2.0);
+	pid_control_set_p_gain(&g_pid_nav_y, 2.5);
 	pid_control_set_d_gain(&g_pid_nav_y, 0.2);
 	pid_control_set_i_gain(&g_pid_nav_y, 0, 1.0);
 	pid_control_set_smooth(&g_pid_nav_y, 1.0, 1.0, 1.0);
