@@ -7,7 +7,11 @@
 #include <math.h>
 #include <macro.h>
 
-/* Macro to enable/disable sending MONITOR_DATA via logger */
+/* Macro to enable/disable sending MONITOR_DATA via logger 
+ * 0: Disable
+ * 1: Position
+ * 2: Velocity
+ */
 #define ENABLE_NAV_FUSION_MONITOR_LOG 0
 
 #define ACCEL_FREQ 500
@@ -55,8 +59,8 @@ static vector3d_t g_pos_bias = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 
 /* Tuning Parameters */
-#define POS_CORRECTION_GAIN     15.0
-#define OPTFLOW_UNIT_SCALE      0.01
+#define POS_CORRECTION_GAIN     20.0
+#define OPTFLOW_UNIT_SCALE      0.008
 #define VEL_XY_CORRECTION_GAIN  0.01
 #define VEL_Z_OPT_CORRECTION    0.01
 #define VEL_Z_BARO_CORRECTION   0.005
@@ -181,13 +185,13 @@ static void state_update(uint8_t *data, size_t size) {
 
 #if ENABLE_NAV_FUSION_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	int number1 = g_linear_veloc.x * 1000;
-	int number2 = g_linear_veloc.y * 1000;
-	int number3 = g_linear_veloc.z * 1000;
-	static uint8_t g_msg[16] = {0};
-	memcpy(&g_msg[0], &number1, 4);
-	memcpy(&g_msg[4], &number2, 4);
-	memcpy(&g_msg[8], &number3, 4);
+	static uint8_t g_msg[12] = {0};
+#if ENABLE_NAV_FUSION_MONITOR_LOG == 1
+	float val[3] = {(float)g_pos.x, (float)g_pos.y, (float)g_pos.z};
+#elif ENABLE_NAV_FUSION_MONITOR_LOG == 2
+	float val[3] = {(float)g_linear_veloc.x, (float)g_linear_veloc.y, (float)g_linear_veloc.z};
+#endif
+	memcpy(g_msg, val, 12);
 	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
 }
 #endif
