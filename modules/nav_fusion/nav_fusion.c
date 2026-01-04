@@ -60,7 +60,7 @@ static vector3d_t g_pos_final = {0, 0, 0};
 
 /* Tuning Parameters */
 #define POS_CORRECTION_GAIN     20.0
-#define OPTFLOW_UNIT_SCALE      0.01
+#define OPTFLOW_UNIT_SCALE      0.02
 #define VEL_XY_CORRECTION_GAIN  0.01
 #define VEL_Z_OPT_CORRECTION    0.01
 #define VEL_Z_BARO_CORRECTION   0.005
