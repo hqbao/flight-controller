@@ -324,7 +324,8 @@ static void calc_otpflw(void) {
   float clearity = 0;
   float dx = 0;
   float dy = 0;
-  optflow_calc(g_frame, &dx, &dy, &clearity);
+  float rotation = 0;
+  optflow_calc(g_frame, &dx, &dy, &rotation, &clearity);
 
   float coef = 1000.0 / (clearity + 0.00001);
   dx = dx * coef;

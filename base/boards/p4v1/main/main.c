@@ -295,7 +295,8 @@ static void calc_optflow(void*) {
     float clearity = 0;
     float dx = 0;
     float dy = 0;
-    optflow_calc(g_frame, &dx, &dy, &clearity);
+    float rotation = 0;
+    optflow_calc(g_frame, &dx, &dy, &rotation, &clearity);
 
     // static uint64_t t0 = 0;
     // uint64_t t1 = platform_time_ms();
