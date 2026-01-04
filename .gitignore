@@ -71,9 +71,9 @@ Debug/
 Release/
 *.ioc.bak
 .mxproject
-Drivers/STM32*_HAL_Driver/
-Drivers/CMSIS/
-Middlewares/
+# Drivers/STM32*_HAL_Driver/
+# Drivers/CMSIS/
+# Middlewares/
 
 # ----------------------------------------------------------------------
 # Python (Pytest / Scripts)
