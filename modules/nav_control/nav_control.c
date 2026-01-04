@@ -24,13 +24,14 @@
 #define NAV_Z_I 0.0
 #define NAV_Z_D 10.0
 #define NAV_Z_I_LIMIT 1.0
+#define NAV_XY_GAIN_TIME 1.0
 
 // Smoothing
 #define NAV_SMOOTH_INPUT 1.0
 #define NAV_SMOOTH_P_TERM 1.0
 #define NAV_SMOOTH_OUTPUT 1.0
-#define NAV_XY_GAIN_TIME 1.0
-#define NAV_Z_SMOOTH_OUTPUT 0.0025
+#define NAV_Z_SMOOTH_INPUT 0.005
+#define NAV_Z_SMOOTH_OUTPUT 0.005
 
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
@@ -41,7 +42,7 @@
 /* RC Control */
 #define RC_DEADBAND 0.1
 #define RC_XY_SCALE 0.5
-#define RC_Z_SCALE 5.0
+#define RC_Z_SCALE 6.0
 #define RC_YAW_SCALE -0.5
 
 /* Velocity Scaling */
@@ -136,7 +137,7 @@ static void pid_setup(void) {
 	pid_control_set_d_gain(&g_pid_nav_z, NAV_Z_D);
 	pid_control_set_i_gain(&g_pid_nav_z, NAV_Z_I, 1.0);
 	pid_control_set_i_limit(&g_pid_nav_z, NAV_Z_I_LIMIT);
-	pid_control_set_smooth(&g_pid_nav_z, NAV_SMOOTH_INPUT, NAV_SMOOTH_P_TERM, NAV_Z_SMOOTH_OUTPUT);
+	pid_control_set_smooth(&g_pid_nav_z, NAV_Z_SMOOTH_INPUT, NAV_SMOOTH_P_TERM, NAV_Z_SMOOTH_OUTPUT);
 }
 
 static void nav_control_loop(void) {
