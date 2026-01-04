@@ -31,10 +31,11 @@
 *.gch
 *.pch
 *.lib
-!libs/**/*.a
 *.a
 *.la
 *.lo
+# Exception: allow prebuilt libraries in libs/
+!libs/**/*.a
 *.dll
 *.so
 *.dylib
