@@ -322,17 +322,17 @@ static void calc_otpflw(void) {
   g_frame_captured = 0;
 
   float clearity = 0;
-  float dx = 0;
-  float dy = 0;
-  optflow_calc(g_frame, &dx, &dy, &clearity);
+  float dx_mm = 0;
+  float dy_mm = 0;
+  float rotation = 0;
+  int mode = 0;
+  optflow_calc(g_frame, &dx_mm, &dy_mm, &rotation, &clearity, &mode);
 
-  float coef = 1000.0 / (clearity + 0.00001);
-  dx = dx * coef;
-  dy = -dy * coef;
-  dx = LIMIT(dx, -100, 100);
-  dy = LIMIT(dy, -100, 100);
-  int dx_int = dx;
-  int dy_int = dy;
+  // Output is in mm/frame
+  dx_mm = LIMIT(dx_mm, -100, 100);
+  dy_mm = LIMIT(-dy_mm, -100, 100);
+  int dx_int = dx_mm;
+  int dy_int = dy_mm;
 
   static int64_t t_prev = 0;
   int64_t t1 = esp_timer_get_time();
@@ -350,7 +350,7 @@ void core1() {
   init_cam();
 
   // Init optical flow
-  optflow_init(WIDTH, HEIGHT);
+  optflow_init(WIDTH, HEIGHT, 1);  // 1=hybrid mode, 0=dense only
 
   while (1) {
     frame_timer(NULL);

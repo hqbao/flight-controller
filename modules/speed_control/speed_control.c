@@ -6,8 +6,9 @@
 #include <macro.h>
 
 #define SPEED_CONTROL_PROTOCOL 1 // 1: DSHOT, 2: PWM
+#define MAX_MOTORS 8
 
-static int g_output_speed[4] = {0, 0, 0, 0};
+static int g_output_speed[MAX_MOTORS] = {0};
 
 static void sc_setup(uint8_t *data, size_t size) {
 #if SPEED_CONTROL_PROTOCOL == 1
@@ -32,6 +33,9 @@ static void sc_setup(uint8_t *data, size_t size) {
 }
 
 static void sc_update(uint8_t *data, size_t size) {
+    if (size > sizeof(g_output_speed)) {
+        size = sizeof(g_output_speed);
+    }
 	memcpy(g_output_speed, data, size);
 #if SPEED_CONTROL_PROTOCOL == 1
 	platform_dshot_send(DSHOT_PORT1, g_output_speed[0]);

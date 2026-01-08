@@ -5,7 +5,6 @@
 #include <compass/compass.h>
 #include <attitude_control/attitude_control.h>
 #include <remote_control/remote_control.h>
-#include <imu_calibrator/imu_calibrator.h>
 #include <nav_fusion/nav_fusion.h>
 #include <nav_control/nav_control.h>
 #include <optflow/optflow.h>

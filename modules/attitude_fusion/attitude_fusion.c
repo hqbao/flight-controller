@@ -15,6 +15,8 @@
 #define RAD2DEG 57.2957795131
 #define DT (1.0 / GYRO_FREQ)
 #define DEG2RAD_BY_DT (DEG2RAD * DT)
+#define FUSION_GAIN_KP 4.0
+#define FUSION_GAIN_KI 0.125
 
 typedef struct {
 	double roll;
@@ -37,9 +39,14 @@ static vector3d_t g_imu3_accel = {0, 0, MAX_IMU_ACCEL};
 static angle3d_t g_angular_state = {0, 0, 0};
 
 static void gyro_update(uint8_t *data, size_t size) {
-	float gx = -(*(float*)&data[0]);
-	float gy = -(*(float*)&data[4]);
-	float gz = (*(float*)&data[8]);
+    float raw_gx, raw_gy, raw_gz;
+    memcpy(&raw_gx, &data[0], sizeof(float));
+    memcpy(&raw_gy, &data[4], sizeof(float));
+    memcpy(&raw_gz, &data[8], sizeof(float));
+
+	float gx = -raw_gx;
+	float gy = -raw_gy;
+	float gz = raw_gz;
 
 	vector3d_init(&g_imu1_gyro, gx, gy, gz);
 	fusion1_predict(&g_f11,
@@ -67,9 +74,14 @@ static void gyro_update(uint8_t *data, size_t size) {
 }
 
 static void accel_update(uint8_t *data, size_t size) {
-	float ax = -(*(float*)&data[4]);
-	float ay = -(*(float*)&data[0]);
-	float az = (*(float*)&data[8]);
+    float raw_ax, raw_ay, raw_az;
+    memcpy(&raw_ax, &data[0], sizeof(float));
+    memcpy(&raw_ay, &data[4], sizeof(float));
+    memcpy(&raw_az, &data[8], sizeof(float));
+
+	float ax = -raw_ay; // Note: Swapped indices in original code: ax = -data[4] (which is y), ay = -data[0] (which is x)
+	float ay = -raw_ax;
+	float az = raw_az;
 
 	vector3d_init(&g_imu1_accel, ax, ay, az);
 	fusion1_update(&g_f11, g_imu1_accel.x, g_imu1_accel.y, g_imu1_accel.z);
@@ -109,15 +121,15 @@ static void loop_logger(uint8_t *data, size_t size) {
 #endif
 
 static void init(void) {
-	fusion1_init(&g_f11, 4.0, 0.5, ACCEL_FREQ);
+	fusion1_init(&g_f11, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
 	g_f11.accel_scale = MAX_IMU_ACCEL;
 	//g_f11.no_correction = 1;
 
-	fusion1_init(&g_f12, 4.0, 0.5, ACCEL_FREQ);
+	fusion1_init(&g_f12, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
 	fusion1_predict(&g_f12, M_PI_2, 0, 0);
 	//g_f12.no_correction = 1;
 
-	fusion1_init(&g_f13, 4.0, 0.5, ACCEL_FREQ);
+	fusion1_init(&g_f13, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
 	fusion1_predict(&g_f13, 0, -M_PI_2, 0);
 	//g_f13.no_correction = 1;
 }

@@ -44,4 +44,7 @@ void quat_rotate_vector(vector3d_t* result, const quaternion_t* q, const vector3
 // Measurement function h(q): Predicts accelerometer reading from quaternion state
 void quat_to_accel(vector3d_t *a, const quaternion_t *q, float g);
 
+// Computes the rotation quaternion from vector u to vector v
+void quat_from_two_vectors(quaternion_t* q, const vector3d_t* u, const vector3d_t* v);
+
 #endif

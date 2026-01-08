@@ -65,8 +65,6 @@ flight-controller/
 │   ├── state_detector/        # Flight state machine
 │   ├── fault_handler/         # Safety and error handling
 │   ├── logger/                # UART telemetry framing
-│   ├── imu_calibrator/        # IMU bias calibration
-│   ├── factory_calibration/   # One-time calibration utilities
 │   └── local_storage/         # Persistent configuration storage
 │
 └── pytest/                    # Python3 visualization and testing tools

@@ -12,6 +12,14 @@
 #define ALLOWED_LANDING_RANGE 500
 #define TOOK_OFF_RANGE 100
 
+#define RC_STATE_DISARMED 0
+#define RC_STATE_ARMED 1
+#define STICK_MIN -90
+#define STICK_MAX 90
+#define TAKEOFF_THROTTLE 5
+#define OPTFLOW_TYPE_DOWNWARD 0
+#define OPTFLOW_RANGE_OFFSET 12
+
 typedef enum {
 	DISARMED = 0,
 	ARMED,
@@ -64,8 +72,10 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	if (data[1] == 0) { // Downward
-		g_downward_range = (double)(*(int*)&data[12]);
+	if (data[1] == OPTFLOW_TYPE_DOWNWARD) { // Downward
+        int32_t range;
+        memcpy(&range, &data[OPTFLOW_RANGE_OFFSET], sizeof(int32_t));
+		g_downward_range = (double)range;
 	}
 }
 
@@ -75,21 +85,21 @@ static void on_imu_calibration_result(uint8_t *data, size_t size) {
 }
 
 static void loop_100hz(uint8_t *data, size_t size) {
-	if (g_rc_state_ctl.state == 0) {
+	if (g_rc_state_ctl.state == RC_STATE_DISARMED) {
 		g_state = DISARMED;
 	}
 
-	if (g_rc_state_ctl.state == 1 && g_rc_state_ctl_prev.state == 0) {
+	if (g_rc_state_ctl.state == RC_STATE_ARMED && g_rc_state_ctl_prev.state == RC_STATE_DISARMED) {
 		if (g_imu_calibrated == 1) {
 			g_state = ARMED;
 		}
 	}
 
 	if (g_state == ARMED) {
-		char stick1_most_left 	= g_rc_att_ctl.yaw == -90;
-		char stich1_most_bottom = g_rc_att_ctl.alt == -90;
-		char stick2_most_right 	= g_rc_att_ctl.roll == 90;
-		char stich2_most_bottom = g_rc_att_ctl.pitch == -90;
+		char stick1_most_left 	= g_rc_att_ctl.yaw == STICK_MIN;
+		char stich1_most_bottom = g_rc_att_ctl.alt == STICK_MIN;
+		char stick2_most_right 	= g_rc_att_ctl.roll == STICK_MAX;
+		char stich2_most_bottom = g_rc_att_ctl.pitch == STICK_MIN;
 		if (stick1_most_left && stich1_most_bottom &&
 				stick2_most_right && stich2_most_bottom) {
 			g_state = READY;
@@ -97,7 +107,7 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	}
 
 	if (g_state == READY) {
-		if (g_rc_att_ctl.alt > 5) {
+		if (g_rc_att_ctl.alt > TAKEOFF_THROTTLE) {
 			g_state = g_rc_state_ctl.state == 1 ? TAKING_OFF : TESTING;
 		}
 	}

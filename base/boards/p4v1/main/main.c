@@ -293,9 +293,11 @@ static void calc_optflow(void*) {
     g_frame_captured = 0;
 
     float clearity = 0;
-    float dx = 0;
-    float dy = 0;
-    optflow_calc(g_frame, &dx, &dy, &clearity);
+    float dx_mm = 0;
+    float dy_mm = 0;
+    float rotation = 0;
+    int mode = 0;
+    optflow_calc(g_frame, &dx_mm, &dy_mm, &rotation, &clearity, &mode);
 
     // static uint64_t t0 = 0;
     // uint64_t t1 = platform_time_ms();
@@ -304,8 +306,8 @@ static void calc_optflow(void*) {
     // int fps = (double)1000000 / dt;
     // ESP_LOGI(TAG, "dx: %d\t\tdy: %d\t\tclear: %d\tFPS: %d", (int)(dx*1000), (int)(dy*1000), (int)(clearity*1000), fps);
     
-    g_dx = (int)(dx * 100);
-    g_dy = (int)(dy * 100);
+    g_dx = (int)(dx_mm);
+    g_dy = (int)(dy_mm);
 }
 
 static void capture_video(void*) {
@@ -324,7 +326,7 @@ static void state_vector_update(uint8_t *data, size_t size) {
 
 void core1() {
     // Initialize optical flow
-    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT);
+    optflow_init(OPTFLOW_WIDTH, OPTFLOW_HEIGHT, 1);  // 1=hybrid mode, 0=dense only
 
     // Initialize display
     init_display();
