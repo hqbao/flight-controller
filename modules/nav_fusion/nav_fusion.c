@@ -60,6 +60,8 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define POS_Z_INTEGRATION_GAIN      1.0
 #define POS_XY_TRUE_CORRECTION_GAIN 1.0
 #define POS_Z_TRUE_CORRECTION_GAIN  1.0
+#define POS_XY_EST1_INTEGRATION_GAIN 0.0
+#define POS_Z_EST1_INTEGRATION_GAIN  1.0
 #define OPTFLOW_UNIT_SCALE          0.02
 #define ALT_DERIVATIVE_SCALE    100.0
 #define BARO_ALPHA_HIGH_ACCEL   0.05
@@ -74,31 +76,28 @@ static void state_control_update(uint8_t *data, size_t size) {
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	int32_t raw_dx, raw_dy, raw_z;
+	memcpy(&raw_dx, &data[4], sizeof(int32_t));
+	memcpy(&raw_dy, &data[8], sizeof(int32_t));
+	memcpy(&raw_z, &data[12], sizeof(int32_t));
 
 	if (data[1] == OPTFLOW_DOWNWARD) {
-		memcpy(&raw_dx, &data[4], sizeof(int32_t));
-		memcpy(&raw_dy, &data[8], sizeof(int32_t));
-		memcpy(&raw_z, &data[12], sizeof(int32_t));
-
 		g_optflow_down.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
 		g_optflow_down.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_down.dx;
 		g_optflow.dy = g_optflow_down.dy;
-		g_optflow.z  = (double)raw_z;
+		if (raw_z > 0) g_optflow.z  = (double)raw_z;
 	} else if (data[1] == OPTFLOW_UPWARD) {
-		memcpy(&raw_dx, &data[4], sizeof(int32_t));
-		memcpy(&raw_dy, &data[8], sizeof(int32_t));
-
 		g_optflow_up.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
 		g_optflow_up.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_up.dx;
 		g_optflow.dy = -g_optflow_up.dy;
+		if (raw_z > 0) g_optflow.z  = (double)raw_z;
 	}
 
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
 
-	if (g_rc_state_ctl.mode == 0 && data[1] == OPTFLOW_DOWNWARD) {
+	if (g_rc_state_ctl.mode == 0) {
 		g_alt = g_optflow.z;
 		if (g_rc_state_ctl_prev.mode != 0) {
 			g_alt_prev = g_alt;
@@ -158,6 +157,10 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_pos_est2_prev.x = g_pos_est2.x;
 	g_pos_est2_prev.y = g_pos_est2.y;
 	g_pos_est2_prev.z = g_pos_est2.z;
+
+	g_pos_est1.x += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.x;
+	g_pos_est1.y += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.y;
+	g_pos_est1.z += POS_Z_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.z;
 
 	g_pos_est1.x += POS_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est1.x);
 	g_pos_est1.y += POS_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est1.y);

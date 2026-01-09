@@ -15,7 +15,7 @@
 // Navigation XY (Position)
 #define NAV_XY_P 0.2
 #define NAV_XY_I 0.0
-#define NAV_XY_D 0.01
+#define NAV_XY_D 0.0
 #define NAV_XY_GAIN_TIME 1.0
 #define NAV_XY_I_LIMIT 5.0
 
@@ -30,9 +30,9 @@
 #define NAV_XY_SMOOTH_INPUT 1.0
 #define NAV_XY_SMOOTH_P_TERM 1.0
 #define NAV_XY_SMOOTH_OUTPUT 1.0
-#define NAV_Z_SMOOTH_INPUT 0.025
+#define NAV_Z_SMOOTH_INPUT 0.005
 #define NAV_Z_SMOOTH_P_TERM 1.0
-#define NAV_Z_SMOOTH_OUTPUT 0.0025
+#define NAV_Z_SMOOTH_OUTPUT 0.005
 
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
@@ -42,14 +42,14 @@
 
 /* RC Control */
 #define RC_DEADBAND 0.1
-#define RC_XY_SCALE 2.5
-#define RC_Z_SCALE 30.0
+#define RC_XY_SCALE 5.0
+#define RC_Z_SCALE 20.0
 #define RC_YAW_SCALE -0.5
 
 /* Velocity Scaling */
-#define NAV_VELOC_X_SCALE 1.25
-#define NAV_VELOC_Y_SCALE 1.25
-#define NAV_VELOC_Z_SCALE 1.0
+#define NAV_VELOC_X_SCALE 1.2
+#define NAV_VELOC_Y_SCALE 1.2
+#define NAV_VELOC_Z_SCALE 2.0
 
 typedef enum {
 	DISARMED = 0,
