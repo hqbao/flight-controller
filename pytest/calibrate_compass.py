@@ -141,7 +141,6 @@ def calibrate_magnetometer(data):
     
     return center, S
 
-# --- GUI ---
 def main():
     global is_collecting, raw_data_points, calibration_result, last_calibration_time
     
@@ -150,18 +149,37 @@ def main():
     show_calib = True
     run_calibration = True
     
+    # Start serial reading thread
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
     
+    # Setup Figure and 3D Axis
     fig = plt.figure(figsize=(14, 8))
     ax = fig.add_subplot(111, projection='3d')
     ax.set_box_aspect((1, 1, 1))
-    plt.subplots_adjust(bottom=0.25, right=0.75) # Increased bottom margin for buttons
+    plt.subplots_adjust(bottom=0.25, right=0.75) # Adjust margins for UI elements
     
+    # Initialize scatter plots
     scat_raw = ax.scatter([], [], [], c='r', marker='o', s=5, label='Raw Data')
+    scat_last = ax.scatter([], [], [], c='k', marker='o', s=30, label='Last Point', depthshade=False)
     scat_corr = ax.scatter([], [], [], c='g', marker='o', s=5, label='Corrected Data')
     
-    # Text for results
+    # Helper to calculate and format mag field info
+    def get_mag_info_text(B, S, last_pt_raw=None):
+        B_str = f"[{B[0]:.2f}, {B[1]:.2f}, {B[2]:.2f}]"
+        S_str = "\n".join([f"[{r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}]" for r in S])
+        
+        info = f"Points: {len(raw_data_points)}\n\nHard Iron Bias B:\n{B_str}\n\nSoft Iron Matrix S:\n{S_str}"
+        
+        if last_pt_raw is not None:
+             # Calculate field strength (magnitude) of the last raw point
+            field_strength = np.linalg.norm(last_pt_raw)
+            info += f"\n\nLast Raw Mag:\n[{last_pt_raw[0]:.1f}, {last_pt_raw[1]:.1f}, {last_pt_raw[2]:.1f}]"
+            info += f"\nField Str: {field_strength:.1f} uT"
+
+        return info
+
+    # Info Text Area
     text_ax = plt.axes([0.76, 0.2, 0.23, 0.6])
     text_ax.axis('off')
     instructions = (
@@ -178,23 +196,70 @@ def main():
     )
     info_text = text_ax.text(0, 1, instructions, fontsize=9, va='top', fontfamily='monospace')
     
+    # --- UI Callbacks ---
+    def toggle_raw(event):
+        nonlocal show_raw
+        show_raw = not show_raw
+        scat_raw.set_visible(show_raw)
+        scat_last.set_visible(show_raw)
+        btn_raw.label.set_text('Hide Raw' if show_raw else 'Show Raw')
+        plt.draw()
+
+    def toggle_calib(event):
+        nonlocal show_calib
+        show_calib = not show_calib
+        scat_corr.set_visible(show_calib)
+        btn_calib.label.set_text('Hide Calib' if show_calib else 'Show Calib')
+        plt.draw()
+
+    def toggle_algo(event):
+        nonlocal run_calibration
+        run_calibration = not run_calibration
+        btn_algo.label.set_text('Stop Algo' if run_calibration else 'Run Algo')
+
+    def toggle_stream(event):
+        global is_collecting
+        is_collecting = not is_collecting
+        btn_stream.label.set_text('Stop Stream' if is_collecting else 'Start Stream')
+
+    def reset_calibration(event):
+        global calibration_result
+        calibration_result = (np.zeros(3), np.eye(3))
+        # Update text immediately
+        B, S = calibration_result
+        last_pt = raw_data_points[-1] if raw_data_points else None
+        last_pt_np = np.array(last_pt) if last_pt else None
+        
+        info_text.set_text(get_mag_info_text(B, S, last_pt_np))
+        
+        # Clear corrected plot if we have data
+        if len(raw_data_points) > 0:
+            scat_corr._offsets3d = ([], [], [])
+            plt.draw()
+        print("Calibration parameters reset.")
+
+    def clear_points(event):
+        global raw_data_points
+        raw_data_points = []
+        scat_raw._offsets3d = ([], [], [])
+        scat_last._offsets3d = ([], [], [])
+        scat_corr._offsets3d = ([], [], [])
+        print("Points cleared.")
+        plt.draw()
+
     # --- Button Layout ---
-    # Row 1: Views (Top, Bottom, Front, Back, Left, Right)
-    # Row 2: Toggles (Raw, Calib, Algo, Stream)
-    # Row 3: Actions (Reset B/S, Clear Data)
+    start_x = 0.05
+    width = 0.06
+    gap = 0.01
     
     # Row 1: Views
+    row1_y = 0.13
     views = {
         'Top': (90, -90), 'Bottom': (-90, -90),
         'Front': (0, -90), 'Back': (0, 90),
         'Left': (0, 180), 'Right': (0, 0)
     }
     view_btns = []
-    start_x = 0.05
-    width = 0.06
-    gap = 0.01
-    row1_y = 0.13
-    
     for i, (label, (elev, azim)) in enumerate(views.items()):
         b_ax = plt.axes([start_x + i*(width+gap), row1_y, width, 0.05])
         b = Button(b_ax, label)
@@ -203,87 +268,39 @@ def main():
 
     # Row 2: Toggles
     row2_y = 0.07
-    
-    # Toggle Raw
     btn_raw_ax = plt.axes([start_x, row2_y, width*1.5, 0.05])
     btn_raw = Button(btn_raw_ax, 'Hide Raw')
-    def toggle_raw(event):
-        nonlocal show_raw
-        show_raw = not show_raw
-        scat_raw.set_visible(show_raw)
-        btn_raw.label.set_text('Hide Raw' if show_raw else 'Show Raw')
-        plt.draw()
     btn_raw.on_clicked(toggle_raw)
     
-    # Toggle Calib
     btn_calib_ax = plt.axes([start_x + width*1.5 + gap, row2_y, width*1.5, 0.05])
     btn_calib = Button(btn_calib_ax, 'Hide Calib')
-    def toggle_calib(event):
-        nonlocal show_calib
-        show_calib = not show_calib
-        scat_corr.set_visible(show_calib)
-        btn_calib.label.set_text('Hide Calib' if show_calib else 'Show Calib')
-        plt.draw()
     btn_calib.on_clicked(toggle_calib)
     
-    # Toggle Algo
     btn_algo_ax = plt.axes([start_x + (width*1.5 + gap)*2, row2_y, width*1.5, 0.05])
     btn_algo = Button(btn_algo_ax, 'Stop Algo')
-    def toggle_algo(event):
-        nonlocal run_calibration
-        run_calibration = not run_calibration
-        btn_algo.label.set_text('Stop Algo' if run_calibration else 'Run Algo')
     btn_algo.on_clicked(toggle_algo)
     
-    # Toggle Stream (Collection)
     btn_stream_ax = plt.axes([start_x + (width*1.5 + gap)*3, row2_y, width*1.5, 0.05])
-    btn_stream = Button(btn_stream_ax, 'Start Stream') # Default off
-    def toggle_stream(event):
-        global is_collecting
-        is_collecting = not is_collecting
-        btn_stream.label.set_text('Stop Stream' if is_collecting else 'Start Stream')
+    btn_stream = Button(btn_stream_ax, 'Start Stream')
     btn_stream.on_clicked(toggle_stream)
 
     # Row 3: Actions
     row3_y = 0.01
-    
-    # Reset B/S
     btn_reset_ax = plt.axes([start_x, row3_y, width*2, 0.05])
     btn_reset = Button(btn_reset_ax, 'Reset B & S')
-    def reset_calibration(event):
-        global calibration_result
-        calibration_result = (np.zeros(3), np.eye(3))
-        B, S = calibration_result
-        
-        B_str = f"[{B[0]:.2f}, {B[1]:.2f}, {B[2]:.2f}]"
-        S_str = "\n".join([f"[{r[0]:.2f}, {r[1]:.2f}, {r[2]:.2f}]" for r in S])
-        info_text.set_text(f"Points: {len(raw_data_points)}\n\nHard Iron Bias B:\n{B_str}\n\nSoft Iron Matrix S:\n{S_str}")
-        
-        # Reset corrected plot to raw (if visible)
-        if len(raw_data_points) > 0:
-            data_np = np.array(raw_data_points)
-            scat_corr._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
-            plt.draw()
-        print("Calibration parameters reset.")
     btn_reset.on_clicked(reset_calibration)
     
-    # Clear Data
     btn_clear_ax = plt.axes([start_x + width*2 + gap, row3_y, width*2, 0.05])
     btn_clear = Button(btn_clear_ax, 'Clear All Points')
-    def clear_points(event):
-        global raw_data_points
-        raw_data_points = []
-        scat_raw._offsets3d = ([], [], [])
-        scat_corr._offsets3d = ([], [], [])
-        print("Points cleared.")
-        plt.draw()
     btn_clear.on_clicked(clear_points)
     
+    # Setup Axis Labels
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.legend()
     
+    # --- Main Loop ---
     while True:
         points_added = False
         while not data_queue.empty():
@@ -294,7 +311,21 @@ def main():
         
         if points_added:
             data_np = np.array(raw_data_points)
+            
+            # Update Raw Plot
             scat_raw._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
+
+            # Update Last Point Plot
+            if len(data_np) > 0:
+                last_pt = data_np[-1]
+                scat_last._offsets3d = ([last_pt[0]], [last_pt[1]], [last_pt[2]])
+            
+            # Dynamic Axis Scaling
+
+
+            if len(data_np) > 0:
+                last_pt = data_np[-1]
+                scat_last._offsets3d = ([last_pt[0]], [last_pt[1]], [last_pt[2]])
             
             # Dynamic scale
             max_val = np.max(np.abs(data_np))
