@@ -2,8 +2,8 @@
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
-#include <stdbool.h>
 #include <math.h>
+#include <vector3d.h>
 #include "bmm350.h"
 
 /* 
@@ -53,31 +53,23 @@
  * 1: Calibrated
  * 2: Raw
  */
-#define ENABLE_COMPASS_MONITOR_LOG 0
-
-typedef struct {
-	double x;
-	double y;
-	double z;
-} compass_data_t;
+#define ENABLE_COMPASS_MONITOR_LOG 1
 
 struct bmm350_dev BMMdev = {0};
 struct bmm350_mag_temp_data mag_temp_data;
 
 /* Static variables for compass values */
-static float g_compass_x = 0.0f;
-static float g_compass_y = 0.0f;
-static float g_compass_z = 0.0f;
-static float g_compass_raw_x = 0.0f;
-static float g_compass_raw_y = 0.0f;
-static float g_compass_raw_z = 0.0f;
+static vector3d_t g_compass_cal = {0};
+static vector3d_t g_compass_raw = {0};
+static vector3d_t g_attitude_vector = {0};
+static double g_inclination_deg = 0.0;
 
 /* Calibration parameters: B (Offset) and S (Soft Iron / Scale) */
-static float g_mag_offset[3] = {-26.13f, -25.83f, 15.53f};
-static float g_mag_scale[3][3] = {
-	{0.02f, 0.0f, 0.0f},
-	{0.0f, 0.02f, 0.0f},
-	{0.0f, 0.0f, 0.02f}
+static double g_mag_offset[3] = {-26.13, -25.83, 15.53};
+static double g_mag_scale[3][3] = {
+	{0.02, 0.0, 0.0},
+	{0.0, 0.02, 0.0},
+	{0.0, 0.0, 0.02}
 };
 
 BMM350_INTF_RET_TYPE i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
@@ -105,52 +97,66 @@ void delay_us(uint32_t period, void *intf_ptr) {
 	platform_delay(period/1000);
 }
 
+static void attitude_update(uint8_t *data, size_t size) {
+	if (size == sizeof(vector3d_t)) {
+		memcpy(&g_attitude_vector, data, sizeof(vector3d_t));
+	}
+}
+
 static void loop_25hz(uint8_t *data, size_t size) {
 	bmm350_get_compensated_mag_xyz_temp_data(&mag_temp_data, &BMMdev);
 	
-	float x_raw = (float)mag_temp_data.x;
-	float y_raw = (float)mag_temp_data.y;
-	float z_raw = (float)mag_temp_data.z;
-
-	g_compass_raw_x = x_raw;
-	g_compass_raw_y = y_raw;
-	g_compass_raw_z = z_raw;
+	g_compass_raw.x = (double)mag_temp_data.x;
+	g_compass_raw.y = (double)mag_temp_data.y;
+	g_compass_raw.z = (double)mag_temp_data.z;
 
 	/* Apply Calibration: V_cal = S * (V_raw - B) */
-	float x_off = x_raw - g_mag_offset[0];
-	float y_off = y_raw - g_mag_offset[1];
-	float z_off = z_raw - g_mag_offset[2];
+	double x_off = g_compass_raw.x - g_mag_offset[0];
+	double y_off = g_compass_raw.y - g_mag_offset[1];
+	double z_off = g_compass_raw.z - g_mag_offset[2];
 
-	float x_cal = g_mag_scale[0][0] * x_off + g_mag_scale[0][1] * y_off + g_mag_scale[0][2] * z_off;
-	float y_cal = g_mag_scale[1][0] * x_off + g_mag_scale[1][1] * y_off + g_mag_scale[1][2] * z_off;
-	float z_cal = g_mag_scale[2][0] * x_off + g_mag_scale[2][1] * y_off + g_mag_scale[2][2] * z_off;
+	double x_cal = g_mag_scale[0][0] * x_off + g_mag_scale[0][1] * y_off + g_mag_scale[0][2] * z_off;
+	double y_cal = g_mag_scale[1][0] * x_off + g_mag_scale[1][1] * y_off + g_mag_scale[1][2] * z_off;
+	double z_cal = g_mag_scale[2][0] * x_off + g_mag_scale[2][1] * y_off + g_mag_scale[2][2] * z_off;
+
+	/* Normalize to ensure unit vector */
+	vector3d_t mag_vec = { .x = x_cal, .y = y_cal, .z = z_cal };
+	vector3d_normalize(&mag_vec, &mag_vec);
 
 	/* Store values in global variables */
-	g_compass_x = x_cal;
-	g_compass_y = y_cal;
-	g_compass_z = z_cal;
+	memcpy(&g_compass_cal, &mag_vec, sizeof(vector3d_t));
+	
+	/* Compute Inclination */
+	/* Dot product of Gravity vector (Attitude) and Compass vector */
+	double dot = vector3d_dot(&g_attitude_vector, &mag_vec);
+	/* Inclination = 90 - Angle(Gravity, Mag) = 90 - acos(dot) = asin(dot) */
+	g_inclination_deg = asin(dot) * 57.2957795131; // RAD_TO_DEG
 	
 	/* Publish values */
-	compass_data_t compass_data = {
-		.x = x_cal,
-		.y = y_cal,
-		.z = z_cal
-	};
-	publish(SENSOR_COMPASS, (uint8_t*)&compass_data, sizeof(compass_data_t));
+	publish(SENSOR_COMPASS, (uint8_t*)&mag_vec, sizeof(vector3d_t));
 }
 
 #if ENABLE_COMPASS_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Send compass data as MONITOR_DATA */
 	uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
+	
 #if ENABLE_COMPASS_MONITOR_LOG == 2
-	memcpy(&out_msg[0], &g_compass_raw_x, sizeof(float));
-	memcpy(&out_msg[4], &g_compass_raw_y, sizeof(float));
-	memcpy(&out_msg[8], &g_compass_raw_z, sizeof(float));
+	float raw_x = (float)g_compass_raw.x;
+	float raw_y = (float)g_compass_raw.y;
+	float raw_z = (float)g_compass_raw.z;
+
+	memcpy(&out_msg[0], &raw_x, sizeof(float));
+	memcpy(&out_msg[4], &raw_y, sizeof(float));
+	memcpy(&out_msg[8], &raw_z, sizeof(float));
 #else
-	memcpy(&out_msg[0], &g_compass_x, sizeof(float));
-	memcpy(&out_msg[4], &g_compass_y, sizeof(float));
-	memcpy(&out_msg[8], &g_compass_z, sizeof(float));
+	float cal_x = (float)g_compass_cal.x;
+	float cal_y = (float)g_compass_cal.y;
+	float cal_z = (float)g_compass_cal.z;
+
+	memcpy(&out_msg[0], &cal_x, sizeof(float));
+	memcpy(&out_msg[4], &cal_y, sizeof(float));
+	memcpy(&out_msg[8], &cal_z, sizeof(float));
 #endif
 	
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
@@ -170,6 +176,7 @@ void compass_setup(void) {
 	bmm350_set_powermode(BMM350_NORMAL_MODE, &BMMdev);
 
 	subscribe(SCHEDULER_25HZ, loop_25hz);
+	subscribe(SENSOR_ATTITUDE_VECTOR, attitude_update);
 #if ENABLE_COMPASS_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
