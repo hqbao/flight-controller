@@ -304,8 +304,8 @@ static void handle_protocol_msg(uart_rx_t *msg) {
 		// DB protocol message
 		platform_receive_db_message(msg->buffer, msg->payload_size);
 	} else if (msg->protocol == PROTOCOL_UBX) {
-		// UBX protocol message
-		platform_receive_ubx_message(msg->buffer, msg->payload_size);
+		// UBX protocol message: pass total buffer size (class + id + length + payload + checksum)
+		platform_receive_ubx_message(msg->buffer, msg->payload_size + 6);
 	}
 }
 

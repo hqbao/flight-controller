@@ -8,6 +8,7 @@
 #include <nav_fusion/nav_fusion.h>
 #include <nav_control/nav_control.h>
 #include <optflow/optflow.h>
+#include <gps/gps.h>
 #include <state_detector/state_detector.h>
 #include <speed_control/speed_control.h>
 #include <logger/logger.h>
@@ -19,13 +20,14 @@ void platform_setup(void) {
 	speed_control_setup();
 	imu_setup();
 	air_pressure_setup();
-	//compass_setup();
+	compass_setup();
 	attitude_fusion_setup();
 	attitude_control_setup();
 	nav_fusion_setup();
 	nav_control_setup();
 	state_detector_setup();
 	optflow_setup();
+	gps_setup();
 	remote_control_setup();
 	logger_setup();
 }
