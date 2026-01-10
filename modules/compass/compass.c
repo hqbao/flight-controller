@@ -53,7 +53,7 @@
  * 1: Calibrated
  * 2: Raw
  */
-#define ENABLE_COMPASS_MONITOR_LOG 1
+#define ENABLE_COMPASS_MONITOR_LOG 0
 
 struct bmm350_dev BMMdev = {0};
 struct bmm350_mag_temp_data mag_temp_data;
@@ -61,8 +61,6 @@ struct bmm350_mag_temp_data mag_temp_data;
 /* Static variables for compass values */
 static vector3d_t g_compass_cal = {0};
 static vector3d_t g_compass_raw = {0};
-static vector3d_t g_attitude_vector = {0};
-static double g_inclination_deg = 0.0;
 
 /* Calibration parameters: B (Offset) and S (Soft Iron / Scale) */
 static double g_mag_offset[3] = {-26.13, -25.83, 15.53};
@@ -97,12 +95,6 @@ void delay_us(uint32_t period, void *intf_ptr) {
 	platform_delay(period/1000);
 }
 
-static void attitude_update(uint8_t *data, size_t size) {
-	if (size == sizeof(vector3d_t)) {
-		memcpy(&g_attitude_vector, data, sizeof(vector3d_t));
-	}
-}
-
 static void loop_25hz(uint8_t *data, size_t size) {
 	bmm350_get_compensated_mag_xyz_temp_data(&mag_temp_data, &BMMdev);
 	
@@ -125,12 +117,6 @@ static void loop_25hz(uint8_t *data, size_t size) {
 
 	/* Store values in global variables */
 	memcpy(&g_compass_cal, &mag_vec, sizeof(vector3d_t));
-	
-	/* Compute Inclination */
-	/* Dot product of Gravity vector (Attitude) and Compass vector */
-	double dot = vector3d_dot(&g_attitude_vector, &mag_vec);
-	/* Inclination = 90 - Angle(Gravity, Mag) = 90 - acos(dot) = asin(dot) */
-	g_inclination_deg = asin(dot) * 57.2957795131; // RAD_TO_DEG
 	
 	/* Publish values */
 	publish(SENSOR_COMPASS, (uint8_t*)&mag_vec, sizeof(vector3d_t));
@@ -176,7 +162,6 @@ void compass_setup(void) {
 	bmm350_set_powermode(BMM350_NORMAL_MODE, &BMMdev);
 
 	subscribe(SCHEDULER_25HZ, loop_25hz);
-	subscribe(SENSOR_ATTITUDE_VECTOR, attitude_update);
 #if ENABLE_COMPASS_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
