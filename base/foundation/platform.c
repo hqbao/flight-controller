@@ -50,11 +50,11 @@ void platform_scheduler_8khz(void*) {
 }
 
 void platform_receive_db_message(uint8_t *data, uint16_t size) {
-	publish(DB_MESSAGE, data, size);
+	publish(DB_MESSAGE_UPDATE, data, size);
 }
 
 void platform_receive_ubx_message(uint8_t *data, uint16_t size) {
-	publish(UBX_MESSAGE, data, size);
+	publish(UBX_MESSAGE_UPDATE, data, size);
 }
 
 void platform_on_fault_detected(uint8_t *data, uint16_t size) {

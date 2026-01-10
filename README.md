@@ -166,14 +166,14 @@ subscribe(SCHEDULER_25HZ, callback_function);
 
 ### Data Publication Topics
 - `SENSOR_COMPASS`: Calibrated compass vector (published by compass module)
-- `SENSOR_ATTITUDE_ANGLE`: Estimated attitude angles (roll, pitch, yaw)
+- `ANGULAR_STATE_UPDATE`: Estimated attitude angles (roll, pitch, yaw)
 - `SENSOR_LINEAR_ACCEL`: Linear acceleration estimate
 - `MONITOR_DATA`: Telemetry data for UART streaming (float32 values)
 - `SENSOR_ATTITUDE_VECTOR`: Attitude estimation vector (fusion1 predictions)
 
 ### System Topics
-- `DB_MESSAGE`: DB protocol messages (internal communication)
-- `UBX_MESSAGE`: UBX protocol messages (GPS/external devices)
+- `DB_MESSAGE_UPDATE`: DB protocol messages (internal communication)
+- `UBX_MESSAGE_UPDATE`: UBX protocol messages (GPS/external devices)
 - `FAULT_DETECTION`: Fault and safety alerts
 - `LOOP`: Main loop tick
 - `I2C_CALLBACK_UPDATE`: I2C transaction completion

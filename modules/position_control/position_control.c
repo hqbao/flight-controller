@@ -175,7 +175,7 @@ static void nav_publish_loop(void) {
 	memcpy(&g_target_data[16], 	&g_pos_ctl_yaw, 8);
 	memcpy(&g_target_data[24], 	&g_pos_ctl_alt, 8);
 	memcpy(&g_target_data[32], 	&g_take_off_speed, 8);
-	publish(POSITION_TARGET_UPDATE, (uint8_t*)g_target_data, 40);
+	publish(ANGULAR_TARGET_UPDATE, (uint8_t*)g_target_data, 40);
 }
 
 static void position_update(uint8_t *data, size_t size) {
@@ -278,7 +278,7 @@ static void state_control_update(uint8_t *data, size_t size) {
 
 void position_control_setup(void) {
 	pid_setup();
-	subscribe(POSITION_ESTIMATE_UPDATE, position_update);
+	subscribe(POSITION_STATE_UPDATE, position_update);
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);

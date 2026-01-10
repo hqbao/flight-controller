@@ -197,7 +197,7 @@ void state_detector_setup(void) {
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SENSOR_ATTITUDE_ANGLE, angular_state_update);
+	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
 	subscribe(SCHEDULER_10HZ, loop_10hz);
 	subscribe(SCHEDULER_1HZ, loop_1hz);

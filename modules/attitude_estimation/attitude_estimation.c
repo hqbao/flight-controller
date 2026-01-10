@@ -70,7 +70,7 @@ static void gyro_update(uint8_t *data, size_t size) {
 	g_angular_state.pitch = asin(g_f11.v_pred.x) * RAD2DEG;
 	g_angular_state.yaw += gz * DT;
 
-	publish(SENSOR_ATTITUDE_ANGLE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
+	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
 }
 

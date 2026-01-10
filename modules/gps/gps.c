@@ -103,6 +103,6 @@ void gps_setup(void) {
 	memset(&g_gps_velocity, 0, sizeof(gps_velocity_t));
 	
 	// Subscribe to UBX messages from UART
-	subscribe(UBX_MESSAGE, on_ubx_message_received);
+	subscribe(UBX_MESSAGE_UPDATE, on_ubx_message_received);
 }
 
