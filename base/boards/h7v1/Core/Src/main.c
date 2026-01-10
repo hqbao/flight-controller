@@ -114,6 +114,12 @@ static void MX_USART2_UART_Init(void);
 
 #define MAX_UART_BUFFER_SIZE 128
 
+typedef enum {
+  PROTOCOL_NONE = 0,
+  PROTOCOL_DB = 1,
+  PROTOCOL_UBX = 2
+} protocol_type_t;
+
 typedef struct {
   uint8_t byte;
   uint8_t buffer[MAX_UART_BUFFER_SIZE];
@@ -121,6 +127,7 @@ typedef struct {
   char stage;
   uint16_t payload_size;
   int buffer_idx;
+  protocol_type_t protocol;
 } uart_rx_t;
 
 static I2C_HandleTypeDef* i2c_ports[3] = {&hi2c1, &hi2c3, &hi2c4};
@@ -133,10 +140,10 @@ static dshot_t g_dshots[8];
 
 static dshot_ex_t g_dshot_exs[4];
 
-static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0};
-static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0};
-static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0};
-static uart_rx_t g_uart_rx4 = {0, {0}, {0}, 0, 0, 0};
+static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
+static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
+static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
+static uart_rx_t g_uart_rx4 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
 
 void platform_toggle_led(char led) {
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
@@ -292,9 +299,13 @@ void platform_console(const char *format, ...) {
 
 }
 
-static void handle_db_msg(uart_rx_t *msg) {
-	if ((msg->header[0] == 'd' && msg->header[1] == 'b')) { // DB message
-		platform_receive_internal_message(msg->buffer, msg->payload_size);
+static void handle_protocol_msg(uart_rx_t *msg) {
+	if (msg->protocol == PROTOCOL_DB) {
+		// DB protocol message
+		platform_receive_db_message(msg->buffer, msg->payload_size);
+	} else if (msg->protocol == PROTOCOL_UBX) {
+		// UBX protocol message
+		platform_receive_ubx_message(msg->buffer, msg->payload_size);
 	}
 }
 
@@ -305,19 +316,31 @@ static void read_uart_byte(uart_rx_t *g_uart_rx) {
 		// Plus 2-byte class-id, 2-byte length and 2-byte checksum
 		if (g_uart_rx->buffer_idx == (int) g_uart_rx->payload_size + 6) {
 			g_uart_rx->stage = 0;
-			handle_db_msg(g_uart_rx);
+			handle_protocol_msg(g_uart_rx);
+			g_uart_rx->protocol = PROTOCOL_NONE;
 		}
 	} else if (g_uart_rx->stage == 0) {
-		if (g_uart_rx->byte == 'd' || g_uart_rx->byte == 'b') {
+		// Detect protocol: 'd' for DB or 0xB5 for UBX
+		if (g_uart_rx->byte == 'd') {
 			g_uart_rx->header[0] = g_uart_rx->byte;
+			g_uart_rx->protocol = PROTOCOL_DB;
+			g_uart_rx->stage = 1;
+		} else if (g_uart_rx->byte == 0xB5) {
+			g_uart_rx->header[0] = g_uart_rx->byte;
+			g_uart_rx->protocol = PROTOCOL_UBX;
 			g_uart_rx->stage = 1;
 		}
 	} else if (g_uart_rx->stage == 1) {
-		if (g_uart_rx->byte == 'b' || g_uart_rx->byte == 'd') {
+		// Verify second header byte based on protocol
+		if ((g_uart_rx->protocol == PROTOCOL_DB && g_uart_rx->byte == 'b') ||
+		    (g_uart_rx->protocol == PROTOCOL_UBX && g_uart_rx->byte == 0x62)) {
 			g_uart_rx->header[1] = g_uart_rx->byte;
 			g_uart_rx->buffer_idx = 0;
 			g_uart_rx->stage = 2;
-		} else g_uart_rx->stage = 0;
+		} else {
+			g_uart_rx->stage = 0;
+			g_uart_rx->protocol = PROTOCOL_NONE;
+		}
 	} else if (g_uart_rx->stage == 2) {
 		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
 		g_uart_rx->buffer_idx = 1;
@@ -330,11 +353,13 @@ static void read_uart_byte(uart_rx_t *g_uart_rx) {
 		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
 		g_uart_rx->buffer_idx++;
 		if (g_uart_rx->buffer_idx == 4) {
+			// Both protocols have length at bytes 2-3 (little-endian)
 			g_uart_rx->payload_size = *(uint16_t*)&g_uart_rx->buffer[2];
 			g_uart_rx->stage = 5;
 		}
 	} else {
 		g_uart_rx->stage = 0;
+		g_uart_rx->protocol = PROTOCOL_NONE;
 	}
 }
 
@@ -418,7 +443,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 				memcpy(&g_rc_db_msg_payload[16], (uint8_t*)&alt, sizeof(int));
 				g_rc_db_msg_payload[20] = state;
 				g_rc_db_msg_payload[21] = mode;
-				platform_receive_internal_message(g_rc_db_msg_payload, 22);
+				platform_receive_db_message(g_rc_db_msg_payload, 22);
 			}
 			break;
 		default:

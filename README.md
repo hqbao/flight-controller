@@ -172,8 +172,8 @@ subscribe(SCHEDULER_25HZ, callback_function);
 - `SENSOR_ATTITUDE_VECTOR`: Attitude estimation vector (fusion1 predictions)
 
 ### System Topics
-- `INTERNAL_MESSAGE`: Internal module communication
-- `EXTERNAL_MESSAGE`: External/ground station messages
+- `DB_MESSAGE`: DB protocol messages (internal communication)
+- `UBX_MESSAGE`: UBX protocol messages (GPS/external devices)
 - `FAULT_DETECTION`: Fault and safety alerts
 - `LOOP`: Main loop tick
 - `I2C_CALLBACK_UPDATE`: I2C transaction completion

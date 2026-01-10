@@ -49,12 +49,12 @@ void platform_scheduler_8khz(void*) {
 	publish(SCHEDULER_8KHZ, NULL, 0);
 }
 
-void platform_receive_internal_message(uint8_t *data, uint16_t size) {
-	publish(INTERNAL_MESSAGE, data, size);
+void platform_receive_db_message(uint8_t *data, uint16_t size) {
+	publish(DB_MESSAGE, data, size);
 }
 
-void platform_receive_external_message(uint8_t *data, uint16_t size) {
-	publish(EXTERNAL_MESSAGE, data, size);
+void platform_receive_ubx_message(uint8_t *data, uint16_t size) {
+	publish(UBX_MESSAGE, data, size);
 }
 
 void platform_on_fault_detected(uint8_t *data, uint16_t size) {

@@ -53,6 +53,6 @@ static void handle_internal_message(uint8_t *data, size_t size) {
 }
 
 void remote_control_setup(void) {
-	subscribe(INTERNAL_MESSAGE, on_internal_message);
+	subscribe(DB_MESSAGE, on_internal_message);
 	subscribe(SCHEDULER_25HZ, handle_internal_message);
 }

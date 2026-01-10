@@ -11,5 +11,5 @@ static void on_message_received(uint8_t *data, size_t size) {
 }
 
 void optflow_setup(void) {
-	subscribe(INTERNAL_MESSAGE, on_message_received);
+	subscribe(DB_MESSAGE, on_message_received);
 }
