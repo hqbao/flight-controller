@@ -74,9 +74,11 @@ DMA_HandleTypeDef hdma_tim2_ch4;
 
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_uart4_rx;
 DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
@@ -102,6 +104,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_UART4_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -121,7 +124,7 @@ typedef struct {
 } uart_rx_t;
 
 static I2C_HandleTypeDef* i2c_ports[3] = {&hi2c1, &hi2c3, &hi2c4};
-static UART_HandleTypeDef* uart_ports[3] = {&huart1, &huart3, &huart4};
+static UART_HandleTypeDef* uart_ports[4] = {&huart1, &huart2, &huart3, &huart4};
 static TIM_HandleTypeDef* g_pwm_timers[8] = {&htim1, &htim1, &htim1, &htim1, &htim2, &htim2, &htim2, &htim2};
 static uint32_t g_pwm_timer_channels[8] = {TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4, TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4};
 static TIM_TypeDef *g_pwm_time_bases[8] = {TIM1, TIM1, TIM1, TIM1, TIM2, TIM2, TIM2, TIM2};
@@ -133,6 +136,7 @@ static dshot_ex_t g_dshot_exs[4];
 static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0};
 static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0};
 static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0};
+static uart_rx_t g_uart_rx4 = {0, {0}, {0}, 0, 0, 0};
 
 void platform_toggle_led(char led) {
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
@@ -339,12 +343,16 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 		read_uart_byte(&g_uart_rx1);
 	}
 
-	if (huart->Instance == USART3) {
+	if (huart->Instance == USART2) {
 		read_uart_byte(&g_uart_rx2);
 	}
 
-	if (huart->Instance == UART4) {
+	if (huart->Instance == USART3) {
 		read_uart_byte(&g_uart_rx3);
+	}
+
+	if (huart->Instance == UART4) {
+		read_uart_byte(&g_uart_rx4);
 	}
 }
 
@@ -489,6 +497,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_UART4_Init();
   MX_SPI1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_Delay(100);
@@ -498,8 +507,9 @@ int main(void)
 
   // Start UART communication
   HAL_UART_Receive_DMA(&huart1, &g_uart_rx1.byte, 1);
-  HAL_UART_Receive_DMA(&huart3, &g_uart_rx2.byte, 1);
-  HAL_UART_Receive_DMA(&huart4, &g_uart_rx3.byte, 1);
+  HAL_UART_Receive_DMA(&huart2, &g_uart_rx2.byte, 1);
+  HAL_UART_Receive_DMA(&huart3, &g_uart_rx3.byte, 1);
+  HAL_UART_Receive_DMA(&huart4, &g_uart_rx4.byte, 1);
 
   // PPM input capture
   HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);
@@ -594,7 +604,8 @@ void PeriphCommonClock_Config(void)
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2C4|RCC_PERIPHCLK_I2C3
                               |RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_USART1
-                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_USART3;
+                              |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_USART2
+                              |RCC_PERIPHCLK_USART3;
   PeriphClkInitStruct.PLL3.PLL3M = 12;
   PeriphClkInitStruct.PLL3.PLL3N = 480;
   PeriphClkInitStruct.PLL3.PLL3P = 2;
@@ -1253,6 +1264,54 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 19200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart2, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart2, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -1350,6 +1409,9 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
+  /* DMA2_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream5_IRQn);
   /* DMA2_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream6_IRQn);
@@ -1424,14 +1486,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD5 PD6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
   /*AnalogSwitch Config */
