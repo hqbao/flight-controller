@@ -33,9 +33,9 @@
 #define ATT_PITCH_I_LIMIT 5.0
 
 // Yaw
-#define ATT_YAW_P 12.0
+#define ATT_YAW_P 40.0
 #define ATT_YAW_I 1.0
-#define ATT_YAW_D 6.0
+#define ATT_YAW_D 20.0
 #define ATT_YAW_I_LIMIT 5.0
 
 // Smoothing
