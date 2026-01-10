@@ -88,11 +88,14 @@ static void angular_state_update(uint8_t *data, size_t size) {
 
 static void angular_target_update(uint8_t *data, size_t size) {
 	memcpy(&g_angular_target, data, sizeof(angle3d_t));
-	g_altitude = *(double*)&data[24];
-	g_take_off_speed = *(double*)&data[32];
 	if (fabs(g_angular_target.yaw) > 1.0) {
 		g_set_point_yaw = g_angular_state.yaw + g_angular_target.yaw;
 	}
+}
+
+static void altitude_control_update(uint8_t *data, size_t size) {
+	g_altitude = *(double*)&data[0];
+	g_take_off_speed = *(double*)&data[8];
 }
 
 static void move_in_control_update(uint8_t *data, size_t size) {
@@ -213,4 +216,5 @@ void attitude_control_setup(void) {
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update); // For motor testing
 	subscribe(ANGULAR_TARGET_UPDATE, angular_target_update);
+	subscribe(ALTITUDE_CONTROL_UPDATE, altitude_control_update);
 }

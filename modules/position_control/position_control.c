@@ -173,9 +173,11 @@ static void publish_angular_target(void) {
 	memcpy(&g_target_data[0], 	&g_pos_ctl_roll, 8);
 	memcpy(&g_target_data[8],	&g_pos_ctl_pitch, 8);
 	memcpy(&g_target_data[16], 	&g_pos_ctl_yaw, 8);
-	memcpy(&g_target_data[24], 	&g_pos_ctl_alt, 8);
-	memcpy(&g_target_data[32], 	&g_take_off_speed, 8);
-	publish(ANGULAR_TARGET_UPDATE, (uint8_t*)g_target_data, 40);
+	publish(ANGULAR_TARGET_UPDATE, (uint8_t*)g_target_data, 24);
+	
+	memcpy(&g_target_data[0], 	&g_pos_ctl_alt, 8);
+	memcpy(&g_target_data[8], 	&g_take_off_speed, 8);
+	publish(ALTITUDE_CONTROL_UPDATE, (uint8_t*)g_target_data, 16);
 }
 
 static void position_update(uint8_t *data, size_t size) {
