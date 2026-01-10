@@ -169,7 +169,7 @@ static void reset(void) {
 	pid_control_reset(&g_pid_pos_z, g_pos_final.z);
 }
 
-static void nav_publish_loop(void) {
+static void publish_angular_target(void) {
 	memcpy(&g_target_data[0], 	&g_pos_ctl_roll, 8);
 	memcpy(&g_target_data[8],	&g_pos_ctl_pitch, 8);
 	memcpy(&g_target_data[16], 	&g_pos_ctl_yaw, 8);
@@ -197,7 +197,7 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_alt 		= g_pid_pos_z.output + (g_veloc_final.z - g_veloc_offset.z) * POS_CTL_VELOC_Z_SCALE;
 	}
 	
-	nav_publish_loop();
+	publish_angular_target();
 }
 
 static void state_update(uint8_t *data, size_t size) {
