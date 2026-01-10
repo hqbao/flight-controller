@@ -1,4 +1,4 @@
-#include "nav_fusion.h"
+#include "position_estimation.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <vector3d.h>
@@ -12,7 +12,7 @@
  * 1: Position
  * 2: Velocity
  */
-#define ENABLE_NAV_FUSION_MONITOR_LOG 0
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
 #define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
@@ -174,19 +174,19 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_veloc_final.x = -g_linear_veloc_final.x;
 	g_linear_veloc_final.y = -g_linear_veloc_final.y;
 
-	static uint8_t g_nav_pos_msg[sizeof(vector3d_t) * 2] = {0};
-	memcpy(g_nav_pos_msg, &g_pos_final, sizeof(vector3d_t));
-	memcpy(&g_nav_pos_msg[sizeof(vector3d_t)], &g_linear_veloc_final, sizeof(vector3d_t));
+	static uint8_t g_pos_est_msg[sizeof(vector3d_t) * 2] = {0};
+	memcpy(g_pos_est_msg, &g_pos_final, sizeof(vector3d_t));
+	memcpy(&g_pos_est_msg[sizeof(vector3d_t)], &g_linear_veloc_final, sizeof(vector3d_t));
 
-	publish(NAV_POSITION_UPDATE, (uint8_t*)&g_nav_pos_msg, sizeof(vector3d_t) * 2);
+	publish(POSITION_UPDATE, (uint8_t*)&g_pos_est_msg, sizeof(vector3d_t) * 2);
 }
 
-#if ENABLE_NAV_FUSION_MONITOR_LOG
+#if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	static uint8_t g_msg[12] = {0};
-#if ENABLE_NAV_FUSION_MONITOR_LOG == 1
+#if ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 1
 	float val[3] = {(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z};
-#elif ENABLE_NAV_FUSION_MONITOR_LOG == 2
+#elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
 	float val[3] = {(float)g_linear_veloc_est.x, (float)g_linear_veloc_est.y, (float)g_linear_veloc_est.z};
 #endif
 	memcpy(g_msg, val, 12);
@@ -194,12 +194,12 @@ static void loop_logger(uint8_t *data, size_t size) {
 }
 #endif
 
-void nav_fusion_setup(void) {
+void position_estimation_setup(void) {
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(COMMAND_SET_STATE, state_control_update);
-#if ENABLE_NAV_FUSION_MONITOR_LOG
+#if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
 }

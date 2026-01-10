@@ -1,4 +1,4 @@
-#include "attitude_fusion.h"
+#include "attitude_estimation.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
@@ -135,7 +135,7 @@ static void init(void) {
 	//g_f13.no_correction = 1;
 }
 
-void attitude_fusion_setup(void) {
+void attitude_estimation_setup(void) {
 	init();
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);

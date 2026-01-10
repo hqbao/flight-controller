@@ -1,12 +1,12 @@
 #include <fault_handler/fault_handler.h>
 #include <imu/imu.h>
-#include <attitude_fusion/attitude_fusion.h>
+#include <attitude_estimation/attitude_estimation.h>
 #include <air_pressure/air_pressure.h>
 #include <compass/compass.h>
 #include <attitude_control/attitude_control.h>
 #include <remote_control/remote_control.h>
-#include <nav_fusion/nav_fusion.h>
-#include <nav_control/nav_control.h>
+#include <position_estimation/position_estimation.h>
+#include <position_control/position_control.h>
 #include <optflow/optflow.h>
 #include <gps/gps.h>
 #include <state_detector/state_detector.h>
@@ -20,11 +20,11 @@ void platform_setup(void) {
 	speed_control_setup();
 	imu_setup();
 	air_pressure_setup();
-	compass_setup();
-	attitude_fusion_setup();
+	//compass_setup();
+	attitude_estimation_setup();
 	attitude_control_setup();
-	nav_fusion_setup();
-	nav_control_setup();
+	position_estimation_setup();
+	position_control_setup();
 	state_detector_setup();
 	optflow_setup();
 	gps_setup();
