@@ -211,6 +211,6 @@ void attitude_control_setup(void) {
 	subscribe(SENSOR_ATTITUDE_ANGLE, angular_state_update);
 	subscribe(SCHEDULER_1KHZ, attitude_control_loop);
 	subscribe(STATE_DETECTION_UPDATE, state_update);
-	subscribe(COMMAND_SET_MOVE_IN, move_in_control_update); // For motor testing
-	subscribe(COMMAND_SET_TARGET_ORIENTATION, angular_target_update);
+	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update); // For motor testing
+	subscribe(POSITION_TARGET_UPDATE, angular_target_update);
 }

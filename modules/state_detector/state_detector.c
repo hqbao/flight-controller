@@ -194,8 +194,8 @@ static void loop_10hz(uint8_t *data, size_t size) {
 
 void state_detector_setup(void) {
 	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
-	subscribe(COMMAND_SET_STATE, state_control_update);
-	subscribe(COMMAND_SET_MOVE_IN, move_in_control_update);
+	subscribe(RC_STATE_UPDATE, state_control_update);
+	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(SENSOR_ATTITUDE_ANGLE, angular_state_update);
 	subscribe(SCHEDULER_100HZ, loop_100hz);

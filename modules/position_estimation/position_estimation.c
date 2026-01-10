@@ -178,7 +178,7 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	memcpy(g_pos_est_msg, &g_pos_final, sizeof(vector3d_t));
 	memcpy(&g_pos_est_msg[sizeof(vector3d_t)], &g_linear_veloc_final, sizeof(vector3d_t));
 
-	publish(POSITION_UPDATE, (uint8_t*)&g_pos_est_msg, sizeof(vector3d_t) * 2);
+	publish(POSITION_ESTIMATE_UPDATE, (uint8_t*)&g_pos_est_msg, sizeof(vector3d_t) * 2);
 }
 
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
@@ -198,7 +198,7 @@ void position_estimation_setup(void) {
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(COMMAND_SET_STATE, state_control_update);
+	subscribe(RC_STATE_UPDATE, state_control_update);
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif

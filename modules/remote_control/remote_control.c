@@ -48,8 +48,8 @@ static void on_internal_message(uint8_t *data, size_t size) {
 }
 
 static void handle_internal_message(uint8_t *data, size_t size) {
-	publish(COMMAND_SET_STATE, (uint8_t*)&g_rc_state_ctl, sizeof(rc_state_ctl_t));
-	publish(COMMAND_SET_MOVE_IN, (uint8_t*)&g_rc_att_ctl, sizeof(rc_att_ctl_t));
+	publish(RC_STATE_UPDATE, (uint8_t*)&g_rc_state_ctl, sizeof(rc_state_ctl_t));
+	publish(RC_MOVE_IN_UPDATE, (uint8_t*)&g_rc_att_ctl, sizeof(rc_att_ctl_t));
 }
 
 void remote_control_setup(void) {
