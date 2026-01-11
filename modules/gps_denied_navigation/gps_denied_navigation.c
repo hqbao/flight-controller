@@ -8,11 +8,6 @@
 #define WAYPOINT_THRESHOLD 20.0  // cm (local coordinate system)
 #define MAX_WAYPOINTS 10
 
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
-
 // Waypoints in local coordinate frame (cm)
 static vector3d_t g_waypoints[MAX_WAYPOINTS] = {0};
 static int g_num_waypoints = 0;
@@ -22,7 +17,6 @@ static uint8_t g_mission_active = 0;
 static vector3d_t g_current_position = {0, 0, 0};
 static vector3d_t g_current_velocity = {0, 0, 0};
 static vector3d_t g_target_position = {0, 0, 0};
-static rc_state_ctl_t g_rc_state_ctl = {0};
 
 static double calculate_distance(vector3d_t *p1, vector3d_t *p2) {
 	double dx = p2->x - p1->x;
@@ -34,18 +28,6 @@ static void position_state_update(uint8_t *data, size_t size) {
 	// Receive current position from position_estimation
 	memcpy(&g_current_position, data, sizeof(vector3d_t));
 	memcpy(&g_current_velocity, &data[sizeof(vector3d_t)], sizeof(vector3d_t));
-}
-
-static void state_control_update(uint8_t *data, size_t size) {
-	memcpy(&g_rc_state_ctl, data, size);
-	
-	// Start/stop mission based on mode
-	// Mode 1: GPS-denied waypoint mode
-	if (g_rc_state_ctl.mode == 1) {
-		g_mission_active = 1;
-	} else {
-		g_mission_active = 0;
-	}
 }
 
 static void navigation_update(uint8_t *data, size_t size) {
@@ -101,6 +83,5 @@ void gps_denied_navigation_setup(void) {
 	g_mission_active = 0;
 	
 	subscribe(POSITION_STATE_UPDATE, position_state_update);
-	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(SCHEDULER_10HZ, navigation_update);
 }

@@ -28,13 +28,6 @@ typedef enum {
 	OPTFLOW_UPWARD = 1,
 } optflow_direction_t;
 
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
-
-static rc_state_ctl_t g_rc_state_ctl;
-static rc_state_ctl_t g_rc_state_ctl_prev;
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
 static double g_alt = 0;
@@ -69,10 +62,14 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define OUTPUT_POS_SCALE        1.0
 #define OUTPUT_VELOC_SCALE      1.0
 #define ACCEL_Z_THRESHOLD       300.0
+#define RANGE_SWITCH_THRESHOLD  2000.0
 
-static void state_control_update(uint8_t *data, size_t size) {
-	memcpy(&g_rc_state_ctl, data, size);
-}
+typedef enum {
+	ALT_SOURCE_LASER = 0,
+	ALT_SOURCE_BARO = 1,
+} alt_source_t;
+
+static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	int32_t raw_dx, raw_dy, raw_z;
@@ -97,17 +94,21 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
 
-	if (g_rc_state_ctl.mode == 0) {
-		g_alt = g_optflow.z;
-		if (g_rc_state_ctl_prev.mode != 0) {
-			g_alt_prev = g_alt;
+	// Auto switch: use laser if range < 2000, else use barometer
+	alt_source_t new_alt_source = (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_THRESHOLD) ? ALT_SOURCE_LASER : ALT_SOURCE_BARO;
+	
+	if (new_alt_source == ALT_SOURCE_LASER) {
+		// Switching to laser - reset reference
+		if (g_alt_source != ALT_SOURCE_LASER) {
+			g_alt_source = ALT_SOURCE_LASER;
+			g_alt_prev = g_optflow.z;
 		}
-
+		
+		// Update altitude
+		g_alt = g_optflow.z;
 		g_alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		g_pos_true.z += g_alt_d;
-
-		g_rc_state_ctl_prev.mode = g_rc_state_ctl.mode;
 	}
 }
 
@@ -119,17 +120,21 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		g_air_pressure_alt += BARO_ALPHA_LOW_ACCEL * (g_air_pressure_alt_raw - g_air_pressure_alt);
 	}
 
-	if (g_rc_state_ctl.mode >= 1) {
-		g_alt = g_air_pressure_alt;
-		if (g_rc_state_ctl_prev.mode < 1) {
-			g_alt_prev = g_alt;
+	// Auto switch: use barometer if range >= 2000 or no valid laser data
+	alt_source_t new_alt_source = (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_THRESHOLD) ? ALT_SOURCE_LASER : ALT_SOURCE_BARO;
+	
+	if (new_alt_source == ALT_SOURCE_BARO) {
+		// Switching to barometer - reset reference
+		if (g_alt_source != ALT_SOURCE_BARO) {
+			g_alt_source = ALT_SOURCE_BARO;
+			g_alt_prev = g_air_pressure_alt;
 		}
-
+		
+		// Update altitude
+		g_alt = g_air_pressure_alt;
 		g_alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		g_pos_true.z += g_alt_d;
-
-		g_rc_state_ctl_prev.mode = g_rc_state_ctl.mode;
 	}
 }
 
@@ -198,7 +203,6 @@ void position_estimation_setup(void) {
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(RC_STATE_UPDATE, state_control_update);
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif

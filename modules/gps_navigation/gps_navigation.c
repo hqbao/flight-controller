@@ -25,13 +25,20 @@ typedef struct {
 	uint8_t mode;
 } rc_state_ctl_t;
 
+typedef struct {
+	uint8_t fix_type;   // 0=no fix, 2=2D, 3=3D
+	uint8_t num_sv;     // Number of satellites
+	uint32_t h_acc;     // Horizontal accuracy (mm)
+	uint8_t reliable;   // 1=reliable, 0=not reliable
+} gps_quality_t;
+
 static gps_waypoint_t g_waypoints[MAX_WAYPOINTS] = {0};
 static int g_num_waypoints = 0;
 static int g_current_waypoint_index = 0;
 static uint8_t g_mission_active = 0;
+static gps_quality_t g_gps_quality = {0};
 
 static gps_position_t g_gps_position = {0};
-static rc_state_ctl_t g_rc_state_ctl = {0};
 
 static vector3d_t g_current_position = {0, 0, 0};
 static vector3d_t g_target_position = {0, 0, 0};
@@ -70,19 +77,21 @@ static void gps_update(uint8_t *data, size_t size) {
 	gps_to_local(lat, lon, alt, &g_current_position);
 }
 
-static void state_control_update(uint8_t *data, size_t size) {
-	memcpy(&g_rc_state_ctl, data, size);
-	
-	// Start/stop mission based on mode
-	if (g_rc_state_ctl.mode == 3) {  // Waypoint mode
-		g_mission_active = 1;
-	} else {
-		g_mission_active = 0;
+static void gps_quality_update(uint8_t *data, size_t size) {
+	if (size >= sizeof(gps_quality_t)) {
+		memcpy(&g_gps_quality, data, sizeof(gps_quality_t));
+		
+		// If GPS becomes unreliable during mission, abort
+		if (!g_gps_quality.reliable && g_mission_active) {
+			g_mission_active = 0;
+			g_current_waypoint_index = 0;
+		}
 	}
 }
 
 static void navigation_update(uint8_t *data, size_t size) {
-	if (!g_mission_active || g_num_waypoints == 0) {
+	// Check GPS quality and mission state
+	if (!g_mission_active || g_num_waypoints == 0 || !g_gps_quality.reliable) {
 		return;
 	}
 	
@@ -120,6 +129,6 @@ void gps_navigation_setup(void) {
 	g_mission_active = 0;
 	
 	subscribe(EXTERNAL_SENSOR_GPS, gps_update);
-	subscribe(RC_STATE_UPDATE, state_control_update);
+	subscribe(EXTERNAL_SENSOR_GPS_QUALITY, gps_quality_update);
 	subscribe(SCHEDULER_10HZ, navigation_update);
 }

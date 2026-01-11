@@ -23,12 +23,32 @@ typedef struct {
 	int32_t velD;       // Down velocity (mm/s)
 } gps_velocity_t;
 
+// GPS quality data structure
+typedef struct {
+	uint8_t fix_type;   // 0=no fix, 2=2D, 3=3D
+	uint8_t num_sv;     // Number of satellites
+	uint32_t h_acc;     // Horizontal accuracy (mm)
+	uint8_t reliable;   // 1=reliable, 0=not reliable
+} gps_quality_t;
+
 static gps_position_t g_gps_position;
 static gps_velocity_t g_gps_velocity;
+static gps_quality_t g_gps_quality = {0};
 
 static void parse_nav_pvt(uint8_t *payload, uint16_t length) {
 	// Parse NAV-PVT payload (92 bytes minimum)
 	if (length < 92) return;
+	
+	// Extract GPS quality indicators
+	g_gps_quality.num_sv = payload[11];     // Number of satellites
+	g_gps_quality.fix_type = payload[21];   // Fix type
+	memcpy(&g_gps_quality.h_acc, &payload[40], 4);  // Horizontal accuracy (mm)
+	
+	// Determine GPS reliability
+	// Reliable when: 3D fix, >= 6 satellites, horizontal accuracy < 5m
+	g_gps_quality.reliable = (g_gps_quality.fix_type == 3 && 
+	                          g_gps_quality.num_sv >= 6 && 
+	                          g_gps_quality.h_acc < 5000) ? 1 : 0;
 	
 	// Extract position (bytes 24-39)
 	memcpy(&g_gps_position.lon, &payload[24], 4);  // Longitude (deg * 1e7)
@@ -39,6 +59,9 @@ static void parse_nav_pvt(uint8_t *payload, uint16_t length) {
 	memcpy(&g_gps_velocity.velN, &payload[48], 4); // North velocity (mm/s)
 	memcpy(&g_gps_velocity.velE, &payload[52], 4); // East velocity (mm/s)
 	memcpy(&g_gps_velocity.velD, &payload[56], 4); // Down velocity (mm/s)
+	
+	// Publish GPS quality (reliability status)
+	publish(EXTERNAL_SENSOR_GPS_QUALITY, (uint8_t*)&g_gps_quality, sizeof(gps_quality_t));
 	
 	// Publish GPS position data
 	publish(EXTERNAL_SENSOR_GPS, (uint8_t*)&g_gps_position, sizeof(gps_position_t));
