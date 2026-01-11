@@ -28,11 +28,11 @@ void platform_setup(void) {
 	attitude_estimation_setup();
 	attitude_control_setup();
 	position_estimation_setup();
-	gps_navigation_setup();
-	gps_denied_navigation_setup();
 	position_control_setup();
 	optflow_setup();
-	gps_setup();
+	//gps_setup();
+	//gps_navigation_setup();
+	//gps_denied_navigation_setup();
 	remote_control_setup();
 	logger_setup();
 	test_setup();
