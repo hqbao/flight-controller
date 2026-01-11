@@ -15,8 +15,8 @@
 #define RAD2DEG 57.2957795131
 #define DT (1.0 / GYRO_FREQ)
 #define DEG2RAD_BY_DT (DEG2RAD * DT)
-#define FUSION_GAIN_KP 4.0
-#define FUSION_GAIN_KI 0.125
+#define ACCEL_SMOOTH_GAIN 4.0
+#define ATTITUDE_CORRECTION_GAIN 0.125
 
 typedef struct {
 	double roll;
@@ -122,15 +122,15 @@ static void loop_logger(uint8_t *data, size_t size) {
 #endif
 
 static void init(void) {
-	fusion1_init(&g_f11, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
+	fusion1_init(&g_f11, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
 	g_f11.accel_scale = MAX_IMU_ACCEL;
 	//g_f11.no_correction = 1;
 
-	fusion1_init(&g_f12, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
+	fusion1_init(&g_f12, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
 	fusion1_predict(&g_f12, M_PI_2, 0, 0);
 	//g_f12.no_correction = 1;
 
-	fusion1_init(&g_f13, FUSION_GAIN_KP, FUSION_GAIN_KI, ACCEL_FREQ);
+	fusion1_init(&g_f13, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
 	fusion1_predict(&g_f13, 0, -M_PI_2, 0);
 	//g_f13.no_correction = 1;
 }
