@@ -48,6 +48,8 @@ typedef struct {
 	double yaw;
 } angle3d_t;
 
+static uint8_t g_module_initialized[MODULE_ID_MAX] = {0};
+
 typedef struct {
     double dx;
     double dy;
@@ -61,6 +63,7 @@ static rc_att_ctl_t g_rc_att_ctl;
 static state_t g_state = DISARMED;
 static state_t g_state_prev = DISARMED;
 static char g_imu_calibrated = 0;
+static double g_air_pressure = 0;
 static double g_downward_range = 0;
 
 static void state_control_update(uint8_t *data, size_t size) {
@@ -79,9 +82,14 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	}
 }
 
+static void air_pressure_update(uint8_t *data, size_t size) {
+	if (size >= sizeof(double)) {
+		memcpy(&g_air_pressure, data, sizeof(double));
+	}
+}
+
 static void on_imu_calibration_result(uint8_t *data, size_t size) {
 	if (data[0] == 1) g_imu_calibrated = 1;
-	else publish(SENSOR_IMU1_CALIBRATE_GYRO, NULL, 0);
 }
 
 static void loop_100hz(uint8_t *data, size_t size) {
@@ -163,17 +171,15 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	g_state_prev = g_state;
 }
 
-static void loop_1hz(uint8_t *data, size_t size) {
-	static int counter_2s = 0;
-	if (counter_2s <= 2) {
-		if (counter_2s == 2) {
-			publish(SENSOR_IMU1_CALIBRATE_GYRO, NULL, 0);
-		}
-		counter_2s++;
+static void module_initialized_update(uint8_t *data, size_t size) {
+	if (size < sizeof(module_initialized_t)) {
+		return;
 	}
-
-	if (g_imu_calibrated == 0) {
-		platform_toggle_led(0);
+	
+	module_initialized_t *module_initialized = (module_initialized_t *)data;
+	
+	if (module_initialized->id < MODULE_ID_MAX) {
+		g_module_initialized[module_initialized->id] = module_initialized->initialized;
 	}
 }
 
@@ -181,24 +187,75 @@ static void angular_state_update(uint8_t *data, size_t size) {
 	memcpy(&g_angular_state, data, size);
 }
 
-static void loop_10hz(uint8_t *data, size_t size) {
-	print("Ready: %d\t%d\t%d\n", 
-		(int)g_angular_state.roll, 
-		(int)g_angular_state.pitch, 
-		(int)g_angular_state.yaw);
+static void loop_1hz(uint8_t *data, size_t size) {
+	// Check if all setup modules are ready, then trigger IMU calibration check
+	uint8_t local_storage_initialized = g_module_initialized[MODULE_ID_LOCAL_STORAGE];
+	uint8_t imu_initialized = g_module_initialized[MODULE_ID_IMU];
+	uint8_t air_pressure_initialized = g_module_initialized[MODULE_ID_AIR_PRESSURE];
+	
+	static uint8_t calibration_triggered = 0;
+	if (!calibration_triggered && local_storage_initialized && imu_initialized && air_pressure_initialized) {
+		publish(SENSOR_CHECK_GYRO_CALIBRATION, NULL, 0);
+		calibration_triggered = 1;
+	}
+}
 
-	if (g_imu_calibrated == 1 && g_state == DISARMED) {
-		platform_toggle_led(0);
+static void loop_50hz(uint8_t *data, size_t size) {
+	// Check modules in priority order and determine flash count
+	uint8_t flash_count = 0;
+	
+	uint8_t optflow_initialized = g_module_initialized[MODULE_ID_OPTFLOW];
+	uint8_t gps_initialized = g_module_initialized[MODULE_ID_GPS];
+	
+	// Check in priority order - highest priority first
+	if (g_imu_calibrated == 0) {
+		flash_count = 5;
+	} else if (g_air_pressure == 0) {
+		flash_count = 4;
+	} else if (g_downward_range == 0) {
+		flash_count = 3;
+	} else if (!optflow_initialized) {
+		flash_count = 2;
+	} else if (!gps_initialized) {
+		flash_count = 1;
+	}
+	
+	static uint16_t counter = 0;
+	counter++;
+	
+	if (flash_count == 0) {
+		// All modules ready - no flashing
+		return;
+	} else {
+		// Flash N times in 500ms (25 cycles), then pause 500ms (25 cycles)
+		uint16_t total_cycle = 50; // 1 second cycle
+		uint16_t flash_period = 25; // 500ms for flashing
+		
+		if (counter <= flash_period) {
+			// Flashing phase: toggle every (25/(2*N)) cycles for N flashes
+			uint16_t toggle_interval = flash_period / (2 * flash_count);
+			if (toggle_interval < 1) toggle_interval = 1;
+			
+			if ((counter - 1) % toggle_interval == 0) {
+				platform_toggle_led(0);
+			}
+		}
+		
+		if (counter >= total_cycle) {
+			counter = 0;
+		}
 	}
 }
 
 void state_detector_setup(void) {
+	subscribe(MODULE_INITIALIZED_UPDATE, module_initialized_update);
 	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
+	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
-	subscribe(SCHEDULER_10HZ, loop_10hz);
+	subscribe(SCHEDULER_50HZ, loop_50hz);
 	subscribe(SCHEDULER_1HZ, loop_1hz);
 }

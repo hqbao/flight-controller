@@ -1,4 +1,5 @@
 #include <fault_handler/fault_handler.h>
+#include <local_storage/local_storage.h>
 #include <imu/imu.h>
 #include <attitude_estimation/attitude_estimation.h>
 #include <air_pressure/air_pressure.h>
@@ -17,8 +18,9 @@
 #include <test/test.h>
 
 void platform_setup(void) {
+	state_detector_setup();
+	local_storage_setup();
 	fault_handler_setup();
-	//test_setup();
 	speed_control_setup();
 	imu_setup();
 	air_pressure_setup();
@@ -29,9 +31,9 @@ void platform_setup(void) {
 	gps_navigation_setup();
 	gps_denied_navigation_setup();
 	position_control_setup();
-	state_detector_setup();
 	optflow_setup();
 	gps_setup();
 	remote_control_setup();
 	logger_setup();
+	test_setup();
 }

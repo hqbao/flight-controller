@@ -26,6 +26,7 @@
 #include <dshot_ex.h>
 #include <string.h>
 #include <stdlib.h>
+#include "platform_storage.h"
 
 /* USER CODE END Includes */
 
@@ -155,14 +156,6 @@ void platform_delay(uint32_t ms) {
 
 uint32_t platform_time_ms(void) {
 	return HAL_GetTick();
-}
-
-char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {
-	return PLATFORM_NOT_SUPPORT;
-}
-
-char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data) {
-	return PLATFORM_NOT_SUPPORT;
 }
 
 char platform_i2c_write_read_dma(i2c_port__t port, uint8_t address, uint8_t *input, uint16_t input_size,

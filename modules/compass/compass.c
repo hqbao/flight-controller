@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <vector3d.h>
+#include <macro.h>
 #include "bmm350.h"
 
 /* 
@@ -165,4 +166,10 @@ void compass_setup(void) {
 #if ENABLE_COMPASS_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
+	
+	// Publish module initialized status
+	module_initialized_t module_initialized;
+	module_initialized.id = MODULE_ID_COMPASS;
+	module_initialized.initialized = 1;
+	publish(MODULE_INITIALIZED_UPDATE, (uint8_t*)&module_initialized, sizeof(module_initialized_t));
 }

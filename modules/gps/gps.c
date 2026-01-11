@@ -1,6 +1,7 @@
 #include "gps.h"
 #include <pubsub.h>
 #include <platform.h>
+#include <macro.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -73,5 +74,9 @@ void gps_setup(void) {
 	
 	// Subscribe to UBX messages from UART
 	subscribe(UBX_MESSAGE_UPDATE, on_ubx_message_received);
+	
+	// Publish module initialized status
+	module_initialized_t initialized = {.id = MODULE_ID_GPS, .initialized = 1};
+	publish(MODULE_INITIALIZED_UPDATE, (uint8_t*)&initialized, sizeof(module_initialized_t));
 }
 

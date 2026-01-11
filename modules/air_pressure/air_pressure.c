@@ -1,6 +1,7 @@
 #include "air_pressure.h"
 #include <pubsub.h>
 #include <platform.h>
+#include <macro.h>
 #include "dps310.h"
 
 #define ALT_SAMPLES 100
@@ -36,4 +37,10 @@ static void air_pressure_loop(uint8_t *data, size_t size) {
 void air_pressure_setup(void) {
 	air_pressure_init();
 	subscribe(LOOP, air_pressure_loop);
+	
+	// Publish module initialized status
+	module_initialized_t module_initialized;
+	module_initialized.id = MODULE_ID_AIR_PRESSURE;
+	module_initialized.initialized = 1;
+	publish(MODULE_INITIALIZED_UPDATE, (uint8_t*)&module_initialized, sizeof(module_initialized_t));
 }
