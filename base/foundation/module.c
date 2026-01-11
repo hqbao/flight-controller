@@ -7,6 +7,8 @@
 #include <remote_control/remote_control.h>
 #include <position_estimation/position_estimation.h>
 #include <position_control/position_control.h>
+#include <gps_navigation/gps_navigation.h>
+#include <gps_denied_navigation/gps_denied_navigation.h>
 #include <optflow/optflow.h>
 #include <gps/gps.h>
 #include <state_detector/state_detector.h>
@@ -24,6 +26,8 @@ void platform_setup(void) {
 	attitude_estimation_setup();
 	attitude_control_setup();
 	position_estimation_setup();
+	gps_navigation_setup();
+	gps_denied_navigation_setup();
 	position_control_setup();
 	state_detector_setup();
 	optflow_setup();
