@@ -367,8 +367,8 @@ def main():
                       f"Vel: N={velN/100:.2f} E={velE/100:.2f} m/s | "
                       f"Hdg: {heading:.1f}° | Sats: {numSV}")
             
-            # Send at 5 Hz (every 200ms)
-            time.sleep(0.2)
+            # Send at 10 Hz (every 100ms)
+            time.sleep(1.0)
             
     except KeyboardInterrupt:
         print(f"\n\nSimulation stopped. Sent {msg_count} messages.")

@@ -6,61 +6,41 @@
 
 // UBX message IDs
 #define UBX_CLASS_NAV 0x01
-#define UBX_NAV_POSLLH 0x02
-#define UBX_NAV_VELNED 0x12
+#define UBX_NAV_PVT 0x07
 
-// GPS position data structure (from NAV-POSLLH)
+// GPS position data structure (from NAV-PVT)
 typedef struct {
-	uint32_t iTOW;      // GPS time of week (ms)
 	int32_t lon;        // Longitude (deg * 1e7)
 	int32_t lat;        // Latitude (deg * 1e7)
-	int32_t height;     // Height above ellipsoid (mm)
-	int32_t hMSL;       // Height above mean sea level (mm)
-	uint32_t hAcc;      // Horizontal accuracy estimate (mm)
-	uint32_t vAcc;      // Vertical accuracy estimate (mm)
+	int32_t alt;        // Height above mean sea level (mm)
 } gps_position_t;
 
-// GPS velocity data structure (from NAV-VELNED)
+// GPS velocity data structure (from NAV-PVT)
 typedef struct {
-	uint32_t iTOW;      // GPS time of week (ms)
-	int32_t velN;       // North velocity (cm/s)
-	int32_t velE;       // East velocity (cm/s)
-	int32_t velD;       // Down velocity (cm/s)
-	uint32_t speed;     // 3D speed (cm/s)
-	uint32_t gSpeed;    // Ground speed (cm/s)
-	int32_t heading;    // Heading of motion (deg * 1e5)
-	uint32_t sAcc;      // Speed accuracy estimate (cm/s)
-	uint32_t cAcc;      // Course/heading accuracy (deg * 1e5)
+	int32_t velN;       // North velocity (mm/s)
+	int32_t velE;       // East velocity (mm/s)
+	int32_t velD;       // Down velocity (mm/s)
 } gps_velocity_t;
 
 static gps_position_t g_gps_position;
 static gps_velocity_t g_gps_velocity;
 
-static void parse_nav_posllh(uint8_t *payload) {
-	// Parse NAV-POSLLH payload (28 bytes)
-	memcpy(&g_gps_position.iTOW, &payload[0], 4);
-	memcpy(&g_gps_position.lon, &payload[4], 4);
-	memcpy(&g_gps_position.lat, &payload[8], 4);
-	memcpy(&g_gps_position.height, &payload[12], 4);
-	memcpy(&g_gps_position.hMSL, &payload[16], 4);
-	memcpy(&g_gps_position.hAcc, &payload[20], 4);
-	memcpy(&g_gps_position.vAcc, &payload[24], 4);
+static void parse_nav_pvt(uint8_t *payload, uint16_t length) {
+	// Parse NAV-PVT payload (92 bytes minimum)
+	if (length < 92) return;
+	
+	// Extract position (bytes 24-39)
+	memcpy(&g_gps_position.lon, &payload[24], 4);  // Longitude (deg * 1e7)
+	memcpy(&g_gps_position.lat, &payload[28], 4);  // Latitude (deg * 1e7)
+	memcpy(&g_gps_position.alt, &payload[36], 4);  // Height MSL (mm)
+	
+	// Extract velocity (bytes 48-59)
+	memcpy(&g_gps_velocity.velN, &payload[48], 4); // North velocity (mm/s)
+	memcpy(&g_gps_velocity.velE, &payload[52], 4); // East velocity (mm/s)
+	memcpy(&g_gps_velocity.velD, &payload[56], 4); // Down velocity (mm/s)
 	
 	// Publish GPS position data
 	publish(EXTERNAL_SENSOR_GPS, (uint8_t*)&g_gps_position, sizeof(gps_position_t));
-}
-
-static void parse_nav_velned(uint8_t *payload) {
-	// Parse NAV-VELNED payload (36 bytes)
-	memcpy(&g_gps_velocity.iTOW, &payload[0], 4);
-	memcpy(&g_gps_velocity.velN, &payload[4], 4);
-	memcpy(&g_gps_velocity.velE, &payload[8], 4);
-	memcpy(&g_gps_velocity.velD, &payload[12], 4);
-	memcpy(&g_gps_velocity.speed, &payload[16], 4);
-	memcpy(&g_gps_velocity.gSpeed, &payload[20], 4);
-	memcpy(&g_gps_velocity.heading, &payload[24], 4);
-	memcpy(&g_gps_velocity.sAcc, &payload[28], 4);
-	memcpy(&g_gps_velocity.cAcc, &payload[32], 4);
 	
 	// Publish GPS velocity data
 	publish(EXTERNAL_SENSOR_GPS_VELOC, (uint8_t*)&g_gps_velocity, sizeof(gps_velocity_t));
@@ -81,19 +61,8 @@ static void on_ubx_message_received(uint8_t *data, size_t size) {
 	
 	// Parse NAV class messages
 	if (msg_class == UBX_CLASS_NAV) {
-		switch (msg_id) {
-		case UBX_NAV_POSLLH:
-			if (length == 28) {
-				parse_nav_posllh(payload);
-			}
-			break;
-		case UBX_NAV_VELNED:
-			if (length == 36) {
-				parse_nav_velned(payload);
-			}
-			break;
-		default:
-			break;
+		if (msg_id == UBX_NAV_PVT) {
+			parse_nav_pvt(payload, length);
 		}
 	}
 }
