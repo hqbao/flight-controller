@@ -13,12 +13,13 @@ The Flight Controller (FC) is the core autopilot system that:
 
 ## Key Features
 
-- **Multi-Sensor Fusion:** Combines gyro, accelerometer, compass, and barometer data for robust attitude estimation
+- **Multi-Sensor Fusion:** Combines gyro, accelerometer, compass, barometer, GPS, and optical flow data for robust attitude and position estimation
 - **Hardware Abstraction:** Platform-independent code that runs on STM32H7 and ESP32
 - **Modular Architecture:** Cleanly separated modules for each sensor and control function
+- **Navigation Modes:** GPS-based outdoor navigation and optical flow-based indoor navigation
 - **Real-Time Calibration:** Automatic compass and IMU calibration with range validation
 - **UART Telemetry:** Streams sensor data and estimation results to host PC for visualization
-- **PID Control:** Attitude and speed stabilization loops
+- **PID Control:** Attitude, position, and speed stabilization loops
 - **Pub/Sub System:** Inter-module communication via publish-subscribe messaging
 
 ## Hardware Support
@@ -28,7 +29,8 @@ The Flight Controller (FC) is the core autopilot system that:
 | **IMU** | ICM-42688P (I2C/SPI) | ✓ Active |
 | **Magnetometer** | BMM350 (I2C) | ✓ Active, Calibrating |
 | **Barometer** | DPS310 (I2C) | ✓ Active |
-| **GPS** | Generic UART | ✓ Supported |
+| **Optical Flow** | PAW3395 (SPI) | ✓ Supported |
+| **GPS** | u-blox UBX Protocol (UART) | ✓ Supported |
 | **Microcontroller** | STM32H7 / ESP32 | ✓ Both Supported |
 
 ## Demo Videos
@@ -56,11 +58,15 @@ flight-controller/
 │   ├── imu/                   # IMU driver and data acquisition
 │   ├── compass/               # Magnetometer driver & calibration
 │   ├── air_pressure/          # Barometer driver
-│   ├── attitude_fusion/       # Sensor fusion (Kalman/complementary filter)
+│   ├── gps/                   # GPS receiver (UBX protocol)
+│   ├── optflow/               # Optical flow sensor interface
+│   ├── attitude_estimation/   # Sensor fusion (Kalman/complementary filter)
 │   ├── attitude_control/      # Attitude stabilization PID loops
 │   ├── speed_control/         # Motor speed / thrust controller
-│   ├── nav_fusion/            # Position estimation
-│   ├── nav_control/           # Navigation / waypoint guidance
+│   ├── position_estimation/   # Position estimation (GPS/optical flow fusion)
+│   ├── position_control/      # Position control PID loops
+│   ├── gps_navigation/        # GPS-based waypoint navigation (outdoor)
+│   ├── gps_denied_navigation/ # Optical flow waypoint navigation (indoor)
 │   ├── remote_control/        # RC receiver input processing
 │   ├── state_detector/        # Flight state machine
 │   ├── fault_handler/         # Safety and error handling
@@ -70,6 +76,7 @@ flight-controller/
 └── pytest/                    # Python3 visualization and testing tools
     ├── calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
     ├── calibrate_compass.py   # Compass calibration (Ellipsoid Fit)
+    ├── gps_sim_ubx.py         # GPS simulator (UBX NAV-PVT messages)
     ├── view_attitude.py       # 3D attitude visualization
     ├── view_position.py       # 3D position visualization
     └── view_charts.py         # Real-time sensor data plotting
@@ -167,9 +174,23 @@ subscribe(SCHEDULER_25HZ, callback_function);
 ### Data Publication Topics
 - `SENSOR_COMPASS`: Calibrated compass vector (published by compass module)
 - `ANGULAR_STATE_UPDATE`: Estimated attitude angles (roll, pitch, yaw)
+- `ANGULAR_TARGET_UPDATE`: Target attitude angles for control
+- `ALTITUDE_CONTROL_UPDATE`: Altitude control commands
 - `SENSOR_LINEAR_ACCEL`: Linear acceleration estimate
+- `POSITION_STATE_UPDATE`: Estimated position and velocity (from position_estimation)
+- `POSITION_TARGET_UPDATE`: Target position (from navigation modules)
+- `EXTERNAL_SENSOR_GPS`: GPS position data (lat, lon, alt)
+- `EXTERNAL_SENSOR_GPS_VELOC`: GPS velocity data (velN, velE, velD)
+- `EXTERNAL_SENSOR_OPTFLOW`: Optical flow sensor data
 - `MONITOR_DATA`: Telemetry data for UART streaming (float32 values)
 - `SENSOR_ATTITUDE_VECTOR`: Attitude estimation vector (fusion1 predictions)
+
+### Control Topics
+- `RC_STATE_UPDATE`: Remote control state changes
+- `RC_MOVE_IN_UPDATE`: Remote control movement commands
+- `STATE_DETECTION_UPDATE`: Flight state machine updates
+- `SPEED_CONTROL_SETUP`: Motor initialization
+- `SPEED_CONTROL_UPDATE`: Motor speed commands
 
 ### System Topics
 - `DB_MESSAGE_UPDATE`: DB protocol messages (internal communication)
@@ -188,8 +209,8 @@ These macros (found in respective module `.c` files) control which data is strea
 | :--- | :--- | :--- |
 | `ENABLE_ACCEL_MONITOR_LOG` | `imu.c` | Stream raw accelerometer data for calibration |
 | `ENABLE_COMPASS_MONITOR_LOG` | `compass.c` | Stream raw (2) or calibrated (1) compass data |
-| `ENABLE_ATTITUDE_MONITOR_LOG` | `attitude_fusion.c` | Stream estimated attitude vectors |
-| `ENABLE_NAV_FUSION_MONITOR_LOG` | `nav_fusion.c` | Stream estimated position (1) or velocity (2) |
+| `ENABLE_ATTITUDE_MONITOR_LOG` | `attitude_estimation.c` | Stream estimated attitude vectors |
+| `ENABLE_POSITION_ESTIMATION_MONITOR_LOG` | `position_estimation.c` | Stream estimated position (1) or velocity (2) |
 | `ENABLE_IMU_MONITOR_LOG` | `imu.c` | (Deprecated) Stream raw IMU data |
 
 ## Visualization Tools
@@ -272,8 +293,10 @@ Corrects for Hard Iron (offsets) and Soft Iron (distortions) effects.
 - [ ] Wind estimation and compensation
 - [ ] Multi-IMU redundancy
 - [ ] Advanced motor mixing algorithms
-- [ ] Autonomous flight modes
+- [ ] Waypoint mission planning and execution
 - [ ] Ground control station integration
+- [ ] Real-time GPS/optical flow switching
+- [ ] Obstacle detection and avoidance
 
 ## License
 
