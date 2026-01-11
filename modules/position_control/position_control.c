@@ -115,6 +115,10 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 	memcpy(&g_rc_att_ctl, data, sizeof(rc_att_ctl_t));
 }
 
+static void position_target_update(uint8_t *data, size_t size) {
+	memcpy(&g_pos_target, data, sizeof(vector3d_t));
+}
+
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (data[1] == 0) { // Downward
 		g_downward_range = (double)(*(int*)&data[12]);
@@ -161,7 +165,7 @@ static void position_control_loop(void) {
 	pid_control_update(&g_pid_pos_z, g_pos_final.z, g_pos_target.z, dt);
 }
 
-static void reset(void) {
+static void reset_pid(void) {
 	vector3d_set(&g_pos_target, &g_pos_final);
 	vector3d_init(&g_pos_offset, 0, 0, 0);
 	pid_control_reset(&g_pid_pos_x, g_pos_final.x);
@@ -185,7 +189,7 @@ static void position_update(uint8_t *data, size_t size) {
 	memcpy(&g_veloc_final, &data[sizeof(vector3d_t)], sizeof(vector3d_t));
 	
 	if (g_rc_state_ctl.mode == 2) {
-		reset();
+		reset_pid();
 		vector3d_set(&g_veloc_offset, &g_veloc_final);
 		g_pos_ctl_roll 		= -g_rc_att_ctl.roll * 0.5;
 		g_pos_ctl_pitch 	= -g_rc_att_ctl.pitch * 0.5;
@@ -205,7 +209,7 @@ static void position_update(uint8_t *data, size_t size) {
 static void state_update(uint8_t *data, size_t size) {
 	g_state = (state_t)data[0];
 	if (g_state == ARMED || g_state == READY) {
-		reset();
+		reset_pid();
 		vector3d_set(&g_veloc_offset, &g_veloc_final);
 		g_take_off_speed = 0;
 		g_pos_ctl_roll = 0;
@@ -213,11 +217,11 @@ static void state_update(uint8_t *data, size_t size) {
 		g_pos_ctl_yaw = 0;
 		g_pos_ctl_alt = 0;
 	} else if (g_state == TAKING_OFF) {
-		reset();
+		reset_pid();
 	}
 }
 
-static void update_target(uint8_t *data, size_t size) {
+static void manual_control_update(uint8_t *data, size_t size) {
 	g_yaw_veloc = fabs(g_rc_att_ctl.yaw) > RC_DEADBAND ? g_rc_att_ctl.yaw * RC_YAW_SCALE : 0;
 
 	if (g_rc_state_ctl.mode == 2) {
@@ -281,9 +285,10 @@ static void state_control_update(uint8_t *data, size_t size) {
 void position_control_setup(void) {
 	pid_setup();
 	subscribe(POSITION_STATE_UPDATE, position_update);
+	subscribe(POSITION_TARGET_UPDATE, position_target_update);
 	subscribe(STATE_DETECTION_UPDATE, state_update);
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SCHEDULER_100HZ, update_target);
+	subscribe(SCHEDULER_100HZ, manual_control_update);
 }
