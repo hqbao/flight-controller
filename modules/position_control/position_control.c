@@ -42,7 +42,7 @@
 
 /* RC Control */
 #define RC_DEADBAND 0.1
-#define RC_XY_SCALE 5.0
+#define RC_XY_SCALE 8.0
 #define RC_Z_SCALE 20.0
 #define RC_YAW_SCALE -0.5
 

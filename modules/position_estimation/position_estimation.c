@@ -72,20 +72,39 @@ typedef enum {
 static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	int32_t raw_dx, raw_dy, raw_z;
+	int32_t raw_dx, raw_dy, raw_z, raw_clearity;
 	memcpy(&raw_dx, &data[4], sizeof(int32_t));
 	memcpy(&raw_dy, &data[8], sizeof(int32_t));
 	memcpy(&raw_z, &data[12], sizeof(int32_t));
+	memcpy(&raw_clearity, &data[16], sizeof(int32_t));
+	
+	// Scale down the optical flow values (they were scaled up by 1000)
+	float dx_mm = (float)raw_dx / 1000.0f;
+	float dy_mm = (float)raw_dy / 1000.0f;
+	
+	// clearity is already the average gradient per pixel
+	float clearity = (float)raw_clearity / 10.0f;
+	float avg_gradient = clearity;
+	
+	// Calculate texture_gain the same way as optflow_dense did
+	if (avg_gradient < 5.0f) {  // MIN_GRADIENT_STRENGTH
+		avg_gradient = 5.0f;
+	}
+	float texture_gain = 50.0f / avg_gradient;  // BASE_GRADIENT_STRENGTH / avg_gradient
 
 	if (data[1] == OPTFLOW_DOWNWARD) {
-		g_optflow_down.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
-		g_optflow_down.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
+		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
+		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
+		g_optflow_down.dx = dx_scaled * OPTFLOW_UNIT_SCALE;
+		g_optflow_down.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_down.dx;
 		g_optflow.dy = g_optflow_down.dy;
 		if (raw_z > 0) g_optflow.z  = (double)raw_z;
 	} else if (data[1] == OPTFLOW_UPWARD) {
-		g_optflow_up.dx = (double)raw_dx * OPTFLOW_UNIT_SCALE;
-		g_optflow_up.dy = (double)raw_dy * OPTFLOW_UNIT_SCALE;
+		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
+		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
+		g_optflow_up.dx = dx_scaled * OPTFLOW_UNIT_SCALE;
+		g_optflow_up.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_up.dx;
 		g_optflow.dy = -g_optflow_up.dy;
 		if (raw_z > 0) g_optflow.z  = (double)raw_z;
