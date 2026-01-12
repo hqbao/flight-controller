@@ -78,19 +78,10 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	memcpy(&raw_z, &data[12], sizeof(int32_t));
 	memcpy(&raw_clearity, &data[16], sizeof(int32_t));
 	
-	// Scale down the optical flow values (they were scaled up by 1000)
 	float dx_mm = (float)raw_dx / 1000.0f;
 	float dy_mm = (float)raw_dy / 1000.0f;
-	
-	// clearity is already the average gradient per pixel
 	float clearity = (float)raw_clearity / 10.0f;
-	float avg_gradient = clearity;
-	
-	// Calculate texture_gain the same way as optflow_dense did
-	if (avg_gradient < 5.0f) {  // MIN_GRADIENT_STRENGTH
-		avg_gradient = 5.0f;
-	}
-	float texture_gain = 50.0f / avg_gradient;  // BASE_GRADIENT_STRENGTH / avg_gradient
+	float texture_gain = 50.0f / (clearity < 5.0f ? 5.0f : clearity);
 
 	if (data[1] == OPTFLOW_DOWNWARD) {
 		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
@@ -99,7 +90,6 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 		g_optflow_down.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_down.dx;
 		g_optflow.dy = g_optflow_down.dy;
-		if (raw_z > 0) g_optflow.z  = (double)raw_z;
 	} else if (data[1] == OPTFLOW_UPWARD) {
 		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
 		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
@@ -107,8 +97,9 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 		g_optflow_up.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
 		g_optflow.dx = g_optflow_up.dx;
 		g_optflow.dy = -g_optflow_up.dy;
-		if (raw_z > 0) g_optflow.z  = (double)raw_z;
 	}
+
+	if (raw_z > 0) g_optflow.z = (double)raw_z;
 
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
