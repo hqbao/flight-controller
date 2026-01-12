@@ -32,8 +32,8 @@ typedef struct {
 
     vector3d_t true_norm_accel;
     vector3d_t pred_norm_accel;
-    vector3d_t true_euler_angle;
-    vector3d_t pred_euler_angle;
+    vector3d_t v_linear_acc;
+    double accel_scale;
 
     matrix_t I4x4;
     matrix_t omega;
@@ -56,7 +56,7 @@ typedef struct {
     matrix_t KH; // 4x3
 } fusion2_t;
 
-void fusion2_init(fusion2_t *f, double gyro_noise, double accel_noise);
+void fusion2_init(fusion2_t *f, double gyro_noise, double accel_noise, double accel_scale);
 void fusion2_predict(fusion2_t *f, double gx, double gy, double gz, double dt);
 void fusion2_update(fusion2_t *f, double ax, double ay, double az);
 

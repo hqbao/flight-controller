@@ -63,6 +63,7 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define OUTPUT_VELOC_SCALE      1.0
 #define ACCEL_Z_THRESHOLD       300.0
 #define RANGE_SWITCH_THRESHOLD  2000.0
+#define VELOC_OPTFLOW_CORRECTION_GAIN 0.001
 
 typedef enum {
 	ALT_SOURCE_LASER = 0,
@@ -150,13 +151,16 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 
 static void linear_accel_update(uint8_t *data, size_t size) {
 	vector3d_t v = *(vector3d_t*)data;
-	g_linear_accel.x = v.x * MAX_IMU_ACCEL;
-	g_linear_accel.y = v.y * MAX_IMU_ACCEL;
+	g_linear_accel.x = -v.y * MAX_IMU_ACCEL;
+	g_linear_accel.y = -v.x * MAX_IMU_ACCEL;
 	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
 
 	g_linear_veloc.x += 1.0 / ACCEL_FREQ * g_linear_accel.x;
 	g_linear_veloc.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
 	g_linear_veloc.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
+
+	g_linear_veloc.x += VELOC_OPTFLOW_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dx - g_linear_veloc.x);
+	g_linear_veloc.y += VELOC_OPTFLOW_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dy - g_linear_veloc.y);
 
 	g_pos_est2.x += POS_XY_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc.x;
 	g_pos_est2.y += POS_XY_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc.y;

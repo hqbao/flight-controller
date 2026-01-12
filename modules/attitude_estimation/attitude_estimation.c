@@ -3,20 +3,18 @@
 #include <platform.h>
 #include <string.h>
 #include <math.h>
-#include <fusion1.h>
+#include <fusion2.h>
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
 #define ENABLE_ATTITUDE_MONITOR_LOG 0
 
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 1000
-#define ACCEL_FREQ 500
 #define DEG2RAD 0.01745329251
 #define RAD2DEG 57.2957795131
 #define DT (1.0 / GYRO_FREQ)
-#define DEG2RAD_BY_DT (DEG2RAD * DT)
-#define ACCEL_SMOOTH_GAIN 4.0
-#define ATTITUDE_CORRECTION_GAIN 0.125
+#define GYRO_NOISE 0.0001
+#define ACCEL_NOISE 100.0
 
 typedef struct {
 	double roll;
@@ -24,18 +22,7 @@ typedef struct {
 	double yaw;
 } angle3d_t;
 
-static fusion1_t g_f11;
-static vector3d_t g_imu1_gyro = {0, 0, 0};
-static vector3d_t g_imu1_accel = {0, 0, MAX_IMU_ACCEL};
-
-static fusion1_t g_f12;
-static vector3d_t g_imu2_gyro = {0, 0, 0};
-static vector3d_t g_imu2_accel = {0, 0, MAX_IMU_ACCEL};
-
-static fusion1_t g_f13;
-static vector3d_t g_imu3_gyro = {0, 0, 0};
-static vector3d_t g_imu3_accel = {0, 0, MAX_IMU_ACCEL};
-
+static fusion2_t g_f11;
 static angle3d_t g_angular_state = {0, 0, 0};
 
 static void gyro_update(uint8_t *data, size_t size) {
@@ -48,30 +35,17 @@ static void gyro_update(uint8_t *data, size_t size) {
 	float gy = -raw_gy;
 	float gz = raw_gz;
 
-	vector3d_init(&g_imu1_gyro, gx, gy, gz);
-	fusion1_predict(&g_f11,
-			g_imu1_gyro.x * DEG2RAD_BY_DT,
-			g_imu1_gyro.y * DEG2RAD_BY_DT,
-			g_imu1_gyro.z * DEG2RAD_BY_DT);
+	fusion2_predict(&g_f11, gx, gy, gz, DT);
 
-	vector3d_init(&g_imu2_gyro, gx, gz, -gy);
-	fusion1_predict(&g_f12,
-			g_imu2_gyro.x * DEG2RAD_BY_DT,
-			g_imu2_gyro.y * DEG2RAD_BY_DT,
-			g_imu2_gyro.z * DEG2RAD_BY_DT);
-
-	vector3d_init(&g_imu3_gyro, gz, gy, -gx);
-	fusion1_predict(&g_f13,
-			g_imu3_gyro.x * DEG2RAD_BY_DT,
-			g_imu3_gyro.y * DEG2RAD_BY_DT,
-			g_imu3_gyro.z * DEG2RAD_BY_DT);
-
-	g_angular_state.roll = asin(g_f11.v_pred.y) * RAD2DEG;
-	g_angular_state.pitch = asin(g_f11.v_pred.x) * RAD2DEG;
-	g_angular_state.yaw += gz * DT;
+	// Extract Euler angles from quaternion (in radians)
+	vector3d_t euler;
+	quat_to_euler(&euler, &g_f11.q);
+	g_angular_state.roll = -euler.y * RAD2DEG;
+	g_angular_state.pitch = euler.x * RAD2DEG;
+	g_angular_state.yaw = euler.z * RAD2DEG;
 
 	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
-	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
+	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.pred_norm_accel, sizeof(vector3d_t));
 }
 
 static void accel_update(uint8_t *data, size_t size) {
@@ -80,35 +54,28 @@ static void accel_update(uint8_t *data, size_t size) {
     memcpy(&raw_ay, &data[4], sizeof(float));
     memcpy(&raw_az, &data[8], sizeof(float));
 
-	float ax = -raw_ay; // Note: Swapped indices in original code: ax = -data[4] (which is y), ay = -data[0] (which is x)
-	float ay = -raw_ax;
+	float ax = -raw_ax;
+	float ay = -raw_ay;
 	float az = raw_az;
 
-	vector3d_init(&g_imu1_accel, ax, ay, az);
-	fusion1_update(&g_f11, g_imu1_accel.x, g_imu1_accel.y, g_imu1_accel.z);
-
-	vector3d_init(&g_imu2_accel, az, ay, -ax);
-	fusion1_update(&g_f12, g_imu2_accel.x, g_imu2_accel.y, g_imu2_accel.z);
-
-	vector3d_init(&g_imu3_accel, ax, az, -ay);
-	fusion1_update(&g_f13, g_imu3_accel.x, g_imu3_accel.y, g_imu3_accel.z);
-
+	fusion2_update(&g_f11, ax, ay, az);
+	
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 }
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Pack v_pred and v_true into MONITOR_DATA message
-	   Format: 6 float32 values (v_pred.x, v_pred.y, v_pred.z, v_true.x, v_true.y, v_true.z) */
+	/* Pack pred_norm_accel and true_norm_accel into MONITOR_DATA message
+	   Format: 6 float32 values (pred.x, pred.y, pred.z, true.x, true.y, true.z) */
 	static uint8_t out_msg[24]; /* 6 * 4 bytes (float32) */
 	
 	// Cast double to float before packing
-	float pred_x = (float)g_f11.v_pred.x;
-	float pred_y = (float)g_f11.v_pred.y;
-	float pred_z = (float)g_f11.v_pred.z;
-	float true_x = (float)g_f11.v_true.x;
-	float true_y = (float)g_f11.v_true.y;
-	float true_z = (float)g_f11.v_true.z;
+	float pred_x = (float)g_f11.pred_norm_accel.x;
+	float pred_y = (float)g_f11.pred_norm_accel.y;
+	float pred_z = (float)g_f11.pred_norm_accel.z;
+	float true_x = (float)g_f11.true_norm_accel.x;
+	float true_y = (float)g_f11.true_norm_accel.y;
+	float true_z = (float)g_f11.true_norm_accel.z;
 	
 	memcpy(&out_msg[0], &pred_x, sizeof(float));
 	memcpy(&out_msg[4], &pred_y, sizeof(float));
@@ -122,17 +89,10 @@ static void loop_logger(uint8_t *data, size_t size) {
 #endif
 
 static void init(void) {
-	fusion1_init(&g_f11, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
-	g_f11.accel_scale = MAX_IMU_ACCEL;
+	// Initialize with gyro_noise, accel_noise, and accel_scale
+	// gyro_noise: process noise, accel_noise: measurement noise, accel_scale: 1g in sensor units
+	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL);
 	//g_f11.no_correction = 1;
-
-	fusion1_init(&g_f12, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
-	fusion1_predict(&g_f12, M_PI_2, 0, 0);
-	//g_f12.no_correction = 1;
-
-	fusion1_init(&g_f13, ACCEL_SMOOTH_GAIN, ATTITUDE_CORRECTION_GAIN, ACCEL_FREQ);
-	fusion1_predict(&g_f13, 0, -M_PI_2, 0);
-	//g_f13.no_correction = 1;
 }
 
 void attitude_estimation_setup(void) {

@@ -41,6 +41,9 @@ void quat_to_rot_matrix(matrix_t* rot, const quaternion_t* q);
 // Rotate vector by quaternion (v' = q * v * q^-1)
 void quat_rotate_vector(vector3d_t* result, const quaternion_t* q, const vector3d_t* v);
 
+// Convert quaternion to Euler angles (roll, pitch, yaw in radians)
+void quat_to_euler(vector3d_t* euler, const quaternion_t* q);
+
 // Measurement function h(q): Predicts accelerometer reading from quaternion state
 void quat_to_accel(vector3d_t *a, const quaternion_t *q, float g);
 
