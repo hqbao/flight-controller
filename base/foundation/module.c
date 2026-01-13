@@ -15,6 +15,8 @@
 #include <state_detector/state_detector.h>
 #include <speed_control/speed_control.h>
 #include <logger/logger.h>
+#include <oscillation_detection/oscillation_detection.h>
+#include <linear_drift_detection/linear_drift_detection.h>
 #include <test/test.h>
 
 void platform_setup(void) {
@@ -28,6 +30,8 @@ void platform_setup(void) {
 	attitude_estimation_setup();
 	attitude_control_setup();
 	position_estimation_setup();
+	oscillation_detection_setup();
+	linear_drift_detection_setup();
 	position_control_setup();
 	optflow_setup();
 	//gps_setup();

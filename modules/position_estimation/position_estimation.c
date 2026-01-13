@@ -1,8 +1,6 @@
 #include "position_estimation.h"
 #include <pubsub.h>
-#include <platform.h>
 #include <vector3d.h>
-#include <pid_control.h>
 #include <string.h>
 #include <math.h>
 #include <macro.h>
@@ -17,25 +15,28 @@
 #define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
 
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-} optflow_t;
-
 typedef enum {
 	OPTFLOW_DOWNWARD = 0,
 	OPTFLOW_UPWARD = 1,
 } optflow_direction_t;
+
+typedef struct {
+    double dx;
+    double dy;
+    double z;
+    optflow_direction_t direction; 
+} optflow_data_t;
 
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
 static double g_alt = 0;
 static double g_alt_prev = 0;
 static double g_alt_d = 0;
-static optflow_t g_optflow_down = {0, 0, 0};
-static optflow_t g_optflow_up = {0, 0, 0};
-static optflow_t g_optflow = {0, 0, 0};
+static struct {
+    double dx;
+    double dy;
+    double z;
+} g_optflow = {0, 0, 0};
 static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_linear_veloc = {0, 0, 0};
 static vector3d_t g_linear_veloc_est = {0, 0, 0};
@@ -55,7 +56,6 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define POS_Z_TRUE_CORRECTION_GAIN  1.0
 #define POS_XY_EST1_INTEGRATION_GAIN 0.0
 #define POS_Z_EST1_INTEGRATION_GAIN  1.0
-#define OPTFLOW_UNIT_SCALE          0.02
 #define ALT_DERIVATIVE_SCALE    100.0
 #define BARO_ALPHA_HIGH_ACCEL   0.05
 #define BARO_ALPHA_LOW_ACCEL    0.005
@@ -75,34 +75,18 @@ typedef enum {
 static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	int32_t raw_dx, raw_dy, raw_z, raw_clearity;
-	memcpy(&raw_dx, &data[4], sizeof(int32_t));
-	memcpy(&raw_dy, &data[8], sizeof(int32_t));
-	memcpy(&raw_z, &data[12], sizeof(int32_t));
-	memcpy(&raw_clearity, &data[16], sizeof(int32_t));
-	
-	float dx_mm = (float)raw_dx / 1000.0f;
-	float dy_mm = (float)raw_dy / 1000.0f;
-	float clearity = (float)raw_clearity / 10.0f;
-	float texture_gain = 50.0f / (clearity < 5.0f ? 5.0f : clearity);
+	if (size < sizeof(optflow_data_t)) return;
+	optflow_data_t *msg = (optflow_data_t*)data;
 
-	if (data[1] == OPTFLOW_DOWNWARD) {
-		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
-		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
-		g_optflow_down.dx = dx_scaled * OPTFLOW_UNIT_SCALE;
-		g_optflow_down.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
-		g_optflow.dx = g_optflow_down.dx;
-		g_optflow.dy = g_optflow_down.dy;
-	} else if (data[1] == OPTFLOW_UPWARD) {
-		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
-		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
-		g_optflow_up.dx = dx_scaled * OPTFLOW_UNIT_SCALE;
-		g_optflow_up.dy = dy_scaled * OPTFLOW_UNIT_SCALE;
-		g_optflow.dx = g_optflow_up.dx;
-		g_optflow.dy = -g_optflow_up.dy;
+	if (msg->direction == OPTFLOW_DOWNWARD) {
+		g_optflow.dx = msg->dx;
+		g_optflow.dy = msg->dy;
+	} else if (msg->direction == OPTFLOW_UPWARD) {
+		g_optflow.dx = msg->dx;
+		g_optflow.dy = -msg->dy;
 	}
 
-	if (raw_z > 0) g_optflow.z = (double)raw_z;
+	if (msg->z > 0) g_optflow.z = msg->z;
 
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
