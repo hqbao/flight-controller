@@ -62,7 +62,8 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define OUTPUT_POS_SCALE        1.0
 #define OUTPUT_VELOC_SCALE      1.0
 #define ACCEL_Z_THRESHOLD       300.0
-#define RANGE_SWITCH_THRESHOLD  2000.0
+#define RANGE_SWITCH_TO_LASER_THRESHOLD 500.0
+#define RANGE_SWITCH_TO_BARO_THRESHOLD 1000.0
 #define VELOC_XY_CORRECTION_GAIN 0.01
 #define VELOC_Z_CORRECTION_GAIN 0.01
 
@@ -106,16 +107,25 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_pos_true.x += g_optflow.dx;
 	g_pos_true.y += g_optflow.dy;
 
-	// Auto switch: use laser if range < 2000, else use barometer
-	alt_source_t new_alt_source = (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_THRESHOLD) ? ALT_SOURCE_LASER : ALT_SOURCE_BARO;
+	// Auto switch: use laser if range < 500, else use barometer if range > 1000
+    alt_source_t new_alt_source = g_alt_source;
+    if (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_TO_LASER_THRESHOLD) {
+        new_alt_source = ALT_SOURCE_LASER;
+    } else if (g_optflow.z > RANGE_SWITCH_TO_BARO_THRESHOLD || g_optflow.z <= 0) {
+        new_alt_source = ALT_SOURCE_BARO;
+    }
 	
-	if (new_alt_source == ALT_SOURCE_LASER) {
-		// Switching to laser - reset reference
-		if (g_alt_source != ALT_SOURCE_LASER) {
-			g_alt_source = ALT_SOURCE_LASER;
-			g_alt_prev = g_optflow.z;
-		}
-		
+    // Update state
+    if (new_alt_source != g_alt_source) {
+        g_alt_source = new_alt_source;
+        if (g_alt_source == ALT_SOURCE_LASER) {
+            g_alt_prev = g_optflow.z;
+        } else if (g_alt_source == ALT_SOURCE_BARO) {
+            g_alt_prev = g_air_pressure_alt;
+        }
+    }
+
+	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
 		g_alt = g_optflow.z;
 		g_alt_d = g_alt - g_alt_prev;
@@ -132,16 +142,7 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		g_air_pressure_alt += BARO_ALPHA_LOW_ACCEL * (g_air_pressure_alt_raw - g_air_pressure_alt);
 	}
 
-	// Auto switch: use barometer if range >= 2000 or no valid laser data
-	alt_source_t new_alt_source = (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_THRESHOLD) ? ALT_SOURCE_LASER : ALT_SOURCE_BARO;
-	
-	if (new_alt_source == ALT_SOURCE_BARO) {
-		// Switching to barometer - reset reference
-		if (g_alt_source != ALT_SOURCE_BARO) {
-			g_alt_source = ALT_SOURCE_BARO;
-			g_alt_prev = g_air_pressure_alt;
-		}
-		
+	if (g_alt_source == ALT_SOURCE_BARO) {
 		// Update altitude
 		g_alt = g_air_pressure_alt;
 		g_alt_d = g_alt - g_alt_prev;
