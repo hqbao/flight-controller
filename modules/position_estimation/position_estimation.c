@@ -38,24 +38,24 @@ static struct {
     double z;
 } g_optflow = {0, 0, 0};
 static vector3d_t g_linear_accel = {0, 0, 0};
-static vector3d_t g_linear_veloc = {0, 0, 0};
-static vector3d_t g_linear_veloc_est = {0, 0, 0};
+static vector3d_t g_linear_veloc0 = {0, 0, 0};
+static vector3d_t g_linear_veloc1 = {0, 0, 0};
 static vector3d_t g_linear_veloc_final = {0, 0, 0};
-static vector3d_t g_pos_est2 = {0, 0, 0};
-static vector3d_t g_pos_est2_prev = {0, 0, 0};
+static vector3d_t g_pos_est0 = {0, 0, 0};
+static vector3d_t g_pos_est0_prev = {0, 0, 0};
 static vector3d_t g_pos_true = {0, 0, 0};
 static vector3d_t g_pos_est1 = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 
 /* Tuning Parameters */
-#define POS_XY_CORRECTION_GAIN      20.0
-#define POS_Z_CORRECTION_GAIN       20.0
-#define POS_XY_INTEGRATION_GAIN     0.05
-#define POS_Z_INTEGRATION_GAIN      1.0
-#define POS_XY_TRUE_CORRECTION_GAIN 1.0
-#define POS_Z_TRUE_CORRECTION_GAIN  1.0
+#define POS_XY_EST0_INTEGRATION_GAIN     0.05
+#define POS_Z_EST0_INTEGRATION_GAIN      1.0
+#define POS_XY_EST0_TRUE_CORRECTION_GAIN 1.0
+#define POS_Z_EST0_TRUE_CORRECTION_GAIN  1.0
 #define POS_XY_EST1_INTEGRATION_GAIN 0.0
 #define POS_Z_EST1_INTEGRATION_GAIN  1.0
+#define POS_XY_EST1_TRUE_CORRECTION_GAIN 20.0
+#define POS_Z_EST1_TRUE_CORRECTION_GAIN  20.0
 #define ALT_DERIVATIVE_SCALE    100.0
 #define BARO_ALPHA_HIGH_ACCEL   0.05
 #define BARO_ALPHA_LOW_ACCEL    0.005
@@ -141,42 +141,42 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_accel.y = -v.x * MAX_IMU_ACCEL;
 	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
 
-	g_linear_veloc.x += 1.0 / ACCEL_FREQ * g_linear_accel.x;
-	g_linear_veloc.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
-	g_linear_veloc.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
+	g_linear_veloc0.x += 1.0 / ACCEL_FREQ * g_linear_accel.x;
+	g_linear_veloc0.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
+	g_linear_veloc0.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
 
-	g_linear_veloc.x += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dx - g_linear_veloc.x);
-	g_linear_veloc.y += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dy - g_linear_veloc.y);
-	g_linear_veloc.z += VELOC_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_alt_d - g_linear_veloc.z);
+	g_linear_veloc0.x += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dx - g_linear_veloc0.x);
+	g_linear_veloc0.y += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dy - g_linear_veloc0.y);
+	g_linear_veloc0.z += VELOC_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_alt_d - g_linear_veloc0.z);
 
-	g_pos_est2.x += POS_XY_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc.x;
-	g_pos_est2.y += POS_XY_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc.y;
-	g_pos_est2.z += POS_Z_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc.z;
+	g_pos_est0.x += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.x;
+	g_pos_est0.y += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.y;
+	g_pos_est0.z += POS_Z_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.z;
 	
-	g_pos_est2.x += POS_XY_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est2.x);
-	g_pos_est2.y += POS_XY_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est2.y);
-	g_pos_est2.z += POS_Z_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est2.z);
+	g_pos_est0.x += POS_XY_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est0.x);
+	g_pos_est0.y += POS_XY_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est0.y);
+	g_pos_est0.z += POS_Z_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est0.z);
 
-	g_linear_veloc_est.x = (g_pos_est2.x - g_pos_est2_prev.x) * ACCEL_FREQ;
-	g_linear_veloc_est.y = (g_pos_est2.y - g_pos_est2_prev.y) * ACCEL_FREQ;
-	g_linear_veloc_est.z = (g_pos_est2.z - g_pos_est2_prev.z) * ACCEL_FREQ;
-	g_pos_est2_prev.x = g_pos_est2.x;
-	g_pos_est2_prev.y = g_pos_est2.y;
-	g_pos_est2_prev.z = g_pos_est2.z;
+	g_linear_veloc1.x = (g_pos_est0.x - g_pos_est0_prev.x) * ACCEL_FREQ;
+	g_linear_veloc1.y = (g_pos_est0.y - g_pos_est0_prev.y) * ACCEL_FREQ;
+	g_linear_veloc1.z = (g_pos_est0.z - g_pos_est0_prev.z) * ACCEL_FREQ;
+	g_pos_est0_prev.x = g_pos_est0.x;
+	g_pos_est0_prev.y = g_pos_est0.y;
+	g_pos_est0_prev.z = g_pos_est0.z;
 
-	g_pos_est1.x += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.x;
-	g_pos_est1.y += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.y;
-	g_pos_est1.z += POS_Z_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc_est.z;
+	g_pos_est1.x += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.x;
+	g_pos_est1.y += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.y;
+	g_pos_est1.z += POS_Z_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.z;
 
-	g_pos_est1.x += POS_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est1.x);
-	g_pos_est1.y += POS_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est1.y);
-	g_pos_est1.z += POS_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est1.z);
+	g_pos_est1.x += POS_XY_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est1.x);
+	g_pos_est1.y += POS_XY_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est1.y);
+	g_pos_est1.z += POS_Z_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est1.z);
 
 	vector3d_scale(&g_pos_final, &g_pos_est1, OUTPUT_POS_SCALE);
 	g_pos_final.x = -g_pos_final.x;
 	g_pos_final.y = -g_pos_final.y;
 
-	vector3d_scale(&g_linear_veloc_final, &g_linear_veloc_est, OUTPUT_VELOC_SCALE);
+	vector3d_scale(&g_linear_veloc_final, &g_linear_veloc1, OUTPUT_VELOC_SCALE);
 	g_linear_veloc_final.x = -g_linear_veloc_final.x;
 	g_linear_veloc_final.y = -g_linear_veloc_final.y;
 
@@ -193,7 +193,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 1
 	float val[3] = {(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z};
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
-	float val[3] = {(float)g_linear_veloc_est.x, (float)g_linear_veloc_est.y, (float)g_linear_veloc_est.z};
+	float val[3] = {(float)g_linear_veloc1.x, (float)g_linear_veloc1.y, (float)g_linear_veloc1.z};
 #endif
 	memcpy(g_msg, val, 12);
 	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
