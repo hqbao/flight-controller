@@ -408,7 +408,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 				g_rc_param_idx = 0;
 
 				int roll 	= g_rc_params[3] - 1500;
-				int pitch 	= g_rc_params[2] - 1500;
+				int pitch = g_rc_params[2] - 1500;
 				int yaw 	= g_rc_params[0] - 1500;
 				int alt 	= g_rc_params[1] - 1500;
 				uint8_t state = g_rc_params[4] < 1250 ? 0 : (g_rc_params[4] > 1750 ? 2 : 1);

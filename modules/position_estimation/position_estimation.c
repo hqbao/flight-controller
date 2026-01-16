@@ -50,12 +50,12 @@ static vector3d_t g_pos_final = {0, 0, 0};
 /* Tuning Parameters */
 #define POS_XY_EST0_INTEGRATION_GAIN     0.05
 #define POS_Z_EST0_INTEGRATION_GAIN      1.0
-#define POS_XY_EST0_TRUE_CORRECTION_GAIN 1.0
-#define POS_Z_EST0_TRUE_CORRECTION_GAIN  1.0
+#define POS_XY_EST0_TRUE_CORRECTION_GAIN 0.5
+#define POS_Z_EST0_TRUE_CORRECTION_GAIN  0.5
 #define POS_XY_EST1_INTEGRATION_GAIN 0.0
 #define POS_Z_EST1_INTEGRATION_GAIN  1.0
 #define POS_XY_EST1_TRUE_CORRECTION_GAIN 20.0
-#define POS_Z_EST1_TRUE_CORRECTION_GAIN  20.0
+#define POS_Z_EST1_TRUE_CORRECTION_GAIN  10.0
 #define ALT_DERIVATIVE_SCALE    100.0
 #define BARO_ALPHA_HIGH_ACCEL   0.05
 #define BARO_ALPHA_LOW_ACCEL    0.005
@@ -145,10 +145,6 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_veloc0.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
 	g_linear_veloc0.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
 
-	g_linear_veloc0.x += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dx - g_linear_veloc0.x);
-	g_linear_veloc0.y += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_optflow.dy - g_linear_veloc0.y);
-	g_linear_veloc0.z += VELOC_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_alt_d - g_linear_veloc0.z);
-
 	g_pos_est0.x += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.x;
 	g_pos_est0.y += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.y;
 	g_pos_est0.z += POS_Z_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.z;
@@ -163,6 +159,10 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_pos_est0_prev.x = g_pos_est0.x;
 	g_pos_est0_prev.y = g_pos_est0.y;
 	g_pos_est0_prev.z = g_pos_est0.z;
+	
+	g_linear_veloc0.x += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.x - g_linear_veloc0.x);
+	g_linear_veloc0.y += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.y - g_linear_veloc0.y);
+	g_linear_veloc0.z += VELOC_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.z - g_linear_veloc0.z);
 
 	g_pos_est1.x += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.x;
 	g_pos_est1.y += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.y;
@@ -194,6 +194,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 	float val[3] = {(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z};
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
 	float val[3] = {(float)g_linear_veloc1.x, (float)g_linear_veloc1.y, (float)g_linear_veloc1.z};
+#elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 3
+	float val[3] = {(float)g_pos_true.z, (float)g_pos_est1.z, (float)g_linear_veloc1.z};
 #endif
 	memcpy(g_msg, val, 12);
 	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);

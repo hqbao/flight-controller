@@ -48,6 +48,13 @@ typedef struct {
 	double yaw;
 } angle3d_t;
 
+typedef struct {
+    double dx;
+    double dy;
+    double z;
+    uint8_t direction;
+} optflow_data_t;
+
 static uint8_t g_module_initialized[MODULE_ID_MAX] = {0};
 
 typedef struct {
@@ -57,9 +64,9 @@ typedef struct {
 } optflow_t;
 
 static angle3d_t g_angular_state = {0, 0, 0};
-static rc_state_ctl_t g_rc_state_ctl;
-static rc_state_ctl_t g_rc_state_ctl_prev;
-static rc_att_ctl_t g_rc_att_ctl;
+static rc_state_ctl_t g_rc_state_ctl = {0};
+static rc_state_ctl_t g_rc_state_ctl_prev = {0};
+static rc_att_ctl_t g_rc_att_ctl = {0};
 static state_t g_state = DISARMED;
 static state_t g_state_prev = DISARMED;
 static char g_imu_calibrated = 0;
@@ -75,10 +82,11 @@ static void move_in_control_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	if (data[1] == OPTFLOW_TYPE_DOWNWARD) { // Downward
-        int32_t range;
-        memcpy(&range, &data[OPTFLOW_RANGE_OFFSET], sizeof(int32_t));
-		g_downward_range = (double)range;
+	if (size < sizeof(optflow_data_t)) return;
+	
+	optflow_data_t *msg = (optflow_data_t*)data;
+	if (msg->direction == OPTFLOW_TYPE_DOWNWARD) {
+		g_downward_range = msg->z;
 	}
 }
 

@@ -13,16 +13,16 @@
 
 /* PID Gains */
 // Position Control XY
-#define POS_CTL_XY_P 0.2
+#define POS_CTL_XY_P 0.5
 #define POS_CTL_XY_I 0.0
 #define POS_CTL_XY_D 0.0
 #define POS_CTL_XY_GAIN_TIME 1.0
 #define POS_CTL_XY_I_LIMIT 5.0
 
 // Position Control Z (Altitude)
-#define POS_CTL_Z_P 4.0
+#define POS_CTL_Z_P 2.0
 #define POS_CTL_Z_I 0.0
-#define POS_CTL_Z_D 2.0
+#define POS_CTL_Z_D 0.0
 #define POS_CTL_Z_GAIN_TIME 1.0
 #define POS_CTL_Z_I_LIMIT 500.0
 
@@ -30,9 +30,9 @@
 #define POS_CTL_XY_SMOOTH_INPUT 1.0
 #define POS_CTL_XY_SMOOTH_P_TERM 1.0
 #define POS_CTL_XY_SMOOTH_OUTPUT 1.0
-#define POS_CTL_Z_SMOOTH_INPUT 0.005
+#define POS_CTL_Z_SMOOTH_INPUT 0.01
 #define POS_CTL_Z_SMOOTH_P_TERM 1.0
-#define POS_CTL_Z_SMOOTH_OUTPUT 0.005
+#define POS_CTL_Z_SMOOTH_OUTPUT 0.01
 
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
@@ -42,13 +42,13 @@
 
 /* RC Control */
 #define RC_DEADBAND 0.1
-#define RC_XY_SCALE 8.0
-#define RC_Z_SCALE 20.0
+#define RC_XY_SCALE 3.0
+#define RC_Z_SCALE 40.0
 #define RC_YAW_SCALE -0.5
 
 /* Velocity Scaling */
-#define POS_CTL_VELOC_X_SCALE 1.2
-#define POS_CTL_VELOC_Y_SCALE 1.2
+#define POS_CTL_VELOC_X_SCALE 0.75
+#define POS_CTL_VELOC_Y_SCALE 0.75
 #define POS_CTL_VELOC_Z_SCALE 2.0
 
 typedef enum {
@@ -72,6 +72,13 @@ typedef struct {
 	uint8_t state;
 	uint8_t mode;
 } rc_state_ctl_t;
+
+typedef struct {
+    double dx;
+    double dy;
+    double z;
+    uint8_t direction;
+} optflow_data_t;
 
 typedef struct {
     double dx;
@@ -120,8 +127,12 @@ static void position_target_update(uint8_t *data, size_t size) {
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
-	if (data[1] == 0) { // Downward
-		g_downward_range = (double)(*(int*)&data[12]);
+	if (size < sizeof(optflow_data_t)) return;
+	
+	optflow_data_t *msg = (optflow_data_t*)data;
+	
+	if (msg->direction == 0) { // Downward
+		g_downward_range = msg->z;
 		if (g_state == LANDING) {
 			if (g_downward_range < LANDING_RANGE_THRESHOLD) {
 				if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down

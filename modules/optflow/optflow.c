@@ -37,8 +37,8 @@ static void on_message_received(uint8_t *data, size_t size) {
 		float clearity = (float)raw_clearity / 10.0f;
 		float texture_gain = 50.0f / (clearity < 5.0f ? 5.0f : clearity);
 
-		double dx_scaled = LIMIT(dx_mm * texture_gain, -100.0, 100.0);
-		double dy_scaled = LIMIT(dy_mm * texture_gain, -100.0, 100.0);
+		double dx_scaled = LIMIT(dx_mm * texture_gain, -20.0, 20.0);
+		double dy_scaled = LIMIT(dy_mm * texture_gain, -20.0, 20.0);
 
 		g_optflow_msg.dx = dx_scaled * OPTFLOW_UNIT_SCALE;
 		g_optflow_msg.dy = dy_scaled * OPTFLOW_UNIT_SCALE;

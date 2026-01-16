@@ -144,7 +144,7 @@ def animate(i):
       val6 = np.concatenate((g_val6[g_cur_idx:], g_val6[:g_cur_idx]))
       ax.plot(g_line, val6, color='cyan')
 
-    ax.set_ylim([-1, 1])
+    # ax.set_ylim([-1, 1])
     ax.set_xlabel('Sample')
     ax.set_ylabel('Value')
     ax.set_title('Compass/Attitude Data')
