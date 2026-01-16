@@ -66,6 +66,13 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define RANGE_SWITCH_TO_BARO_THRESHOLD 1000.0
 #define VELOC_XY_CORRECTION_GAIN 0.01
 #define VELOC_Z_CORRECTION_GAIN 0.01
+#define OPTFLOW_UNIT_SCALE 0.02
+#define OPTFLOW_LIMIT_MAX 100.0
+#define OPTFLOW_LIMIT_MIN 10.0
+#define OPTFLOW_LIMIT_INCREMENT 1.0
+#define OPTFLOW_LIMIT_DECREMENT 10.0
+#define LOW_FREQ_THRESHOLD 5.0
+#define DRIFT_TIME_THRESHOLD 1.0
 
 typedef enum {
 	ALT_SOURCE_LASER = 0,
@@ -73,17 +80,45 @@ typedef enum {
 } alt_source_t;
 
 static alt_source_t g_alt_source = ALT_SOURCE_LASER;
+static double g_optflow_limit = OPTFLOW_LIMIT_MAX;
+static double g_freq = 0;
+
+static void linear_drift_update(uint8_t *data, size_t size) {
+	vector3d_t *drift = (vector3d_t*)data;
+	double max_drift_time = drift->x > drift->y ? drift->x : drift->y;
+	
+	// Increase bound when drift is sustained (need more optical flow data)
+	if (max_drift_time > DRIFT_TIME_THRESHOLD) {
+		g_optflow_limit += OPTFLOW_LIMIT_INCREMENT;
+		if (g_optflow_limit > OPTFLOW_LIMIT_MAX) {
+			g_optflow_limit = OPTFLOW_LIMIT_MAX;
+		}
+	}
+}
+
+static void oscillation_freq_update(uint8_t *data, size_t size) {
+	vector3d_t *freq = (vector3d_t*)data;
+	g_freq = freq->x < freq->y ? freq->x : freq->y;
+	
+	// Lower bound when high frequency oscillation detected (overshoot)
+	if (g_freq < LOW_FREQ_THRESHOLD) {
+		g_optflow_limit -= OPTFLOW_LIMIT_DECREMENT;
+		if (g_optflow_limit < OPTFLOW_LIMIT_MIN) {
+			g_optflow_limit = OPTFLOW_LIMIT_MIN;
+		}
+	}
+}
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	optflow_data_t *msg = (optflow_data_t*)data;
 
 	if (msg->direction == OPTFLOW_DOWNWARD) {
-		g_optflow.dx = msg->dx;
-		g_optflow.dy = msg->dy;
+		g_optflow.dx = LIMIT(msg->dx, -g_optflow_limit, g_optflow_limit) * OPTFLOW_UNIT_SCALE;
+		g_optflow.dy = LIMIT(msg->dy, -g_optflow_limit, g_optflow_limit) * OPTFLOW_UNIT_SCALE;
 	} else if (msg->direction == OPTFLOW_UPWARD) {
-		g_optflow.dx = msg->dx;
-		g_optflow.dy = -msg->dy;
+		g_optflow.dx = LIMIT(msg->dx, -g_optflow_limit, g_optflow_limit) * OPTFLOW_UNIT_SCALE;
+		g_optflow.dy = -LIMIT(msg->dy, -g_optflow_limit, g_optflow_limit) * OPTFLOW_UNIT_SCALE;
 	}
 
 	if (msg->z > 0) g_optflow.z = msg->z;
@@ -206,6 +241,8 @@ void position_estimation_setup(void) {
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
+	subscribe(OSCILLATION_FREQ_DETECTED, oscillation_freq_update);
+	subscribe(LINEAR_DRIFT_DETECTION, linear_drift_update);
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
