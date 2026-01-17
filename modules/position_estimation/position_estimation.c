@@ -52,7 +52,7 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define POS_Z_EST0_INTEGRATION_GAIN      1.0
 #define POS_XY_EST0_TRUE_CORRECTION_GAIN 0.5
 #define POS_Z_EST0_TRUE_CORRECTION_GAIN  0.5
-#define POS_XY_EST1_INTEGRATION_GAIN 0.0
+#define POS_XY_EST1_INTEGRATION_GAIN 0.05
 #define POS_Z_EST1_INTEGRATION_GAIN  1.0
 #define POS_XY_EST1_TRUE_CORRECTION_GAIN 20.0
 #define POS_Z_EST1_TRUE_CORRECTION_GAIN  10.0
@@ -70,9 +70,9 @@ static vector3d_t g_pos_final = {0, 0, 0};
 #define OPTFLOW_LIMIT_MAX 100.0
 #define OPTFLOW_LIMIT_MIN 10.0
 #define OPTFLOW_LIMIT_INCREMENT 1.0
-#define OPTFLOW_LIMIT_DECREMENT 10.0
+#define OPTFLOW_LIMIT_DECREMENT 3.0
 #define LOW_FREQ_THRESHOLD 5.0
-#define DRIFT_TIME_THRESHOLD 1.0
+#define DRIFT_TIME_THRESHOLD 2.0
 
 typedef enum {
 	ALT_SOURCE_LASER = 0,
@@ -82,13 +82,14 @@ typedef enum {
 static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 static double g_optflow_limit = OPTFLOW_LIMIT_MAX;
 static double g_freq = 0;
+static double g_drift_time = 0;
 
 static void linear_drift_update(uint8_t *data, size_t size) {
 	vector3d_t *drift = (vector3d_t*)data;
-	double max_drift_time = drift->x > drift->y ? drift->x : drift->y;
+	g_drift_time = drift->x > drift->y ? drift->x : drift->y;
 	
 	// Increase bound when drift is sustained (need more optical flow data)
-	if (max_drift_time > DRIFT_TIME_THRESHOLD) {
+	if (g_drift_time > DRIFT_TIME_THRESHOLD) {
 		g_optflow_limit += OPTFLOW_LIMIT_INCREMENT;
 		if (g_optflow_limit > OPTFLOW_LIMIT_MAX) {
 			g_optflow_limit = OPTFLOW_LIMIT_MAX;

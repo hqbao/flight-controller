@@ -24,6 +24,7 @@ typedef struct {
 
 static fusion2_t g_f11;
 static angle3d_t g_angular_state = {0, 0, 0};
+static vector3d_t g_raw_accel = {0, 0, 0};
 
 static void gyro_update(uint8_t *data, size_t size) {
     float raw_gx, raw_gy, raw_gz;
@@ -58,6 +59,10 @@ static void accel_update(uint8_t *data, size_t size) {
 	float ay = -raw_ay;
 	float az = raw_az;
 
+	g_raw_accel.x = ax;
+	g_raw_accel.y = ay;
+	g_raw_accel.z = az;
+
 	fusion2_update(&g_f11, ax, ay, az);
 	
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
@@ -73,16 +78,16 @@ static void loop_logger(uint8_t *data, size_t size) {
 	float pred_x = (float)g_f11.pred_norm_accel.x;
 	float pred_y = (float)g_f11.pred_norm_accel.y;
 	float pred_z = (float)g_f11.pred_norm_accel.z;
-	float true_x = (float)g_f11.true_norm_accel.x;
-	float true_y = (float)g_f11.true_norm_accel.y;
-	float true_z = (float)g_f11.true_norm_accel.z;
+	float raw_x = (float)(g_raw_accel.x / MAX_IMU_ACCEL);
+	float raw_y = (float)(g_raw_accel.y / MAX_IMU_ACCEL);
+	float raw_z = (float)(g_raw_accel.z / MAX_IMU_ACCEL);
 	
 	memcpy(&out_msg[0], &pred_x, sizeof(float));
 	memcpy(&out_msg[4], &pred_y, sizeof(float));
 	memcpy(&out_msg[8], &pred_z, sizeof(float));
-	memcpy(&out_msg[12], &true_x, sizeof(float));
-	memcpy(&out_msg[16], &true_y, sizeof(float));
-	memcpy(&out_msg[20], &true_z, sizeof(float));
+	memcpy(&out_msg[12], &raw_x, sizeof(float));
+	memcpy(&out_msg[16], &raw_y, sizeof(float));
+	memcpy(&out_msg[20], &raw_z, sizeof(float));
 	
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
