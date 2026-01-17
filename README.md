@@ -14,6 +14,9 @@ The Flight Controller (FC) is the core autopilot system that:
 ## Key Features
 
 - **Multi-Sensor Fusion:** Combines gyro, accelerometer, compass, barometer, GPS, and optical flow data for robust attitude and position estimation
+- **Adaptive Gain Control:** Dynamic optical flow trust based on drift and oscillation detection
+  - Increases trust during sustained linear drift
+  - Decreases trust (dampens) during high-frequency oscillations (>5Hz)
 - **Hardware Abstraction:** Platform-independent code that runs on STM32H7 and ESP32
 - **Modular Architecture:** Cleanly separated modules for each sensor and control function
 - **Navigation Modes:** GPS-based outdoor navigation and optical flow-based indoor navigation
@@ -29,7 +32,7 @@ The Flight Controller (FC) is the core autopilot system that:
 | **IMU** | ICM-42688P (I2C/SPI) | ✓ Active |
 | **Magnetometer** | BMM350 (I2C) | ✓ Active, Calibrating |
 | **Barometer** | DPS310 (I2C) | ✓ Active |
-| **Optical Flow** | PAW3395 (SPI) | ✓ Supported |
+| **Optical Flow** | External Module (UART) | ✓ Supported |
 | **GPS** | u-blox UBX Protocol (UART) | ✓ Supported |
 | **Microcontroller** | STM32H7 / ESP32 | ✓ Both Supported |
 
@@ -67,16 +70,23 @@ flight-controller/
 │   ├── position_control/      # Position control PID loops
 │   ├── gps_navigation/        # GPS-based waypoint navigation (outdoor)
 │   ├── gps_denied_navigation/ # Optical flow waypoint navigation (indoor)
+│   ├── position_target/       # Target position generator and smoothing
 │   ├── remote_control/        # RC receiver input processing
 │   ├── state_detector/        # Flight state machine
 │   ├── fault_handler/         # Safety and error handling
+│   ├── linear_drift_detection/# Detects sustained linear drift
+│   ├── oscillation_detection/ # Detects high-frequency oscillations
 │   ├── logger/                # UART telemetry framing
-│   └── local_storage/         # Persistent configuration storage
+│   ├── local_storage/         # Persistent configuration storage
+│   └── test/                  # Module tests
 │
 └── pytest/                    # Python3 visualization and testing tools
     ├── calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
     ├── calibrate_compass.py   # Compass calibration (Ellipsoid Fit)
+    ├── gps_config.py          # U-Blox GPS configuration script
+    ├── gps_read_upx.py        # Tool to read and parse UBX messages
     ├── gps_sim_ubx.py         # GPS simulator (UBX NAV-PVT messages)
+    ├── GPS_SIMULATOR_VALIDATION.md # Documentation for GPS simulator
     ├── view_attitude.py       # 3D attitude visualization
     ├── view_position.py       # 3D position visualization
     └── view_charts.py         # Real-time sensor data plotting
@@ -117,6 +127,10 @@ Frame structure: 'd' 'b' [ID] [Class] [Length_LE] [Payload] [Checksum_LE]
 - Plots up to 6 float32 time-series (128-sample history)
 - Color-coded lines for each channel
 - Adapts to payload size (4, 8, 12, 16, 20, or 24 bytes)
+
+**gps_read_upx.py** - GPS Data Viewer
+- Reads and displays detailed satellite and position data form u-blox F9P
+- Includes matplotlib UI for visualizing GPS status
 
 ## Building & Flashing
 
