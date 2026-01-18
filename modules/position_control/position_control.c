@@ -101,6 +101,7 @@ static vector3d_t g_pos_target = {0, 0, 0};
 static vector3d_t g_pos_offset = {0, 0, 0};
 static vector3d_t g_veloc_final = {0, 0, 0};
 static vector3d_t g_veloc_offset = {0, 0, 0};
+static vector3d_t g_veloc_applied = {0, 0, 0};
 
 static uint8_t g_target_data[40] = {0};
 
@@ -208,10 +209,15 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_alt 		= -g_rc_att_ctl.alt * 2;
 	} else {
 		position_control_loop();
-		g_pos_ctl_roll 		= g_pid_pos_y.output + (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_Y_SCALE;
-		g_pos_ctl_pitch 	= g_pid_pos_x.output + (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_X_SCALE;
+
+		if (g_moving_state_roll == 0) g_veloc_applied.y = g_veloc_final.y - g_veloc_offset.y;
+		if (g_moving_state_pitch == 0) g_veloc_applied.x = g_veloc_final.x - g_veloc_offset.x;
+		g_veloc_applied.z = g_veloc_final.z - g_veloc_offset.z;
+
+		g_pos_ctl_roll 		= g_pid_pos_y.output + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE;
+		g_pos_ctl_pitch 	= g_pid_pos_x.output + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE;
 		g_pos_ctl_yaw 		= g_yaw_veloc;
-		g_pos_ctl_alt 		= g_pid_pos_z.output + (g_veloc_final.z - g_veloc_offset.z) * POS_CTL_VELOC_Z_SCALE;
+		g_pos_ctl_alt 		= g_pid_pos_z.output + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
 	}
 	
 	publish_angular_target();
@@ -242,17 +248,6 @@ static void manual_control_update(uint8_t *data, size_t size) {
 		return;
 	}
 
-	if (fabs(g_rc_att_ctl.pitch) > RC_DEADBAND) {
-		if (g_moving_state_pitch == 0) {
-			g_pos_offset.x = g_pos_target.x - g_pos_final.x;
-			g_moving_state_pitch = CTL_FREQ;
-		}
-		g_pos_target.x = g_pos_final.x + g_pos_offset.x + g_rc_att_ctl.pitch * RC_XY_SCALE;
-	} else if (g_moving_state_pitch == CTL_FREQ) {
-		g_pos_target.x = g_pos_final.x + g_pos_offset.x;
-		g_moving_state_pitch = 0;
-	}
-
 	if (fabs(g_rc_att_ctl.roll) > RC_DEADBAND) {
 		if (g_moving_state_roll == 0) {
 			g_pos_offset.y = g_pos_target.y - g_pos_final.y;
@@ -262,6 +257,17 @@ static void manual_control_update(uint8_t *data, size_t size) {
 	} else if (g_moving_state_roll == CTL_FREQ) {
 		g_pos_target.y = g_pos_final.y + g_pos_offset.y;
 		g_moving_state_roll = 0;
+	}
+
+	if (fabs(g_rc_att_ctl.pitch) > RC_DEADBAND) {
+		if (g_moving_state_pitch == 0) {
+			g_pos_offset.x = g_pos_target.x - g_pos_final.x;
+			g_moving_state_pitch = CTL_FREQ;
+		}
+		g_pos_target.x = g_pos_final.x + g_pos_offset.x + g_rc_att_ctl.pitch * RC_XY_SCALE;
+	} else if (g_moving_state_pitch == CTL_FREQ) {
+		g_pos_target.x = g_pos_final.x + g_pos_offset.x;
+		g_moving_state_pitch = 0;
 	}
 
 	if (g_state == LANDING) {
