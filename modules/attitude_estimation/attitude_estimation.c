@@ -181,46 +181,54 @@ static void accel_update(uint8_t *data, size_t size) {
 
 #if FUSION_ALGO == 1
 	fusion1_update(&g_f11, ax, ay, az);
-	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 #elif FUSION_ALGO == 2
 	fusion2_update(&g_f11, ax, ay, az);
-	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 #elif FUSION_ALGO == 3
 	fusion3_update(&g_f11, ax, ay, az);
-	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
 #endif
+
+	vector3d_t mixed_accel;
+	mixed_accel.x = g_f11.v_linear_acc.x;
+	mixed_accel.y = g_f11.v_linear_acc.y;
+	mixed_accel.z = g_f11.v_linear_acc_earth_frame.z;
+	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&mixed_accel, sizeof(vector3d_t));
 }
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Pack pred_norm_accel and true_norm_accel into MONITOR_DATA message
-	   Format: 6 floats - pred_x, pred_y, pred_z, raw_x, raw_y, raw_z */
+	/* Pack v_linear_acc (body frame) and v_linear_acc_earth_frame (earth frame) into MONITOR_DATA message
+	   Format: 6 floats - body_x, body_y, body_z, earth_x, earth_y, earth_z */
 	uint8_t out_msg[24];
 
 #if FUSION_ALGO == 1
-	float pred_x = (float)g_f11.v_pred.x;
-	float pred_y = (float)g_f11.v_pred.y;
-	float pred_z = (float)g_f11.v_pred.z;
+	float body_x = (float)g_f11.v_linear_acc.x;
+	float body_y = (float)g_f11.v_linear_acc.y;
+	float body_z = (float)g_f11.v_linear_acc.z;
+	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
+	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
+	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
 #elif FUSION_ALGO == 2
-	float pred_x = (float)g_f11.pred_norm_accel.x;
-	float pred_y = (float)g_f11.pred_norm_accel.y;
-	float pred_z = (float)g_f11.pred_norm_accel.z;
+	float body_x = (float)g_f11.v_linear_acc.x;
+	float body_y = (float)g_f11.v_linear_acc.y;
+	float body_z = (float)g_f11.v_linear_acc.z;
+	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
+	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
+	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
 #elif FUSION_ALGO == 3
-	float pred_x = (float)g_f11.v_pred.x;
-	float pred_y = (float)g_f11.v_pred.y;
-	float pred_z = (float)g_f11.v_pred.z;
+	float body_x = (float)g_f11.v_linear_acc.x;
+	float body_y = (float)g_f11.v_linear_acc.y;
+	float body_z = (float)g_f11.v_linear_acc.z;
+	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
+	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
+	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
 #endif
-
-	float raw_x = (float)(g_raw_accel.x / MAX_IMU_ACCEL);
-	float raw_y = (float)(g_raw_accel.y / MAX_IMU_ACCEL);
-	float raw_z = (float)(g_raw_accel.z / MAX_IMU_ACCEL);
 	
-	memcpy(&out_msg[0], &pred_x, sizeof(float));
-	memcpy(&out_msg[4], &pred_y, sizeof(float));
-	memcpy(&out_msg[8], &pred_z, sizeof(float));
-	memcpy(&out_msg[12], &raw_x, sizeof(float));
-	memcpy(&out_msg[16], &raw_y, sizeof(float));
-	memcpy(&out_msg[20], &raw_z, sizeof(float));
+	memcpy(&out_msg[0], &body_x, sizeof(float));
+	memcpy(&out_msg[4], &body_y, sizeof(float));
+	memcpy(&out_msg[8], &body_z, sizeof(float));
+	memcpy(&out_msg[12], &earth_x, sizeof(float));
+	memcpy(&out_msg[16], &earth_y, sizeof(float));
+	memcpy(&out_msg[20], &earth_z, sizeof(float));
 
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }

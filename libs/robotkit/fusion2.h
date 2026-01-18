@@ -33,6 +33,7 @@ typedef struct {
     vector3d_t true_norm_accel;
     vector3d_t pred_norm_accel;
     vector3d_t v_linear_acc;
+    vector3d_t v_linear_acc_earth_frame;
     vector3d_t accel;
     double accel_scale;    
     

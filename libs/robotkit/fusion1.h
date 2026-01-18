@@ -19,6 +19,8 @@ typedef struct {
     vector3d_t a_smooth;               // Low-pass filtered accelerometer
     vector3d_t v_linear_acc;           // Linear acceleration (gravity removed)
     vector3d_t v_linear_acc_smooth;    // Smoothed linear acceleration
+    vector3d_t v_linear_acc_earth_frame; // Linear acceleration in earth frame
+
     
     // === Filter Parameters ===
     double freq;                       // Update frequency (Hz)
