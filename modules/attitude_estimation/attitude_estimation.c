@@ -1,20 +1,85 @@
+/**
+ * ATTITUDE ESTIMATION MODULE
+ * 
+ * This module estimates the drone's 3D orientation (roll, pitch, yaw) by fusing
+ * gyroscope and accelerometer data from the IMU sensor.
+ * 
+ * ALGORITHM SELECTION:
+ * - FUSION_ALGO = 1: Mahony complementary filter (lightweight, fast)
+ * - FUSION_ALGO = 2: Extended Kalman Filter (more sophisticated, heavier)
+ * - FUSION_ALGO = 3: Madgwick Filter (Gradient Descent Optimization)
+ * 
+ * DATA FLOW:
+ * 1. SENSOR_IMU1_GYRO_UPDATE (1000Hz) -> gyro_update()
+ *    - Integrate gyroscope to predict orientation
+ *    - Extract roll/pitch/yaw from quaternion
+ *    - Publish ANGULAR_STATE_UPDATE and SENSOR_ATTITUDE_VECTOR
+ * 
+ * 2. SENSOR_IMU1_ACCEL_UPDATE (500Hz) -> accel_update()
+ *    - Correct gyro drift using gravity direction
+ *    - Update filter corrections
+ * 
+ * COORDINATE FRAMES:
+ * - Body Frame: X=forward, Y=right, Z=down (aircraft convention)
+ * - Sensor axes are negated to match body frame:
+ *   gx = -raw_gx, gy = -raw_gy, gz = raw_gz
+ *   ax = -raw_ax, ay = -raw_ay, az = raw_az
+ * 
+ * OUTPUT:
+ * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
+ * - SENSOR_ATTITUDE_VECTOR: Predicted gravity vector in body frame (unit vector)
+ * - (Fusion2 only) SENSOR_LINEAR_ACCEL: Linear acceleration with gravity removed
+ */
 #include "attitude_estimation.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
 #include <math.h>
+
+/* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick) */
+#define FUSION_ALGO 2
+
+#if FUSION_ALGO == 1
+#include <fusion1.h>
+#elif FUSION_ALGO == 2
 #include <fusion2.h>
+#elif FUSION_ALGO == 3
+#include <fusion3.h>
+#endif
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
 #define ENABLE_ATTITUDE_MONITOR_LOG 0
 
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 1000
+#define ACCEL_FREQ 500
 #define DEG2RAD 0.01745329251
 #define RAD2DEG 57.2957795131
 #define DT (1.0 / GYRO_FREQ)
+
+// Fusion 1 (Mahony) Gains
+#if FUSION_ALGO == 1
+#define ATT_F1_GAIN_PROP 1.5
+#define ATT_F1_GAIN_INT 0.15
+#endif
+
+#if FUSION_ALGO == 2
 #define GYRO_NOISE 0.0001
 #define ACCEL_NOISE 100.0
+#endif
+
+// Fusion 3 (Madgwick) Gains
+#if FUSION_ALGO == 3
+#define ATT_F3_BETA 0.1
+#endif
+
+// Shared Accelerometer Parameters (Used by Fusion 1, 2, and 3)
+#if FUSION_ALGO == 1 || FUSION_ALGO == 2 || FUSION_ALGO == 3
+#define ATT_ACCEL_SMOOTH 4.0 // LPF Gain (Bandwidth factor). Higher = Faster response, Less smoothing.
+#define ATT_F1_LIN_ACC_DECAY 0.5
+#define ATT_F1_LIN_ACCEL_MIN 0.5
+#define ATT_F1_LIN_ACCEL_MAX 2.0
+#endif
 
 typedef struct {
 	double roll;
@@ -22,39 +87,90 @@ typedef struct {
 	double yaw;
 } angle3d_t;
 
+#if FUSION_ALGO == 1
+static fusion1_t g_f11;
+#elif FUSION_ALGO == 2
 static fusion2_t g_f11;
+#elif FUSION_ALGO == 3
+static fusion3_t g_f11;
+#endif
+
 static angle3d_t g_angular_state = {0, 0, 0};
 static vector3d_t g_raw_accel = {0, 0, 0};
 
+/**
+ * GYRO UPDATE: Called at 1000Hz
+ * Integrates gyroscope to predict orientation change
+ */
+/**
+ * GYRO UPDATE: Called at 1000Hz
+ * Integrates gyroscope to predict orientation change
+ */
 static void gyro_update(uint8_t *data, size_t size) {
     float raw_gx, raw_gy, raw_gz;
     memcpy(&raw_gx, &data[0], sizeof(float));
     memcpy(&raw_gy, &data[4], sizeof(float));
     memcpy(&raw_gz, &data[8], sizeof(float));
 
+	// Convert sensor frame to body frame (negate X and Y)
 	float gx = -raw_gx;
 	float gy = -raw_gy;
 	float gz = raw_gz;
 
-	fusion2_predict(&g_f11, gx, gy, gz, DT);
+#if FUSION_ALGO == 1
+	// FUSION 1 Logic
+	fusion1_predict(&g_f11, gx, gy, gz, DT);
 
-	// Extract Euler angles from quaternion (in radians)
+	// Extract Euler angles from quaternion (same as fusion2)
 	vector3d_t euler;
 	quat_to_euler(&euler, &g_f11.q);
 	g_angular_state.roll = -euler.y * RAD2DEG;
 	g_angular_state.pitch = euler.x * RAD2DEG;
 	g_angular_state.yaw = euler.z * RAD2DEG;
 
-	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
+	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
+#elif FUSION_ALGO == 2
+	// FUSION 2 Logic
+	fusion2_predict(&g_f11, gx, gy, gz, DT);
+
+	vector3d_t euler;
+	quat_to_euler(&euler, &g_f11.q);
+	g_angular_state.roll = -euler.y * RAD2DEG;
+	g_angular_state.pitch = euler.x * RAD2DEG;
+	g_angular_state.yaw = euler.z * RAD2DEG;
+
 	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.pred_norm_accel, sizeof(vector3d_t));
+#elif FUSION_ALGO == 3
+	// FUSION 3 Logic (Madgwick filter)
+	fusion3_predict(&g_f11, gx, gy, gz, DT);
+
+	vector3d_t euler;
+	quat_to_euler(&euler, &g_f11.q);
+	g_angular_state.roll = -euler.y * RAD2DEG;
+	g_angular_state.pitch = euler.x * RAD2DEG;
+	g_angular_state.yaw = euler.z * RAD2DEG;
+
+	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
+#endif
+
+	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 }
 
+/**
+ * ACCEL UPDATE: Called at 500Hz
+ * Corrects gyro drift using gravity direction from accelerometer
+ */
+/**
+ * ACCEL UPDATE: Called at 500Hz  
+ * Corrects gyro drift using gravity direction from accelerometer
+ */
 static void accel_update(uint8_t *data, size_t size) {
     float raw_ax, raw_ay, raw_az;
     memcpy(&raw_ax, &data[0], sizeof(float));
     memcpy(&raw_ay, &data[4], sizeof(float));
     memcpy(&raw_az, &data[8], sizeof(float));
 
+	// Convert sensor frame to body frame (negate X and Y)
 	float ax = -raw_ax;
 	float ay = -raw_ay;
 	float az = raw_az;
@@ -63,21 +179,38 @@ static void accel_update(uint8_t *data, size_t size) {
 	g_raw_accel.y = ay;
 	g_raw_accel.z = az;
 
-	fusion2_update(&g_f11, ax, ay, az);
-	
+#if FUSION_ALGO == 1
+	fusion1_update(&g_f11, ax, ay, az);
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
+#elif FUSION_ALGO == 2
+	fusion2_update(&g_f11, ax, ay, az);
+	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
+#elif FUSION_ALGO == 3
+	fusion3_update(&g_f11, ax, ay, az);
+	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_f11.v_linear_acc, sizeof(vector3d_t));
+#endif
 }
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Pack pred_norm_accel and true_norm_accel into MONITOR_DATA message
-	   Format: 6 float32 values (pred.x, pred.y, pred.z, true.x, true.y, true.z) */
-	static uint8_t out_msg[24]; /* 6 * 4 bytes (float32) */
-	
-	// Cast double to float before packing
+	   Format: 6 floats - pred_x, pred_y, pred_z, raw_x, raw_y, raw_z */
+	uint8_t out_msg[24];
+
+#if FUSION_ALGO == 1
+	float pred_x = (float)g_f11.v_pred.x;
+	float pred_y = (float)g_f11.v_pred.y;
+	float pred_z = (float)g_f11.v_pred.z;
+#elif FUSION_ALGO == 2
 	float pred_x = (float)g_f11.pred_norm_accel.x;
 	float pred_y = (float)g_f11.pred_norm_accel.y;
 	float pred_z = (float)g_f11.pred_norm_accel.z;
+#elif FUSION_ALGO == 3
+	float pred_x = (float)g_f11.v_pred.x;
+	float pred_y = (float)g_f11.v_pred.y;
+	float pred_z = (float)g_f11.v_pred.z;
+#endif
+
 	float raw_x = (float)(g_raw_accel.x / MAX_IMU_ACCEL);
 	float raw_y = (float)(g_raw_accel.y / MAX_IMU_ACCEL);
 	float raw_z = (float)(g_raw_accel.z / MAX_IMU_ACCEL);
@@ -88,22 +221,34 @@ static void loop_logger(uint8_t *data, size_t size) {
 	memcpy(&out_msg[12], &raw_x, sizeof(float));
 	memcpy(&out_msg[16], &raw_y, sizeof(float));
 	memcpy(&out_msg[20], &raw_z, sizeof(float));
-	
+
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }
 #endif
 
-static void init(void) {
-	// Initialize with gyro_noise, accel_noise, and accel_scale
-	// gyro_noise: process noise, accel_noise: measurement noise, accel_scale: 1g in sensor units
-	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL);
-	//g_f11.no_correction = 1;
-}
-
 void attitude_estimation_setup(void) {
-	init();
+#if FUSION_ALGO == 1
+	// Initialize Fusion1 (Mahony filter)
+	// Parameters: gain_acc_smooth, kp (Mahony P-gain), Ki, decay, accel_freq
+	// ATT_ACCEL_SMOOTH controls gravity vector smoothing stiffness
+	fusion1_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F1_GAIN_PROP, ATT_F1_GAIN_INT, ATT_F1_LIN_ACC_DECAY, ACCEL_FREQ);
+	fusion1_remove_linear_accel(&g_f11, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX, MAX_IMU_ACCEL);
+#elif FUSION_ALGO == 2
+	// Initialize Fusion2 (EKF)
+	// Parameters: gyro_noise, accel_noise, accel_scale, lpf_gain
+	// Passing ATT_ACCEL_SMOOTH converted to per-sample gain (gain / freq)
+	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH / (double)ACCEL_FREQ);
+#elif FUSION_ALGO == 3
+	// Initialize Fusion3 (Madgwick filter)
+	// Parameters: k0 (accel smoothing gain), beta, freq
+	// Uses ATT_ACCEL_SMOOTH for consistent gravity noise rejection
+	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, ACCEL_FREQ);
+	fusion3_remove_linear_accel(&g_f11, ATT_F1_LIN_ACC_DECAY, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX, MAX_IMU_ACCEL);
+#endif
+
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
+
 #if ENABLE_ATTITUDE_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif

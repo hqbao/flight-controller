@@ -1,3 +1,26 @@
+/**
+ * POSITION ESTIMATION MODULE
+ * 
+ * This module estimates the drone's 3D position (X, Y, Z) by fusing:
+ * - IMU linear acceleration (Body-Frame with gravity removed)
+ * - Optical flow for horizontal position
+ * - Barometer/Laser for altitude
+ * 
+ * ALGORITHM:
+ * - Two-stage estimation with correction from optical flow
+ * - EST0: Integrates IMU acceleration to estimate position
+ * - EST1: Derives velocity from EST0, integrates again with higher correction gain
+ * - Final output blends EST1 with position sensors
+ * 
+ * COORDINATE FRAMES:
+ * - SENSOR_LINEAR_ACCEL comes in Body-Frame (from Fusion2, Fusion1 doesn't provide it)
+ * - X/Y axes are swapped and negated to match navigation frame
+ * - Z-axis uses Body-Frame (assumes mostly level flight)
+ * 
+ * NOTE: This module currently relies on Fusion2 (EKF) for linear acceleration.
+ *       For Fusion1 (Mahony), linear acceleration with gravity removed is not published.
+ *       When using Fusion1, position estimation will only use optical flow and altitude sensors.
+ */
 #include "position_estimation.h"
 #include <pubsub.h>
 #include <vector3d.h>
@@ -171,6 +194,23 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 	}
 }
 
+/**
+ * LINEAR ACCEL UPDATE: Called at 500Hz
+ * 
+ * Receives linear acceleration (gravity removed) from attitude estimation module.
+ * For Fusion2: This is published by the EKF filter.
+ * For Fusion1: This message is NOT published (Mahony filter doesn't compute it).
+ * 
+ * COORDINATE TRANSFORMATION:
+ * The accelerometer data comes in Body-Frame. Here we swap/negate axes:
+ * - nav_x = -body_y  (Right becomes Forward)
+ * - nav_y = -body_x  (Forward becomes Left becomes Right)
+ * - nav_z = body_z   (Down stays Down)
+ * 
+ * POSITION INTEGRATION:
+ * Stage 1 (EST0): Integrate accel → velocity → position with low correction
+ * Stage 2 (EST1): Compute velocity from position derivative, better correction
+ */
 static void linear_accel_update(uint8_t *data, size_t size) {
 	vector3d_t v = *(vector3d_t*)data;
 	g_linear_accel.x = -v.y * MAX_IMU_ACCEL;
