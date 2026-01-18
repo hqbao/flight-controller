@@ -65,7 +65,8 @@ typedef struct {
  * @param beta Madgwick beta gain (0.01-0.5, higher = faster correction but more noise)
  * @param freq Update frequency in Hz (typically 500Hz for drones)
  */
-void fusion3_init(fusion3_t *f, double k0, double beta, double freq);
+void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale, double freq);
+void fusion3_remove_linear_accel(fusion3_t *f, double k2, double min_linear_accel, double max_linear_accel);
 
 /**
  * PREDICT STEP: Integrate gyroscope to update quaternion
@@ -87,16 +88,5 @@ void fusion3_predict(fusion3_t *f, double gx, double gy, double gz, double dt);
  * @param az Accelerometer Z in raw units
  */
 void fusion3_update(fusion3_t *f, double ax, double ay, double az);
-
-/**
- * Enable linear acceleration estimation (optional)
- * 
- * @param f                 Pointer to fusion3_t struct
- * @param k2                Linear acceleration decay gain
- * @param min_linear_accel  Minimum threshold
- * @param max_linear_accel  Maximum threshold  
- * @param accel_scale       Scale factor (1g in raw units)
- */
-void fusion3_remove_linear_accel(fusion3_t *f, double k2, double min_linear_accel, double max_linear_accel, double accel_scale);
 
 #endif

@@ -40,8 +40,8 @@ typedef struct {
     char no_correction;                // If 1, disable Mahony correction (gyro-only)
 } fusion1_t;
 
-void fusion1_init(fusion1_t *f, double gain_acc_smooth, double gain_prop, double gain_int, double gain_lin_acc_decay, double freq);
-void fusion1_remove_linear_accel(fusion1_t *f, double min_linear_accel, double max_linear_accel, double accel_scale);
+void fusion1_init(fusion1_t *f, double gain_acc_smooth, double gain_prop, double gain_int, double gain_lin_acc_decay, double accel_scale, double freq);
+void fusion1_remove_linear_accel(fusion1_t *f, double min_linear_accel, double max_linear_accel);
 void fusion1_predict(fusion1_t *f, double gx, double gy, double gz, double dt);
 void fusion1_update(fusion1_t *f, double ax, double ay, double az);
 

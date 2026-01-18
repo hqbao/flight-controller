@@ -70,7 +70,7 @@
 
 // Fusion 3 (Madgwick) Gains
 #if FUSION_ALGO == 3
-#define ATT_F3_BETA 0.1
+#define ATT_F3_BETA 0.001
 #endif
 
 // Shared Accelerometer Parameters (Used by Fusion 1, 2, and 3)
@@ -239,8 +239,8 @@ void attitude_estimation_setup(void) {
 	// Initialize Fusion1 (Mahony filter)
 	// Parameters: gain_acc_smooth, kp (Mahony P-gain), Ki, decay, accel_freq
 	// ATT_ACCEL_SMOOTH controls gravity vector smoothing stiffness
-	fusion1_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F1_GAIN_PROP, ATT_F1_GAIN_INT, ATT_F1_LIN_ACC_DECAY, ACCEL_FREQ);
-	fusion1_remove_linear_accel(&g_f11, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX, MAX_IMU_ACCEL);
+	fusion1_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F1_GAIN_PROP, ATT_F1_GAIN_INT, ATT_F1_LIN_ACC_DECAY, MAX_IMU_ACCEL, ACCEL_FREQ);
+	fusion1_remove_linear_accel(&g_f11, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX);
 #elif FUSION_ALGO == 2
 	// Initialize Fusion2 (EKF)
 	// Parameters: gyro_noise, accel_noise, accel_scale, lpf_gain
@@ -250,8 +250,8 @@ void attitude_estimation_setup(void) {
 	// Initialize Fusion3 (Madgwick filter)
 	// Parameters: k0 (accel smoothing gain), beta, freq
 	// Uses ATT_ACCEL_SMOOTH for consistent gravity noise rejection
-	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, ACCEL_FREQ);
-	fusion3_remove_linear_accel(&g_f11, ATT_F1_LIN_ACC_DECAY, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX, MAX_IMU_ACCEL);
+	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, MAX_IMU_ACCEL, ACCEL_FREQ);
+	fusion3_remove_linear_accel(&g_f11, ATT_F1_LIN_ACC_DECAY, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX);
 #endif
 
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
