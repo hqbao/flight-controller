@@ -23,6 +23,9 @@
 #define POS_CTL_OUTPUT_LPF_ALPHA_XY 1.0
 #define POS_CTL_OUTPUT_LPF_ALPHA_Z (5.0 / POS_CTL_FREQ)
 
+/* Control Output Limits */
+#define POS_CTL_ANGLE_LIMIT 30.0
+
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
 #define LANDING_SPEED_INC 1.0
@@ -173,8 +176,8 @@ static void position_update(uint8_t *data, size_t size) {
 		g_output_smooth.y += POS_CTL_OUTPUT_LPF_ALPHA_XY * (y_output - g_output_smooth.y);
 		g_output_smooth.z += POS_CTL_OUTPUT_LPF_ALPHA_Z * (z_output - g_output_smooth.z);
 
-		g_pos_ctl_roll 		= g_output_smooth.y + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE;
-		g_pos_ctl_pitch 	= g_output_smooth.x + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE;
+		g_pos_ctl_roll 		= LIMIT(g_output_smooth.y + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
+		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
 		g_pos_ctl_yaw 		= g_yaw_veloc;
 		g_pos_ctl_alt 		= g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
 	}
