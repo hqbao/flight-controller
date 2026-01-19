@@ -207,11 +207,13 @@ static void air_pressure_update(uint8_t *data, size_t size) {
  * LINEAR ACCEL UPDATE: Called at 500Hz
  * 
  * Receives linear acceleration (gravity removed) from attitude estimation module.
- * We extract and use the Earth-Frame acceleration from the data packet.
  * 
  * COORDINATE TRANSFORMATION:
- * - Data is already in Earth-Frame (NED).
- * - No coordinate transformation is needed.
+ * - X/Y: Use Body-Frame (optical flow fusion requires body relative motion).
+ *   Swapped/Negated to match navigation frame:
+ *   - nav_x = -body_y
+ *   - nav_y = -body_x
+ * - Z: Use Earth-Frame (altitude estimation).
  */
 static void linear_accel_update(uint8_t *data, size_t size) {
 	linear_accel_data_t *la = (linear_accel_data_t*)data;
