@@ -4,35 +4,24 @@
 #include <string.h>
 #include <math.h>
 #include <vector3d.h>
-#include <pid_control.h>
 #include <macro.h>
 
 #define POS_CTL_FREQ 500
 #define CTL_FREQ 100
 #define MIN_LANDING_SPEED 50
 
-/* PID Gains */
-// Position Control XY
+/* Control Gains */
 #define POS_CTL_XY_P 0.5
-#define POS_CTL_XY_I 0.0
-#define POS_CTL_XY_D 0.0
-#define POS_CTL_XY_GAIN_TIME 1.0
-#define POS_CTL_XY_I_LIMIT 5.0
-
-// Position Control Z (Altitude)
 #define POS_CTL_Z_P 2.0
-#define POS_CTL_Z_I 0.0
-#define POS_CTL_Z_D 0.0
-#define POS_CTL_Z_GAIN_TIME 1.0
-#define POS_CTL_Z_I_LIMIT 500.0
 
-// Smoothing
-#define POS_CTL_XY_SMOOTH_INPUT 1.0
-#define POS_CTL_XY_SMOOTH_P_TERM 1.0
-#define POS_CTL_XY_SMOOTH_OUTPUT 1.0
-#define POS_CTL_Z_SMOOTH_INPUT 0.01
-#define POS_CTL_Z_SMOOTH_P_TERM 1.0
-#define POS_CTL_Z_SMOOTH_OUTPUT 0.01
+/* Velocity Scaling */
+#define POS_CTL_VELOC_X_SCALE 0.75
+#define POS_CTL_VELOC_Y_SCALE 0.75
+#define POS_CTL_VELOC_Z_SCALE 2.0
+
+/* Output Lowpass Filter */
+#define POS_CTL_OUTPUT_LPF_ALPHA_XY 1.0
+#define POS_CTL_OUTPUT_LPF_ALPHA_Z (5.0 / POS_CTL_FREQ)
 
 /* Landing Control */
 #define LANDING_RANGE_THRESHOLD 2000.0
@@ -45,11 +34,6 @@
 #define RC_XY_SCALE 3.0
 #define RC_Z_SCALE 40.0
 #define RC_YAW_SCALE -0.5
-
-/* Velocity Scaling */
-#define POS_CTL_VELOC_X_SCALE 0.75
-#define POS_CTL_VELOC_Y_SCALE 0.75
-#define POS_CTL_VELOC_Z_SCALE 2.0
 
 typedef enum {
 	DISARMED = 0,
@@ -92,10 +76,6 @@ static rc_att_ctl_t g_rc_att_ctl = {0};
 static double g_downward_range = 0;
 static double g_downward_range_prev = 0;
 
-static pid_control_t g_pid_pos_x = {0};
-static pid_control_t g_pid_pos_y = {0};
-static pid_control_t g_pid_pos_z = {0};
-
 static vector3d_t g_pos_final = {0, 0, 0};
 static vector3d_t g_pos_target = {0, 0, 0};
 static vector3d_t g_pos_offset = {0, 0, 0};
@@ -112,6 +92,8 @@ static double g_pos_ctl_roll = 0;
 static double g_pos_ctl_pitch = 0;
 static double g_pos_ctl_yaw = 0;
 static double g_pos_ctl_alt = 0;
+
+static vector3d_t g_output_smooth = {0, 0, 0};
 
 static int g_moving_state_roll = 0; // 0: Released, 1: Just control
 static int g_moving_state_pitch = 0;
@@ -147,42 +129,10 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	}
 }
 
-static void pid_setup(void) {
-	pid_control_init(&g_pid_pos_x);
-	pid_control_set_p_gain(&g_pid_pos_x, POS_CTL_XY_P);
-	pid_control_set_d_gain(&g_pid_pos_x, POS_CTL_XY_D);
-	pid_control_set_i_gain(&g_pid_pos_x, POS_CTL_XY_I, POS_CTL_XY_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_pos_x, POS_CTL_XY_I_LIMIT);
-	pid_control_set_smooth(&g_pid_pos_x, POS_CTL_XY_SMOOTH_INPUT, POS_CTL_XY_SMOOTH_P_TERM, POS_CTL_XY_SMOOTH_OUTPUT);
-
-	pid_control_init(&g_pid_pos_y);
-	pid_control_set_p_gain(&g_pid_pos_y, POS_CTL_XY_P);
-	pid_control_set_d_gain(&g_pid_pos_y, POS_CTL_XY_D);
-	pid_control_set_i_gain(&g_pid_pos_y, POS_CTL_XY_I, POS_CTL_XY_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_pos_y, POS_CTL_XY_I_LIMIT);
-	pid_control_set_smooth(&g_pid_pos_y, POS_CTL_XY_SMOOTH_INPUT, POS_CTL_XY_SMOOTH_P_TERM, POS_CTL_XY_SMOOTH_OUTPUT);
-
-	pid_control_init(&g_pid_pos_z);
-	pid_control_set_p_gain(&g_pid_pos_z, POS_CTL_Z_P);
-	pid_control_set_d_gain(&g_pid_pos_z, POS_CTL_Z_D);
-	pid_control_set_i_gain(&g_pid_pos_z, POS_CTL_Z_I, POS_CTL_Z_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_pos_z, POS_CTL_Z_I_LIMIT);
-	pid_control_set_smooth(&g_pid_pos_z, POS_CTL_Z_SMOOTH_INPUT, POS_CTL_Z_SMOOTH_P_TERM, POS_CTL_Z_SMOOTH_OUTPUT);
-}
-
-static void position_control_loop(void) {
-	double dt = 1.0 / POS_CTL_FREQ;
-	pid_control_update(&g_pid_pos_x, g_pos_final.x, g_pos_target.x, dt);
-	pid_control_update(&g_pid_pos_y, g_pos_final.y, g_pos_target.y, dt);
-	pid_control_update(&g_pid_pos_z, g_pos_final.z, g_pos_target.z, dt);
-}
-
 static void reset_pid(void) {
 	vector3d_set(&g_pos_target, &g_pos_final);
 	vector3d_init(&g_pos_offset, 0, 0, 0);
-	pid_control_reset(&g_pid_pos_x, g_pos_final.x);
-	pid_control_reset(&g_pid_pos_y, g_pos_final.y);
-	pid_control_reset(&g_pid_pos_z, g_pos_final.z);
+	vector3d_init(&g_output_smooth, 0, 0, 0);
 }
 
 static void publish_angular_target(void) {
@@ -208,16 +158,25 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_yaw 		= g_yaw_veloc;
 		g_pos_ctl_alt 		= -g_rc_att_ctl.alt * 2;
 	} else {
-		position_control_loop();
-
 		if (g_moving_state_roll == 0) g_veloc_applied.y = g_veloc_final.y - g_veloc_offset.y;
 		if (g_moving_state_pitch == 0) g_veloc_applied.x = g_veloc_final.x - g_veloc_offset.x;
 		g_veloc_applied.z = g_veloc_final.z - g_veloc_offset.z;
 
-		g_pos_ctl_roll 		= g_pid_pos_y.output + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE;
-		g_pos_ctl_pitch 	= g_pid_pos_x.output + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE;
+		// Simple P Control: Output = (Current - Target) * P
+		// Note: P-term in PID lib was (feedback - setpoint) * P. 
+		// We maintain that structure.
+		double x_output = (g_pos_final.x - g_pos_target.x) * POS_CTL_XY_P;
+		double y_output = (g_pos_final.y - g_pos_target.y) * POS_CTL_XY_P;
+		double z_output = (g_pos_final.z - g_pos_target.z) * POS_CTL_Z_P;
+
+		g_output_smooth.x += POS_CTL_OUTPUT_LPF_ALPHA_XY * (x_output - g_output_smooth.x);
+		g_output_smooth.y += POS_CTL_OUTPUT_LPF_ALPHA_XY * (y_output - g_output_smooth.y);
+		g_output_smooth.z += POS_CTL_OUTPUT_LPF_ALPHA_Z * (z_output - g_output_smooth.z);
+
+		g_pos_ctl_roll 		= g_output_smooth.y + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE;
+		g_pos_ctl_pitch 	= g_output_smooth.x + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE;
 		g_pos_ctl_yaw 		= g_yaw_veloc;
-		g_pos_ctl_alt 		= g_pid_pos_z.output + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
+		g_pos_ctl_alt 		= g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
 	}
 	
 	publish_angular_target();
@@ -300,7 +259,6 @@ static void state_control_update(uint8_t *data, size_t size) {
 }
 
 void position_control_setup(void) {
-	pid_setup();
 	subscribe(POSITION_STATE_UPDATE, position_update);
 	subscribe(POSITION_TARGET_UPDATE, position_target_update);
 	subscribe(STATE_DETECTION_UPDATE, state_update);
