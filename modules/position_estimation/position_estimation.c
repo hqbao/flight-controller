@@ -28,6 +28,15 @@
 #include <math.h>
 #include <macro.h>
 
+/* Structure for SENSOR_LINEAR_ACCEL data
+ * Copied from attitude_estimation.h to avoid cross-module include
+ */
+typedef struct {
+	vector3d_t body;
+	vector3d_t earth;
+} linear_accel_data_t;
+
+
 /* Macro to enable/disable sending MONITOR_DATA via logger 
  * 0: Disable
  * 1: Position
@@ -198,24 +207,17 @@ static void air_pressure_update(uint8_t *data, size_t size) {
  * LINEAR ACCEL UPDATE: Called at 500Hz
  * 
  * Receives linear acceleration (gravity removed) from attitude estimation module.
- * For Fusion2: This is published by the EKF filter.
- * For Fusion1: This message is NOT published (Mahony filter doesn't compute it).
+ * We extract and use the Earth-Frame acceleration from the data packet.
  * 
  * COORDINATE TRANSFORMATION:
- * The accelerometer data comes in Body-Frame. Here we swap/negate axes:
- * - nav_x = -body_y  (Right becomes Forward)
- * - nav_y = -body_x  (Forward becomes Left becomes Right)
- * - nav_z = body_z   (Down stays Down)
- * 
- * POSITION INTEGRATION:
- * Stage 1 (EST0): Integrate accel → velocity → position with low correction
- * Stage 2 (EST1): Compute velocity from position derivative, better correction
+ * - Data is already in Earth-Frame (NED).
+ * - No coordinate transformation is needed.
  */
 static void linear_accel_update(uint8_t *data, size_t size) {
-	vector3d_t v = *(vector3d_t*)data;
-	g_linear_accel.x = -v.y * MAX_IMU_ACCEL;
-	g_linear_accel.y = -v.x * MAX_IMU_ACCEL;
-	g_linear_accel.z = v.z * MAX_IMU_ACCEL;
+	linear_accel_data_t *la = (linear_accel_data_t*)data;
+	g_linear_accel.x = -la->body.y * MAX_IMU_ACCEL;
+	g_linear_accel.y = -la->body.x * MAX_IMU_ACCEL;
+	g_linear_accel.z = la->earth.z * MAX_IMU_ACCEL;
 
 	g_linear_veloc0.x += 1.0 / ACCEL_FREQ * g_linear_accel.x;
 	g_linear_veloc0.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;

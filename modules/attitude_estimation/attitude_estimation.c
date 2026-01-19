@@ -97,6 +97,7 @@ static fusion3_t g_f11;
 
 static angle3d_t g_angular_state = {0, 0, 0};
 static vector3d_t g_raw_accel = {0, 0, 0};
+static linear_accel_data_t g_linear_accel_out;
 
 /**
  * GYRO UPDATE: Called at 1000Hz
@@ -187,11 +188,9 @@ static void accel_update(uint8_t *data, size_t size) {
 	fusion3_update(&g_f11, ax, ay, az);
 #endif
 
-	vector3d_t mixed_accel;
-	mixed_accel.x = g_f11.v_linear_acc.x;
-	mixed_accel.y = g_f11.v_linear_acc.y;
-	mixed_accel.z = g_f11.v_linear_acc_earth_frame.z;
-	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&mixed_accel, sizeof(vector3d_t));
+	memcpy(&g_linear_accel_out.body, &g_f11.v_linear_acc, sizeof(vector3d_t));
+	memcpy(&g_linear_accel_out.earth, &g_f11.v_linear_acc_earth_frame, sizeof(vector3d_t));
+	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_linear_accel_out, sizeof(linear_accel_data_t));
 }
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
