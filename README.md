@@ -83,8 +83,8 @@ flight-controller/
 │   ├── linear_drift_detection/# Detects sustained linear drift
 │   ├── oscillation_detection/ # Detects high-frequency oscillations
 │   ├── logger/                # UART telemetry framing
-│   ├── local_storage/         # Persistent configuration storage
-│   └── test/                  # Module tests
+│   └── local_storage/         # Persistent configuration storage
+
 │
 └── pytest/                    # Python3 visualization and testing tools
     ├── calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
