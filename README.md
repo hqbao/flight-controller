@@ -77,7 +77,7 @@ flight-controller/
 │   ├── gps_navigation/        # GPS-based waypoint navigation (outdoor)
 │   ├── gps_denied_navigation/ # Optical flow waypoint navigation (indoor)
 │   ├── position_target/       # Target position generator and smoothing
-│   ├── remote_control/        # RC receiver input processing
+│   ├── rc_receiver/           # RC receiver input processing
 │   ├── state_detector/        # Flight state machine
 │   ├── fault_handler/         # Safety and error handling
 │   ├── linear_drift_detection/# Detects sustained linear drift

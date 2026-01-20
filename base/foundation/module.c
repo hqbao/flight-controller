@@ -5,7 +5,7 @@
 #include <air_pressure/air_pressure.h>
 #include <compass/compass.h>
 #include <attitude_control/attitude_control.h>
-#include <remote_control/remote_control.h>
+#include <rc_receiver/rc_receiver.h>
 #include <position_estimation/position_estimation.h>
 #include <position_control/position_control.h>
 #include <gps_navigation/gps_navigation.h>
@@ -37,7 +37,7 @@ void platform_setup(void) {
 	//gps_setup();
 	//gps_navigation_setup();
 	//gps_denied_navigation_setup();
-	remote_control_setup();
+	rc_receiver_setup();
 	logger_setup();
 	test_setup();
 }

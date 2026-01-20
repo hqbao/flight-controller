@@ -1,4 +1,4 @@
-#include "remote_control.h"
+#include "rc_receiver.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
@@ -52,7 +52,7 @@ static void handle_internal_message(uint8_t *data, size_t size) {
 	publish(RC_MOVE_IN_UPDATE, (uint8_t*)&g_rc_att_ctl, sizeof(rc_att_ctl_t));
 }
 
-void remote_control_setup(void) {
+void rc_receiver_setup(void) {
 	subscribe(DB_MESSAGE_UPDATE, on_internal_message);
 	subscribe(SCHEDULER_25HZ, handle_internal_message);
 }
