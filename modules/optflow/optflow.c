@@ -34,13 +34,12 @@ static void on_message_received(uint8_t *data, size_t size) {
 		float dx_rad = (float)raw_dx / 100000.0f;
 		float dy_rad = (float)raw_dy / 100000.0f;
 		float clarity = (float)raw_clarity / 10.0f;
-		
-		// Adaptive gain based on surface texture quality
-		// Lower clarity = less reliable flow, reduce gain
-		float texture_gain = clarity < 5.0f ? 0.2f : (clarity < 15.0f ? 0.5f : 1.0f);
 
-		g_optflow_msg.dx = dx_rad * texture_gain;
-		g_optflow_msg.dy = dy_rad * texture_gain;
+		// scale 50-100 to 0.2-1
+		float texture_gain = clarity < 70.0 ? 0.5 : 1.0;
+
+		g_optflow_msg.dx = dx_rad / texture_gain;
+		g_optflow_msg.dy = dy_rad / texture_gain;
 		g_optflow_msg.z = (double)raw_z;
 		g_optflow_msg.direction = (optflow_direction_t)data[1];
 

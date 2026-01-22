@@ -51,9 +51,7 @@ typedef struct {
 #define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
 #define ACCEL_FREQ 500
-#define GYRO_FREQ 1000
 #define MAX_IMU_ACCEL 16384
-#define DEG2RAD 0.01745329251
 
 typedef enum {
 	OPTFLOW_DOWNWARD = 0,
@@ -89,13 +87,6 @@ static vector3d_t g_pos_final = {0, 0, 0};
 static optflow_data_t g_optflow_up = {0, 0, 0, 0};
 static optflow_data_t g_optflow_down = {0, 0, 0, 0};
 
-/* Gyro integration for de-rotation (accumulated in degrees) */
-static vector3d_t g_gyro_integrated = {0, 0, 0};
-static float g_derotated_rad_x = 0;
-static float g_derotated_rad_y = 0;
-static float g_gyro_corr_x = 0;
-static float g_gyro_corr_y = 0;
-
 /* Tuning Parameters */
 #define POS_XY_EST0_INTEGRATION_GAIN     0.05
 #define POS_Z_EST0_INTEGRATION_GAIN      1.0
@@ -103,8 +94,8 @@ static float g_gyro_corr_y = 0;
 #define POS_Z_EST0_TRUE_CORRECTION_GAIN  0.5
 #define POS_XY_EST1_INTEGRATION_GAIN 0.05
 #define POS_Z_EST1_INTEGRATION_GAIN  1.0
-#define POS_XY_EST1_TRUE_CORRECTION_GAIN 10.0
-#define POS_Z_EST1_TRUE_CORRECTION_GAIN  10.0
+#define POS_XY_EST1_TRUE_CORRECTION_GAIN 20.0
+#define POS_Z_EST1_TRUE_CORRECTION_GAIN  20.0
 #define ALT_DERIVATIVE_SCALE    100.0
 #define BARO_ALPHA_HIGH_ACCEL   0.05
 #define BARO_ALPHA_LOW_ACCEL    0.005
@@ -115,10 +106,11 @@ static float g_gyro_corr_y = 0;
 #define RANGE_SWITCH_TO_BARO_THRESHOLD 1000.0
 #define VELOC_XY_CORRECTION_GAIN 0.005
 #define VELOC_Z_CORRECTION_GAIN 0.005
-#define OPTFLOW_LIMIT_MAX 2.0
-#define OPTFLOW_LIMIT_MIN 0.2
-#define OPTFLOW_LIMIT_INCREMENT 0.05
-#define OPTFLOW_LIMIT_DECREMENT 0.05
+#define OPTFLOW_SCALE 100.0
+#define OPTFLOW_LIMIT_MAX 1.0
+#define OPTFLOW_LIMIT_MIN 0.1
+#define OPTFLOW_LIMIT_INCREMENT 0.0
+#define OPTFLOW_LIMIT_DECREMENT 0.0
 #define LOW_FREQ_THRESHOLD 5.0
 #define DRIFT_TIME_THRESHOLD 2.0
 
@@ -131,16 +123,6 @@ static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 static double g_optflow_limit = OPTFLOW_LIMIT_MAX;
 static double g_oscillation_freq = 0;
 static double g_drift_time = 0;
-
-/* Gyro update: Called at 1kHz - integrate gyro for de-rotation */
-static void gyro_update(uint8_t *data, size_t size) {
-	if (size < 12) return;  // Expect 3 floats (gx, gy, gz)
-	float *gyro = (float*)data;  // Data is float[3]: gx, gy, gz in deg/s
-	
-	// Integrate gyro (accumulate rotation since last optical flow update) in degrees
-	g_gyro_integrated.x += gyro[0] / GYRO_FREQ;
-	g_gyro_integrated.y -= gyro[1] / GYRO_FREQ;
-}
 
 static void linear_drift_update(uint8_t *data, size_t size) {
 	if (size < sizeof(vector3d_t)) return;
@@ -174,44 +156,18 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	optflow_data_t *msg = (optflow_data_t*)data;
 
-	// Apply gyro de-rotation
-	// Optical flow comes in radians, gyro accumulated in degrees
-	// Camera X axis maps to drone pitch (gyro Y)
-	// Camera Y axis maps to drone roll (gyro X)
-	float gyro_rad_x = (float)g_gyro_integrated.y * DEG2RAD;
-	float gyro_rad_y = (float)g_gyro_integrated.x * DEG2RAD;
-	
-	// Clamp gyro correction to prevent over-correction
-	// Limit to ±|flow| to avoid sign flips
-	g_gyro_corr_x = LIMIT(gyro_rad_x, -fabs((float)msg->dx), fabs((float)msg->dx));
-	g_gyro_corr_y = LIMIT(gyro_rad_y, -fabs((float)msg->dy), fabs((float)msg->dy));
-	
-	// De-rotation: For downward camera, subtract gyro
-	// For upward camera, add gyro (camera rotated 180°)
-	if (msg->direction == OPTFLOW_DOWNWARD) {
-		g_derotated_rad_x = (float)msg->dx - g_gyro_corr_x;
-		g_derotated_rad_y = (float)msg->dy - g_gyro_corr_y;
-	} else {  // OPTFLOW_UPWARD
-		g_derotated_rad_x = (float)msg->dx + g_gyro_corr_x;
-		g_derotated_rad_y = -(float)msg->dy + g_gyro_corr_y;
-	}
-	
-	// Reset gyro integration for next optical flow frame
-	g_gyro_integrated.x = 0;
-	g_gyro_integrated.y = 0;
-	
 	// Scale from radians to mm displacement
-	double dx_mm = g_derotated_rad_x * 200.0;
-	double dy_mm = g_derotated_rad_y * 200.0;
+	double dx_mm = (float)msg->dx * OPTFLOW_SCALE;
+	double dy_mm = (float)msg->dy * OPTFLOW_SCALE;
 
 	if (msg->direction == OPTFLOW_DOWNWARD) {
 		memcpy(&g_optflow_down, msg, sizeof(optflow_data_t));
-		g_optflow.dx = LIMIT(dx_mm, -2.0, 2.0);
-		g_optflow.dy = LIMIT(dy_mm, -2.0, 2.0);
+		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
+		g_optflow.dy = LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
 	} else if (msg->direction == OPTFLOW_UPWARD) {
 		memcpy(&g_optflow_up, msg, sizeof(optflow_data_t));
-		g_optflow.dx = LIMIT(dx_mm, -2.0, 2.0);
-		g_optflow.dy = LIMIT(dy_mm, -2.0, 2.0);
+		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
+		g_optflow.dy = -LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
 	}
 	
 	if (msg->z > 0) g_optflow.z = msg->z;
@@ -345,7 +301,6 @@ static void loop_logger(uint8_t *data, size_t size) {
 #endif
 
 void position_estimation_setup(void) {
-	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
