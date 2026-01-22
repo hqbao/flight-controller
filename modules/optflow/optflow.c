@@ -11,9 +11,9 @@ typedef enum {
 } optflow_direction_t;
 
 typedef struct {
-    double dx;
-    double dy;
-    double z;
+    double dx;      // Angular displacement X (radians)
+    double dy;      // Angular displacement Y (radians)
+    double z;       // Range finder altitude (mm)
     optflow_direction_t direction; 
 } optflow_data_t;
 
@@ -24,19 +24,23 @@ static void on_message_received(uint8_t *data, size_t size) {
 	if (data[0] == 0x01) { // Optical flow
 		if (size < 20) return;
 
-		int32_t raw_dx, raw_dy, raw_z, raw_clearity;
+		int32_t raw_dx, raw_dy, raw_z, raw_clarity;
 		memcpy(&raw_dx, &data[4], sizeof(int32_t));
 		memcpy(&raw_dy, &data[8], sizeof(int32_t));
 		memcpy(&raw_z, &data[12], sizeof(int32_t));
-		memcpy(&raw_clearity, &data[16], sizeof(int32_t));
+		memcpy(&raw_clarity, &data[16], sizeof(int32_t));
 		
-		float dx_mm = (float)raw_dx / 1000.0f;
-		float dy_mm = (float)raw_dy / 1000.0f;
-		float clearity = (float)raw_clearity / 10.0f;
-		float texture_gain = 50.0f / (clearity < 5.0f ? 5.0f : clearity);
+		// Convert from scaled int (×100000) back to radians
+		float dx_rad = (float)raw_dx / 100000.0f;
+		float dy_rad = (float)raw_dy / 100000.0f;
+		float clarity = (float)raw_clarity / 10.0f;
+		
+		// Adaptive gain based on surface texture quality
+		// Lower clarity = less reliable flow, reduce gain
+		float texture_gain = clarity < 5.0f ? 0.2f : (clarity < 15.0f ? 0.5f : 1.0f);
 
-		g_optflow_msg.dx = dx_mm * texture_gain;
-		g_optflow_msg.dy = dy_mm * texture_gain;
+		g_optflow_msg.dx = dx_rad * texture_gain;
+		g_optflow_msg.dy = dy_rad * texture_gain;
 		g_optflow_msg.z = (double)raw_z;
 		g_optflow_msg.direction = (optflow_direction_t)data[1];
 
