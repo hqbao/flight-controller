@@ -62,6 +62,7 @@ struct bmm350_mag_temp_data mag_temp_data;
 /* Static variables for compass values */
 static vector3d_t g_compass_cal = {0};
 static vector3d_t g_compass_raw = {0};
+static uint8_t g_monitor_msg[12] = {0};
 
 /* Calibration parameters: B (Offset) and S (Soft Iron / Scale) */
 static double g_mag_offset[3] = {-26.13, -25.83, 15.53};
@@ -125,28 +126,28 @@ static void loop_25hz(uint8_t *data, size_t size) {
 
 #if ENABLE_COMPASS_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Send compass data as MONITOR_DATA */
-	uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
+	/* Send compass data as MONITOR_DATA
+	   Format: 3 floats (x, y, z) */
 	
 #if ENABLE_COMPASS_MONITOR_LOG == 2
 	float raw_x = (float)g_compass_raw.x;
 	float raw_y = (float)g_compass_raw.y;
 	float raw_z = (float)g_compass_raw.z;
 
-	memcpy(&out_msg[0], &raw_x, sizeof(float));
-	memcpy(&out_msg[4], &raw_y, sizeof(float));
-	memcpy(&out_msg[8], &raw_z, sizeof(float));
+	memcpy(&g_monitor_msg[0], &raw_x, sizeof(float));
+	memcpy(&g_monitor_msg[4], &raw_y, sizeof(float));
+	memcpy(&g_monitor_msg[8], &raw_z, sizeof(float));
 #else
 	float cal_x = (float)g_compass_cal.x;
 	float cal_y = (float)g_compass_cal.y;
 	float cal_z = (float)g_compass_cal.z;
 
-	memcpy(&out_msg[0], &cal_x, sizeof(float));
-	memcpy(&out_msg[4], &cal_y, sizeof(float));
-	memcpy(&out_msg[8], &cal_z, sizeof(float));
+	memcpy(&g_monitor_msg[0], &cal_x, sizeof(float));
+	memcpy(&g_monitor_msg[4], &cal_y, sizeof(float));
+	memcpy(&g_monitor_msg[8], &cal_z, sizeof(float));
 #endif
 	
-	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
+	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
 }
 #endif
 

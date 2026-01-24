@@ -86,6 +86,7 @@ static vector3d_t g_pos_est1 = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 static optflow_data_t g_optflow_up = {0, 0, 0, 0};
 static optflow_data_t g_optflow_down = {0, 0, 0, 0};
+static uint8_t g_msg[12] = {0};
 
 /* Tuning Parameters */
 #define POS_XY_EST0_INTEGRATION_GAIN     0.05
@@ -287,7 +288,6 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	static uint8_t g_msg[12] = {0};
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 1
 	float val[3] = {(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z};
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2

@@ -104,6 +104,7 @@ static fusion3_t g_f11;
 static angle3d_t g_angular_state = {0, 0, 0};
 static vector3d_t g_raw_accel = {0, 0, 0};
 static linear_accel_data_t g_linear_accel_out;
+static uint8_t g_monitor_msg[36];
 
 /**
  * GYRO UPDATE: Called at 1000Hz
@@ -186,7 +187,6 @@ static void accel_update(uint8_t *data, size_t size) {
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Pack 3 vectors into MONITOR_DATA message for visualization
 	   Format: 9 floats - v_pred(3), v_true(3), v_linear_acc(3) */
-	uint8_t out_msg[36];
 
 	// Predicted gravity vector (from quaternion)
 	float pred_x = (float)g_f11.v_pred.x;
@@ -203,17 +203,17 @@ static void loop_logger(uint8_t *data, size_t size) {
 	float lin_y = (float)g_f11.v_linear_acc.y;
 	float lin_z = (float)g_f11.v_linear_acc.z;
 	
-	memcpy(&out_msg[0], &pred_x, sizeof(float));
-	memcpy(&out_msg[4], &pred_y, sizeof(float));
-	memcpy(&out_msg[8], &pred_z, sizeof(float));
-	memcpy(&out_msg[12], &true_x, sizeof(float));
-	memcpy(&out_msg[16], &true_y, sizeof(float));
-	memcpy(&out_msg[20], &true_z, sizeof(float));
-	memcpy(&out_msg[24], &lin_x, sizeof(float));
-	memcpy(&out_msg[28], &lin_y, sizeof(float));
-	memcpy(&out_msg[32], &lin_z, sizeof(float));
+	memcpy(&g_monitor_msg[0], &pred_x, sizeof(float));
+	memcpy(&g_monitor_msg[4], &pred_y, sizeof(float));
+	memcpy(&g_monitor_msg[8], &pred_z, sizeof(float));
+	memcpy(&g_monitor_msg[12], &true_x, sizeof(float));
+	memcpy(&g_monitor_msg[16], &true_y, sizeof(float));
+	memcpy(&g_monitor_msg[20], &true_z, sizeof(float));
+	memcpy(&g_monitor_msg[24], &lin_x, sizeof(float));
+	memcpy(&g_monitor_msg[28], &lin_y, sizeof(float));
+	memcpy(&g_monitor_msg[32], &lin_z, sizeof(float));
 
-	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
+	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
 }
 #endif
 

@@ -83,6 +83,7 @@ typedef struct {
 	topic_t topic_accel_update;
 } imu_t;
 
+static uint8_t g_monitor_msg[12] = {0};
 static imu_t g_imu1 = {
 	.imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0},
 	.gyro_accel = {0},
@@ -253,17 +254,16 @@ static void publish_accel_loop(uint8_t *data, size_t size) {
 static void loop_logger(uint8_t *data, size_t size) {
 	/* Pack raw accel into MONITOR_DATA message
 	   Format: 3 float32 values (ax, ay, az) */
-	static uint8_t out_msg[12]; /* 3 * 4 bytes (float32) */
 	
 	float ax = g_imu1.gyro_accel[0];
 	float ay = g_imu1.gyro_accel[1];
 	float az = g_imu1.gyro_accel[2];
 	
-	memcpy(&out_msg[0], &ax, sizeof(float));
-	memcpy(&out_msg[4], &ay, sizeof(float));
-	memcpy(&out_msg[8], &az, sizeof(float));
+	memcpy(&g_monitor_msg[0], &ax, sizeof(float));
+	memcpy(&g_monitor_msg[4], &ay, sizeof(float));
+	memcpy(&g_monitor_msg[8], &az, sizeof(float));
 	
-	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
+	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
 }
 #endif
 
