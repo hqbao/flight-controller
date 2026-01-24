@@ -65,8 +65,8 @@
 
 // Fusion 1 (Mahony) Gains
 #if FUSION_ALGO == 1
-#define ATT_F1_GAIN_PROP 1.5
-#define ATT_F1_GAIN_INT 0.15
+#define ATT_F1_GAIN_PROP 1.5  // Kp: Proportional correction (not frequency-scaled, gentle response)
+#define ATT_F1_GAIN_INT 0.15  // Ki: Integral for gyro bias (divided by freq for time integration)
 #endif
 
 #if FUSION_ALGO == 2
@@ -81,7 +81,7 @@
 
 // Shared Accelerometer Parameters (Used by Fusion 1, 2, and 3)
 #if FUSION_ALGO == 1 || FUSION_ALGO == 2 || FUSION_ALGO == 3
-#define ATT_ACCEL_SMOOTH 4.0 // LPF Gain (Bandwidth factor). Higher = Faster response, Less smoothing.
+#define ATT_ACCEL_SMOOTH 4.0  // Accel LPF bandwidth factor (divided by freq for frequency-invariance)
 #define ATT_F1_LIN_ACC_DECAY 0.5
 #define ATT_F1_LIN_ACCEL_MIN 0.5
 #define ATT_F1_LIN_ACCEL_MAX 2.0
