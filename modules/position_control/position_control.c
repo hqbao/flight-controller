@@ -191,6 +191,7 @@ static void state_update(uint8_t *data, size_t size) {
 		reset_pid();
 		vector3d_set(&g_veloc_offset, &g_veloc_final);
 		g_take_off_speed = 0;
+		g_landing_speed = MIN_LANDING_SPEED;
 		g_pos_ctl_roll = 0;
 		g_pos_ctl_pitch = 0;
 		g_pos_ctl_yaw = 0;
