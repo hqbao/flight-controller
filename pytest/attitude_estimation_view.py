@@ -27,9 +27,10 @@ if SERIAL_PORT is None:
 # --- Global State ---
 data_queue = queue.Queue()
 is_collecting = True
-# Vectors: v_pred (Red), v_true (Blue)
+# Vectors: v_pred (Red), v_true (Blue), v_linear_acc (Green)
 v_pred = np.array([0.0, 0.0, 0.0])
 v_true = np.array([0.0, 0.0, 0.0])
+v_linear_acc = np.array([0.0, 0.0, 0.0])
 
 # --- Serial Reader ---
 def serial_reader():
@@ -69,9 +70,9 @@ def serial_reader():
                 if len(payload) != length: continue
                 
                 if msg_id == MONITOR_DATA_ID:
-                    if length == 24: # 6 floats
-                        vals = struct.unpack('ffffff', payload)
-                        # v_pred (0-2), v_true (3-5)
+                    if length == 36: # 9 floats
+                        vals = struct.unpack('fffffffff', payload)
+                        # v_pred (0-2), v_true (3-5), v_linear_acc (6-8)
                         data_queue.put(vals)
                     
     except Exception as e:
@@ -79,7 +80,7 @@ def serial_reader():
 
 # --- GUI ---
 def main():
-    global is_collecting, v_pred, v_true
+    global is_collecting, v_pred, v_true, v_linear_acc
     
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
@@ -90,12 +91,15 @@ def main():
     plt.subplots_adjust(bottom=0.2, right=0.75)
     
     # Initialize lines
-    # Red: Prediction, Blue: True (Measurement)
+    # Red: Prediction, Blue: True (Measurement), Green: Linear Acceleration
     line_pred, = ax.plot([0, 0], [0, 0], [0, 0], color='red', linewidth=3, label='Prediction')
     head_pred, = ax.plot([0], [0], [0], color='red', marker='o', markersize=8)
     
     line_true, = ax.plot([0, 0], [0, 0], [0, 0], color='blue', linewidth=3, label='True (Accel)')
     head_true, = ax.plot([0], [0], [0], color='blue', marker='o', markersize=8)
+    
+    line_linear, = ax.plot([0, 0], [0, 0], [0, 0], color='green', linewidth=2, label='Linear Accel')
+    head_linear, = ax.plot([0], [0], [0], color='green', marker='o', markersize=6)
     
     # Text for results
     text_ax = plt.axes([0.76, 0.2, 0.23, 0.6])
@@ -152,6 +156,7 @@ def main():
         if is_collecting and latest_vals:
             v_pred = np.array(latest_vals[0:3])
             v_true = np.array(latest_vals[3:6])
+            v_linear_acc = np.array(latest_vals[6:9])
             
             # Update plots
             line_pred.set_data([0, v_pred[0]], [0, v_pred[1]])
@@ -164,6 +169,11 @@ def main():
             head_true.set_data([v_true[0]], [v_true[1]])
             head_true.set_3d_properties([v_true[2]])
             
+            line_linear.set_data([0, v_linear_acc[0]], [0, v_linear_acc[1]])
+            line_linear.set_3d_properties([0, v_linear_acc[2]])
+            head_linear.set_data([v_linear_acc[0]], [v_linear_acc[1]])
+            head_linear.set_3d_properties([v_linear_acc[2]])
+            
             # Update text
             info_text.set_text(
                 f"Prediction (Red):\n"
@@ -175,7 +185,12 @@ def main():
                 f"X: {v_true[0]:.3f}\n"
                 f"Y: {v_true[1]:.3f}\n"
                 f"Z: {v_true[2]:.3f}\n"
-                f"Mag: {np.linalg.norm(v_true):.3f}"
+                f"Mag: {np.linalg.norm(v_true):.3f}\n\n"
+                f"Linear Accel (Green):\n"
+                f"X: {v_linear_acc[0]:.3f}\n"
+                f"Y: {v_linear_acc[1]:.3f}\n"
+                f"Z: {v_linear_acc[2]:.3f}\n"
+                f"Mag: {np.linalg.norm(v_linear_acc):.3f}"
             )
 
         plt.pause(0.05)

@@ -5,6 +5,15 @@
 #include "matrix.h"
 #include "quat.h"
 
+/**
+ * FUSION2: Extended Kalman Filter for Attitude Estimation
+ * 
+ * Vector naming convention (unified across fusion1, fusion2, fusion3):
+ * - v_pred: Predicted gravity vector in body frame (from quaternion)
+ * - v_true: Measured/true gravity vector (normalized accelerometer)
+ * - v_linear_acc: Linear acceleration with gravity removed (body frame)
+ * - v_linear_acc_earth_frame: Linear acceleration in earth frame
+ */
 typedef struct {
     // State vector
     quaternion_t q;
@@ -30,8 +39,8 @@ typedef struct {
 
     char no_correction;
 
-    vector3d_t true_norm_accel;
-    vector3d_t pred_norm_accel;
+    vector3d_t v_true;
+    vector3d_t v_pred;
     vector3d_t v_linear_acc;
     vector3d_t v_linear_acc_earth_frame;
     vector3d_t accel;

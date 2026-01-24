@@ -4,6 +4,15 @@
 #include "vector3d.h"
 #include "quat.h"
 
+/**
+ * FUSION1: Mahony Complementary Filter for Attitude Estimation
+ * 
+ * Vector naming convention (unified across fusion1, fusion2, fusion3):
+ * - v_pred: Predicted gravity vector in body frame (from quaternion)
+ * - v_true: Measured/true gravity vector (normalized accelerometer)
+ * - v_linear_acc: Linear acceleration with gravity removed (body frame)
+ * - v_linear_acc_earth_frame: Linear acceleration in earth frame
+ */
 typedef struct {
     // === Orientation State ===
     quaternion_t q;                    // Current orientation quaternion (unit quaternion)

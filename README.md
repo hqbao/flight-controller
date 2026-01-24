@@ -87,14 +87,14 @@ flight-controller/
 
 │
 └── pytest/                    # Python3 visualization and testing tools
-    ├── calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
-    ├── calibrate_compass.py   # Compass calibration (Ellipsoid Fit)
+    ├── imu_calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
+    ├── compass_calibrate.py   # Compass calibration (Ellipsoid Fit)
     ├── gps_config.py          # U-Blox GPS configuration script
     ├── gps_read_upx.py        # Tool to read and parse UBX messages
     ├── gps_sim_ubx.py         # GPS simulator (UBX NAV-PVT messages)
     ├── GPS_SIMULATOR_VALIDATION.md # Documentation for GPS simulator
-    ├── view_attitude.py       # 3D attitude visualization
-    ├── view_position.py       # 3D position visualization
+    ├── attitude_estimation_view.py       # 3D attitude visualization
+    ├── position_estimation_view.py       # 3D position visualization
     └── view_charts.py         # Real-time sensor data plotting
 ```
 
@@ -243,8 +243,8 @@ The `pytest/` directory contains tools to visualize the drone's state in real-ti
    ```
 
 2. **Run a Viewer:**
-   *   **Attitude**: `python3 view_attitude.py` (Shows 3D orientation)
-   *   **Position**: `python3 view_position.py` (Shows 3D position/velocity)
+   *   **Attitude**: `python3 attitude_estimation_view.py` (Shows predicted/true gravity & linear accel)
+   *   **Position**: `python3 position_estimation_view.py` (Shows 3D position/velocity)
    *   **Charts**: `python3 view_charts.py` (Shows raw sensor graphs)
 
 3. **Note**: Ensure the corresponding `ENABLE_..._MONITOR_LOG` macro is enabled in the firmware module you want to visualize.

@@ -27,8 +27,14 @@
  * 
  * OUTPUT:
  * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
- * - SENSOR_ATTITUDE_VECTOR: Predicted gravity vector in body frame (unit vector)
- * - (Fusion2 only) SENSOR_LINEAR_ACCEL: Linear acceleration with gravity removed
+ * - SENSOR_ATTITUDE_VECTOR: v_pred (predicted gravity vector in body frame)
+ * - SENSOR_LINEAR_ACCEL: {v_linear_acc (body), v_linear_acc_earth_frame}
+ * - MONITOR_DATA (if enabled): v_pred, v_true, v_linear_acc for visualization
+ * 
+ * VECTOR NAMING (unified across all fusion algorithms):
+ * - v_pred: Predicted gravity from quaternion
+ * - v_true: Measured gravity from accelerometer
+ * - v_linear_acc: Linear acceleration (gravity removed)
  */
 #include "attitude_estimation.h"
 #include <pubsub.h>
@@ -37,7 +43,7 @@
 #include <math.h>
 
 /* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick) */
-#define FUSION_ALGO 2
+#define FUSION_ALGO 1
 
 #if FUSION_ALGO == 1
 #include <fusion1.h>
@@ -48,7 +54,7 @@
 #endif
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_ATTITUDE_MONITOR_LOG 0
+#define ENABLE_ATTITUDE_MONITOR_LOG 1
 
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 1000
@@ -118,41 +124,24 @@ static void gyro_update(uint8_t *data, size_t size) {
 	float gy = -raw_gy;
 	float gz = raw_gz;
 
+	// Run prediction step (algorithm-specific)
 #if FUSION_ALGO == 1
-	// FUSION 1 Logic
 	fusion1_predict(&g_f11, gx, gy, gz, DT);
-
-	// Extract Euler angles from quaternion (same as fusion2)
-	vector3d_t euler;
-	quat_to_euler(&euler, &g_f11.q);
-	g_angular_state.roll = -euler.y * RAD2DEG;
-	g_angular_state.pitch = euler.x * RAD2DEG;
-	g_angular_state.yaw = euler.z * RAD2DEG;
-
-	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
 #elif FUSION_ALGO == 2
-	// FUSION 2 Logic
 	fusion2_predict(&g_f11, gx, gy, gz, DT);
-
-	vector3d_t euler;
-	quat_to_euler(&euler, &g_f11.q);
-	g_angular_state.roll = -euler.y * RAD2DEG;
-	g_angular_state.pitch = euler.x * RAD2DEG;
-	g_angular_state.yaw = euler.z * RAD2DEG;
-
-	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.pred_norm_accel, sizeof(vector3d_t));
 #elif FUSION_ALGO == 3
-	// FUSION 3 Logic (Madgwick filter)
 	fusion3_predict(&g_f11, gx, gy, gz, DT);
+#endif
 
+	// Extract Euler angles from quaternion (common for all algorithms)
 	vector3d_t euler;
 	quat_to_euler(&euler, &g_f11.q);
 	g_angular_state.roll = -euler.y * RAD2DEG;
 	g_angular_state.pitch = euler.x * RAD2DEG;
 	g_angular_state.yaw = euler.z * RAD2DEG;
 
+	// All fusion algorithms now use v_pred consistently
 	publish(SENSOR_ATTITUDE_VECTOR, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
-#endif
 
 	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 }
@@ -195,39 +184,34 @@ static void accel_update(uint8_t *data, size_t size) {
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Pack v_linear_acc (body frame) and v_linear_acc_earth_frame (earth frame) into MONITOR_DATA message
-	   Format: 6 floats - body_x, body_y, body_z, earth_x, earth_y, earth_z */
-	uint8_t out_msg[24];
+	/* Pack 3 vectors into MONITOR_DATA message for visualization
+	   Format: 9 floats - v_pred(3), v_true(3), v_linear_acc(3) */
+	uint8_t out_msg[36];
 
-#if FUSION_ALGO == 1
-	float body_x = (float)g_f11.v_linear_acc.x;
-	float body_y = (float)g_f11.v_linear_acc.y;
-	float body_z = (float)g_f11.v_linear_acc.z;
-	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
-	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
-	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
-#elif FUSION_ALGO == 2
-	float body_x = (float)g_f11.v_linear_acc.x;
-	float body_y = (float)g_f11.v_linear_acc.y;
-	float body_z = (float)g_f11.v_linear_acc.z;
-	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
-	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
-	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
-#elif FUSION_ALGO == 3
-	float body_x = (float)g_f11.v_linear_acc.x;
-	float body_y = (float)g_f11.v_linear_acc.y;
-	float body_z = (float)g_f11.v_linear_acc.z;
-	float earth_x = (float)g_f11.v_linear_acc_earth_frame.x;
-	float earth_y = (float)g_f11.v_linear_acc_earth_frame.y;
-	float earth_z = (float)g_f11.v_linear_acc_earth_frame.z;
-#endif
+	// Predicted gravity vector (from quaternion)
+	float pred_x = (float)g_f11.v_pred.x;
+	float pred_y = (float)g_f11.v_pred.y;
+	float pred_z = (float)g_f11.v_pred.z;
 	
-	memcpy(&out_msg[0], &body_x, sizeof(float));
-	memcpy(&out_msg[4], &body_y, sizeof(float));
-	memcpy(&out_msg[8], &body_z, sizeof(float));
-	memcpy(&out_msg[12], &earth_x, sizeof(float));
-	memcpy(&out_msg[16], &earth_y, sizeof(float));
-	memcpy(&out_msg[20], &earth_z, sizeof(float));
+	// True/measured gravity vector (from accelerometer)
+	float true_x = (float)g_f11.v_true.x;
+	float true_y = (float)g_f11.v_true.y;
+	float true_z = (float)g_f11.v_true.z;
+	
+	// Linear acceleration (body frame, gravity removed)
+	float lin_x = (float)g_f11.v_linear_acc.x;
+	float lin_y = (float)g_f11.v_linear_acc.y;
+	float lin_z = (float)g_f11.v_linear_acc.z;
+	
+	memcpy(&out_msg[0], &pred_x, sizeof(float));
+	memcpy(&out_msg[4], &pred_y, sizeof(float));
+	memcpy(&out_msg[8], &pred_z, sizeof(float));
+	memcpy(&out_msg[12], &true_x, sizeof(float));
+	memcpy(&out_msg[16], &true_y, sizeof(float));
+	memcpy(&out_msg[20], &true_z, sizeof(float));
+	memcpy(&out_msg[24], &lin_x, sizeof(float));
+	memcpy(&out_msg[28], &lin_y, sizeof(float));
+	memcpy(&out_msg[32], &lin_z, sizeof(float));
 
 	publish(MONITOR_DATA, out_msg, sizeof(out_msg));
 }

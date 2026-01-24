@@ -10,6 +10,12 @@
  * The Madgwick filter uses gradient descent optimization to find the quaternion
  * that minimizes the error between predicted and measured gravity direction.
  * 
+ * Vector naming convention (unified across fusion1, fusion2, fusion3):
+ * - v_pred: Predicted gravity vector in body frame (from quaternion)
+ * - v_true: Measured/true gravity vector (normalized accelerometer)
+ * - v_linear_acc: Linear acceleration with gravity removed (body frame)
+ * - v_linear_acc_earth_frame: Linear acceleration in earth frame
+ * 
  * Key Features:
  * 1. Gradient descent for orientation error correction
  * 2. Single beta parameter (gain) controls correction speed
