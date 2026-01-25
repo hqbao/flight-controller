@@ -44,7 +44,11 @@ The Flight Controller (FC) is the core autopilot system that:
 
 ## Coding Guidelines and Rules
 
-- **Module Independence:** Do NOT include headers from one module into another (e.g., `modules/A/A.h` should not be included in `modules/B/B.c`). Modules should be loosely coupled and communicate via the Pub/Sub system. If a data structure is shared, define it in a common header (like `libs/robotkit`) or duplicate the definition if it is specific to the message payload.
+- **Module Independence:** Do NOT include headers from one module into another (e.g., `modules/A/A.h` should not be included in `modules/B/B.c`). Modules should be loosely coupled and communicate via the Pub/Sub system.
+- **Shared Data & Constants:**
+  - All shared Pub/Sub message structures must be defined in `base/foundation/messages.h`.
+  - Shared constants and macros (like `GYRO_FREQ`, `MAX`, `MIN`) must be defined in `base/foundation/macro.h`.
+  - **Do NOT** duplicate struct definitions in module headers.
 - **Static Variables:** Prefer file-scope `static` variables over function-scope `static` variables for safety and clarity.
 - **Memory Safety:** Use `memset` and `memcpy` for clearing and copying structs to avoid uninitialized memory or padding issues.
 
