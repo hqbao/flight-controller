@@ -6,6 +6,7 @@
 #include <vector3d.h>
 #include <macro.h>
 #include "bmm350.h"
+#include <messages.h>
 
 /* 
  * --- COMPASS CALIBRATION GUIDE ---

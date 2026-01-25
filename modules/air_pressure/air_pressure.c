@@ -3,6 +3,7 @@
 #include <platform.h>
 #include <macro.h>
 #include "dps310.h"
+#include <messages.h>
 
 #define ALT_SAMPLES 100
 #define WARMUP_DELAY_MS 100

@@ -4,18 +4,7 @@
 #include <string.h>
 #include <macro.h>
 #include <vector3d.h>
-
-typedef enum {
-	OPTFLOW_DOWNWARD = 0,
-	OPTFLOW_UPWARD = 1,
-} optflow_direction_t;
-
-typedef struct {
-    double dx;      // Angular displacement X (radians)
-    double dy;      // Angular displacement Y (radians)
-    double z;       // Range finder altitude (mm)
-    optflow_direction_t direction; 
-} optflow_data_t;
+#include <messages.h>
 
 static optflow_data_t g_optflow_msg;
 

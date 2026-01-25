@@ -5,6 +5,7 @@
 #include <vector3d.h>
 #include <math.h>
 #include <macro.h>
+#include <messages.h>
 
 #define DISARM_RANGE_WHEN_LANDING 10
 #define DISARM_TIME_WHEN_LANDING 50
@@ -20,48 +21,7 @@
 #define OPTFLOW_TYPE_DOWNWARD 0
 #define OPTFLOW_RANGE_OFFSET 12
 
-typedef enum {
-	DISARMED = 0,
-	ARMED,
-	READY,
-	TAKING_OFF,
-	FLYING,
-	LANDING,
-	TESTING,
-} state_t;
-
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
-
-typedef struct {
-	float roll;
-	float pitch;
-	float yaw;
-	float alt;
-} rc_att_ctl_t;
-
-typedef struct {
-	double roll;
-	double pitch;
-	double yaw;
-} angle3d_t;
-
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-    uint8_t direction;
-} optflow_data_t;
-
 static uint8_t g_module_initialized[MODULE_ID_MAX] = {0};
-
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-} optflow_t;
 
 static angle3d_t g_angular_state = {0, 0, 0};
 static rc_state_ctl_t g_rc_state_ctl = {0};

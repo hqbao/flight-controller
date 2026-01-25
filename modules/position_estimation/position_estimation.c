@@ -33,14 +33,12 @@
 #include <string.h>
 #include <math.h>
 #include <macro.h>
+#include <messages.h>
 
 /* Structure for SENSOR_LINEAR_ACCEL data
  * Copied from attitude_estimation.h to avoid cross-module include
  */
-typedef struct {
-	vector3d_t body;
-	vector3d_t earth;
-} linear_accel_data_t;
+
 
 
 /* Macro to enable/disable sending MONITOR_DATA via logger 
@@ -52,18 +50,6 @@ typedef struct {
 
 #define ACCEL_FREQ 500
 #define MAX_IMU_ACCEL 16384
-
-typedef enum {
-	OPTFLOW_DOWNWARD = 0,
-	OPTFLOW_UPWARD = 1,
-} optflow_direction_t;
-
-typedef struct {
-    double dx;      // Linear displacement X (mm)
-    double dy;      // Linear displacement Y (mm)
-    double z;       // Range finder altitude (mm)
-    optflow_direction_t direction; 
-} optflow_data_t;
 
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;

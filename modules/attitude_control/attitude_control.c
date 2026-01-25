@@ -6,6 +6,7 @@
 #include <vector3d.h>
 #include <pid_control.h>
 #include <macro.h>
+#include <messages.h>
 
 #define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
 
@@ -43,29 +44,6 @@
 #define ATT_SMOOTH_P_TERM 1.0
 #define ATT_SMOOTH_OUTPUT 1.0
 #define ATT_GAIN_TIME 1.0
-
-typedef enum {
-	DISARMED = 0,
-	ARMED,
-	READY,
-	TAKING_OFF,
-	FLYING,
-	LANDING,
-	TESTING,
-} state_t;
-
-typedef struct {
-	float roll;
-	float pitch;
-	float yaw;
-	float alt;
-} rc_att_ctl_t;
-
-typedef struct {
-	double roll;
-	double pitch;
-	double yaw;
-} angle3d_t;
 
 static int g_output_speed[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static angle3d_t g_angular_state = {0, 0, 0};

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <vector3d.h>
+#include <messages.h>
 
 #define WAYPOINT_THRESHOLD 5.0  // meters
 #define MAX_WAYPOINTS 10
@@ -13,24 +14,6 @@ typedef struct {
 	double lon;  // longitude in degrees
 	double alt;  // altitude in meters
 } gps_waypoint_t;
-
-typedef struct {
-	int32_t lat;  // latitude in 1e-7 degrees
-	int32_t lon;  // longitude in 1e-7 degrees
-	int32_t alt;  // altitude in mm
-} gps_position_t;
-
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
-
-typedef struct {
-	uint8_t fix_type;   // 0=no fix, 2=2D, 3=3D
-	uint8_t num_sv;     // Number of satellites
-	uint32_t h_acc;     // Horizontal accuracy (mm)
-	uint8_t reliable;   // 1=reliable, 0=not reliable
-} gps_quality_t;
 
 static gps_waypoint_t g_waypoints[MAX_WAYPOINTS] = {0};
 static int g_num_waypoints = 0;

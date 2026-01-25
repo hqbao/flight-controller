@@ -5,6 +5,7 @@
 #include <math.h>
 #include <vector3d.h>
 #include <macro.h>
+#include <messages.h>
 
 #define POS_CTL_FREQ 500
 #define CTL_FREQ 100
@@ -37,41 +38,6 @@
 #define RC_XY_SCALE 3.0
 #define RC_Z_SCALE 40.0
 #define RC_YAW_SCALE -0.5
-
-typedef enum {
-	DISARMED = 0,
-	ARMED,
-	READY,
-	TAKING_OFF,
-	FLYING,
-	LANDING,
-	TESTING,
-} state_t;
-
-typedef struct {
-	float roll;
-	float pitch;
-	float yaw;
-	float alt;
-} rc_att_ctl_t;
-
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
-
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-    uint8_t direction;
-} optflow_data_t;
-
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-} optflow_t;
 
 static state_t g_state = DISARMED;
 static rc_state_ctl_t g_rc_state_ctl = {0};

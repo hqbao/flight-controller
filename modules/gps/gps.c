@@ -4,32 +4,11 @@
 #include <macro.h>
 #include <string.h>
 #include <stdint.h>
+#include <messages.h>
 
 // UBX message IDs
 #define UBX_CLASS_NAV 0x01
 #define UBX_NAV_PVT 0x07
-
-// GPS position data structure (from NAV-PVT)
-typedef struct {
-	int32_t lon;        // Longitude (deg * 1e7)
-	int32_t lat;        // Latitude (deg * 1e7)
-	int32_t alt;        // Height above mean sea level (mm)
-} gps_position_t;
-
-// GPS velocity data structure (from NAV-PVT)
-typedef struct {
-	int32_t velN;       // North velocity (mm/s)
-	int32_t velE;       // East velocity (mm/s)
-	int32_t velD;       // Down velocity (mm/s)
-} gps_velocity_t;
-
-// GPS quality data structure
-typedef struct {
-	uint8_t fix_type;   // 0=no fix, 2=2D, 3=3D
-	uint8_t num_sv;     // Number of satellites
-	uint32_t h_acc;     // Horizontal accuracy (mm)
-	uint8_t reliable;   // 1=reliable, 0=not reliable
-} gps_quality_t;
 
 static gps_position_t g_gps_position;
 static gps_velocity_t g_gps_velocity;

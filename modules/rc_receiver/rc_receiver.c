@@ -2,24 +2,13 @@
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
+#include <messages.h>
 
 #define PULSE_WIDTH_TO_DEGREE (90.0 / 490)
 #define RC_CMD_ID 0x02
 #define RC_SUB_CMD_MOVE 0x00
 #define RC_DATA_SIZE 18
 #define RC_DATA_OFFSET 4
-
-typedef struct {
-	float roll;
-	float pitch;
-	float yaw;
-	float alt;
-} rc_att_ctl_t;
-
-typedef struct {
-	uint8_t state;
-	uint8_t mode;
-} rc_state_ctl_t;
 
 static uint8_t g_rc_data_raw[RC_DATA_SIZE] = {0};
 static rc_att_ctl_t g_rc_att_ctl;

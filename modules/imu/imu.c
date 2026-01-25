@@ -8,6 +8,7 @@
 #include "icm42688p_spi.h"
 #include <string.h>
 #include <macro.h>
+#include <messages.h>
 
 /* 
  * --- IMU CALIBRATION GUIDE ---

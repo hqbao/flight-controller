@@ -2,6 +2,7 @@
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
+#include <messages.h>
 
 #define SHOULD_CLEAR_STORAGE 0
 

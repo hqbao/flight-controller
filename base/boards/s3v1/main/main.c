@@ -8,6 +8,7 @@
 #include <esp_camera.h>
 #include <optflow.h>
 #include "image_util.h"
+#include <macro.h>
 
 #define TAG "main.c"
 
@@ -32,8 +33,6 @@ typedef void (*timer_callback_t)(void*);
 
 #define WIDTH 64
 #define HEIGHT 64
-
-#define LIMIT(number, min, max) (number < min ? min : (number > max ? max : number))
 
 typedef struct {
   int16_t dx;

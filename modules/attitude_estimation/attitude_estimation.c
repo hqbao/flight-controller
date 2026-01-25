@@ -41,6 +41,8 @@
 #include <platform.h>
 #include <string.h>
 #include <math.h>
+#include <messages.h>
+#include <macro.h>
 
 /* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick) */
 #define FUSION_ALGO 3
@@ -59,8 +61,6 @@
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 1000
 #define ACCEL_FREQ 500
-#define DEG2RAD 0.01745329251
-#define RAD2DEG 57.2957795131
 #define DT (1.0 / GYRO_FREQ)
 
 // Fusion 1 (Mahony) Gains
@@ -86,12 +86,6 @@
 #define ATT_F1_LIN_ACCEL_MIN 0.5
 #define ATT_F1_LIN_ACCEL_MAX 2.0
 #endif
-
-typedef struct {
-	double roll;
-	double pitch;
-	double yaw;
-} angle3d_t;
 
 #if FUSION_ALGO == 1
 static fusion1_t g_f11;
