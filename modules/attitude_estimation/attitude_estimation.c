@@ -43,7 +43,7 @@
 #include <math.h>
 
 /* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick) */
-#define FUSION_ALGO 1
+#define FUSION_ALGO 3
 
 #if FUSION_ALGO == 1
 #include <fusion1.h>
@@ -54,7 +54,7 @@
 #endif
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_ATTITUDE_MONITOR_LOG 1
+#define ENABLE_ATTITUDE_MONITOR_LOG 2
 
 #define MAX_IMU_ACCEL 16384
 #define GYRO_FREQ 1000
@@ -103,13 +103,39 @@ static fusion3_t g_f11;
 
 static angle3d_t g_angular_state = {0, 0, 0};
 static vector3d_t g_raw_accel = {0, 0, 0};
+static vector3d_t g_mag_vec = {0, 0, 0};
+static vector3d_t g_mag_earth = {0, 0, 0};
+static double g_mag_heading = 0.0;
 static linear_accel_data_t g_linear_accel_out;
 static uint8_t g_monitor_msg[36];
 
-/**
- * GYRO UPDATE: Called at 1000Hz
- * Integrates gyroscope to predict orientation change
+/* 
+ * MAGNETOMETER UPDATE
+ * Calculates tilt-compensated heading (Yaw)
  */
+static void mag_update(uint8_t *data, size_t size) {
+    if (size != sizeof(vector3d_t)) return;
+    memcpy(&g_mag_vec, data, sizeof(vector3d_t));
+
+    // 1. Get Roll/Pitch from attitude estimate
+    vector3d_t euler;
+    quat_to_euler(&euler, &g_f11.q);
+
+    // 2. Create Tilt-Only quaternion (Yaw=0)
+    quaternion_t q_tilt;
+    quat_from_euler(&q_tilt, euler.y, euler.x, 0);
+
+    // 3. Un-tilt mag vector to Earth frame horizontal plane
+    quaternion_t q_tilt_conj;
+    quat_conjugate(&q_tilt_conj, &q_tilt);
+    quat_rotate_vector(&g_mag_earth, &q_tilt_conj, &g_mag_vec);
+
+    // 4. Calculate Heading
+    g_mag_heading = atan2(-g_mag_earth.y, g_mag_earth.x) * RAD2DEG;
+
+    publish(SENSOR_MAG_HEADING_UPDATE, (uint8_t*)&g_mag_heading, sizeof(double));
+}
+
 /**
  * GYRO UPDATE: Called at 1000Hz
  * Integrates gyroscope to predict orientation change
@@ -151,10 +177,6 @@ static void gyro_update(uint8_t *data, size_t size) {
  * ACCEL UPDATE: Called at 500Hz
  * Corrects gyro drift using gravity direction from accelerometer
  */
-/**
- * ACCEL UPDATE: Called at 500Hz  
- * Corrects gyro drift using gravity direction from accelerometer
- */
 static void accel_update(uint8_t *data, size_t size) {
     float raw_ax, raw_ay, raw_az;
     memcpy(&raw_ax, &data[0], sizeof(float));
@@ -185,33 +207,53 @@ static void accel_update(uint8_t *data, size_t size) {
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
+	float v1_x, v1_y, v1_z;
+	float v2_x, v2_y, v2_z;
+	float v3_x, v3_y, v3_z;
+
+#if ENABLE_ATTITUDE_MONITOR_LOG == 2
+	// Mode 2: Magnetometer Debugging (Raw Mag, Earth Mag, Attitude Vector)
+	v1_x = (float)g_mag_vec.x;
+	v1_y = (float)g_mag_vec.y;
+	v1_z = (float)g_mag_vec.z;
+
+	v2_x = (float)g_mag_earth.x;
+	v2_y = (float)g_mag_earth.y;
+	v2_z = (float)g_mag_earth.z;
+
+	v3_x = (float)g_f11.v_pred.x;
+	v3_y = (float)g_f11.v_pred.y;
+	v3_z = (float)g_f11.v_pred.z;
+#else
+	// Mode 1: Fusion Debugging (Attitude Vector, Measured Gravity, Linear Accel)
 	/* Pack 3 vectors into MONITOR_DATA message for visualization
 	   Format: 9 floats - v_pred(3), v_true(3), v_linear_acc(3) */
 
 	// Predicted gravity vector (from quaternion)
-	float pred_x = (float)g_f11.v_pred.x;
-	float pred_y = (float)g_f11.v_pred.y;
-	float pred_z = (float)g_f11.v_pred.z;
+	v1_x = (float)g_f11.v_pred.x;
+	v1_y = (float)g_f11.v_pred.y;
+	v1_z = (float)g_f11.v_pred.z;
 	
 	// True/measured gravity vector (from accelerometer)
-	float true_x = (float)g_f11.v_true.x;
-	float true_y = (float)g_f11.v_true.y;
-	float true_z = (float)g_f11.v_true.z;
+	v2_x = (float)g_f11.v_true.x;
+	v2_y = (float)g_f11.v_true.y;
+	v2_z = (float)g_f11.v_true.z;
 	
 	// Linear acceleration (body frame, gravity removed)
-	float lin_x = (float)g_f11.v_linear_acc.x;
-	float lin_y = (float)g_f11.v_linear_acc.y;
-	float lin_z = (float)g_f11.v_linear_acc.z;
+	v3_x = (float)g_f11.v_linear_acc.x;
+	v3_y = (float)g_f11.v_linear_acc.y;
+	v3_z = (float)g_f11.v_linear_acc.z;
+#endif
 	
-	memcpy(&g_monitor_msg[0], &pred_x, sizeof(float));
-	memcpy(&g_monitor_msg[4], &pred_y, sizeof(float));
-	memcpy(&g_monitor_msg[8], &pred_z, sizeof(float));
-	memcpy(&g_monitor_msg[12], &true_x, sizeof(float));
-	memcpy(&g_monitor_msg[16], &true_y, sizeof(float));
-	memcpy(&g_monitor_msg[20], &true_z, sizeof(float));
-	memcpy(&g_monitor_msg[24], &lin_x, sizeof(float));
-	memcpy(&g_monitor_msg[28], &lin_y, sizeof(float));
-	memcpy(&g_monitor_msg[32], &lin_z, sizeof(float));
+	memcpy(&g_monitor_msg[0], &v1_x, sizeof(float));
+	memcpy(&g_monitor_msg[4], &v1_y, sizeof(float));
+	memcpy(&g_monitor_msg[8], &v1_z, sizeof(float));
+	memcpy(&g_monitor_msg[12], &v2_x, sizeof(float));
+	memcpy(&g_monitor_msg[16], &v2_y, sizeof(float));
+	memcpy(&g_monitor_msg[20], &v2_z, sizeof(float));
+	memcpy(&g_monitor_msg[24], &v3_x, sizeof(float));
+	memcpy(&g_monitor_msg[28], &v3_y, sizeof(float));
+	memcpy(&g_monitor_msg[32], &v3_z, sizeof(float));
 
 	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
 }
@@ -239,6 +281,7 @@ void attitude_estimation_setup(void) {
 
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
+	subscribe(SENSOR_COMPASS, mag_update);
 
 #if ENABLE_ATTITUDE_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);

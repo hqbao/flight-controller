@@ -86,7 +86,10 @@ static vector3d_t g_pos_est1 = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 static optflow_data_t g_optflow_up = {0, 0, 0, 0};
 static optflow_data_t g_optflow_down = {0, 0, 0, 0};
+
+#if ENABLE_POSITION_ESTIMATION_MONITOR_LOG > 0
 static uint8_t g_msg[12] = {0};
+#endif
 
 /* Tuning Parameters */
 #define POS_XY_EST0_INTEGRATION_GAIN     0.05

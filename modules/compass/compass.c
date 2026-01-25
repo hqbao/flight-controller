@@ -62,7 +62,10 @@ struct bmm350_mag_temp_data mag_temp_data;
 /* Static variables for compass values */
 static vector3d_t g_compass_cal = {0};
 static vector3d_t g_compass_raw = {0};
+
+#if ENABLE_COMPASS_MONITOR_LOG > 0
 static uint8_t g_monitor_msg[12] = {0};
+#endif
 
 /* Calibration parameters: B (Offset) and S (Soft Iron / Scale) */
 static double g_mag_offset[3] = {-26.13, -25.83, 15.53};

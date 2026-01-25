@@ -83,7 +83,9 @@ typedef struct {
 	topic_t topic_accel_update;
 } imu_t;
 
+#if ENABLE_ACCEL_MONITOR_LOG
 static uint8_t g_monitor_msg[12] = {0};
+#endif
 static imu_t g_imu1 = {
 	.imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0},
 	.gyro_accel = {0},
