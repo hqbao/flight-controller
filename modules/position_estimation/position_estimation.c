@@ -48,9 +48,6 @@
  */
 #define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
-#define ACCEL_FREQ 500
-#define MAX_IMU_ACCEL 16384
-
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
 static double g_alt = 0;

@@ -56,7 +56,6 @@
 /* Macro to enable/disable sending MONITOR_DATA via logger */
 #define ENABLE_ACCEL_MONITOR_LOG 0
 
-#define GYRO_FREQ 1000
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
 #define IMU_MOTION 32
 #define SSF_GYRO (16.4)

@@ -7,8 +7,6 @@
 #include <macro.h>
 #include <messages.h>
 
-#define POS_CTL_FREQ 500
-#define CTL_FREQ 100
 #define MIN_LANDING_SPEED 50
 
 /* Control Gains */

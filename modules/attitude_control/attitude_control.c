@@ -18,8 +18,6 @@
 #define MAX_SPEED 3000
 #endif // MOTOR_TYPE
 
-#define PID_FREQ 1000
-
 /* PID Gains */
 // Roll
 #define ATT_ROLL_P 8.0
@@ -104,7 +102,7 @@ static void pid_setup(void) {
 }
 
 static void pid_loop(void) {
-	double dt = 1.0 / PID_FREQ;
+	double dt = 1.0 / ATT_CTL_FREQ;
 	pid_control_update(&g_pid_att_roll, 	g_angular_state.roll, 	g_angular_target.roll, dt);
 	pid_control_update(&g_pid_att_pitch,	g_angular_state.pitch, 	g_angular_target.pitch, dt);
 	pid_control_update(&g_pid_att_yaw, 		g_angular_state.yaw, 	g_set_point_yaw, dt);

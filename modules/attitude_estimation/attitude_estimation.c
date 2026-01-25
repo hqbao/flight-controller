@@ -56,11 +56,8 @@
 #endif
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_ATTITUDE_MONITOR_LOG 2
+#define ENABLE_ATTITUDE_MONITOR_LOG 0
 
-#define MAX_IMU_ACCEL 16384
-#define GYRO_FREQ 1000
-#define ACCEL_FREQ 500
 #define DT (1.0 / GYRO_FREQ)
 
 // Fusion 1 (Mahony) Gains
