@@ -14,7 +14,7 @@
  * 1. SETUP
  *    - Set ENABLE_COMPASS_MONITOR_LOG to 2 (Raw Data) in this file.
  *    - Flash firmware and connect via USB.
- *    - Run 'python3 pytest/compass_calibrate.py'.
+ *    - Run 'python3 tools/compass_calibrate.py'.
  * 
  * 2. DATA COLLECTION
  *    - Click "Start Stream" in the Python tool.

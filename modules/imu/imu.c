@@ -21,11 +21,11 @@
  *    - Result: Updates gyro_offset[3], [4], [5].
  * 
  * 2. ACCELEROMETER CALIBRATION (Manual)
- *    - Requires external Python tool: pytest/imu_calibrate_accel.py
+ *    - Requires external Python tool: tools/imu_calibrate_accel.py
  *    - Steps:
  *      a. Set ENABLE_ACCEL_MONITOR_LOG to 1 in this file.
  *      b. Flash firmware and connect via USB.
- *      c. Run 'python3 pytest/imu_calibrate_accel.py'.
+ *      c. Run 'python3 tools/imu_calibrate_accel.py'.
  *      d. Place drone in 6+ static positions (flat, sides, nose up/down, etc).
  *         Click "Capture Position" for each.
  *      e. Click "Compute Calib".

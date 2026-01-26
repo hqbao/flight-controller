@@ -90,7 +90,7 @@ flight-controller/
 │   └── local_storage/         # Persistent configuration storage
 
 │
-└── pytest/                    # Python3 visualization and testing tools
+└── tools/                     # Python3 visualization and testing tools
     ├── imu_calibrate_accel.py     # Accelerometer calibration (Static Multi-Position)
     ├── compass_calibrate.py   # Compass calibration (Ellipsoid Fit)
     ├── gps_config.py          # U-Blox GPS configuration script
@@ -239,7 +239,7 @@ These macros (found in respective module `.c` files) control which data is strea
 
 ## Visualization Tools
 
-The `pytest/` directory contains tools to visualize the drone's state in real-time.
+The `tools/` directory contains tools to visualize the drone's state in real-time.
 
 1. **Install dependencies:**
    ```bash
@@ -266,7 +266,7 @@ Corrects for sensor bias and axis scaling/misalignment.
     *   Build and flash the firmware.
 2.  **Run Tool**:
     *   Connect the drone via USB.
-    *   Run: `python3 pytest/calibrate_accel.py`
+    *   Run: `python3 tools/calibrate_accel.py`
 3.  **Capture Data**:
     *   Place the drone **STATIC** in an orientation (e.g., Flat).
     *   Click **"Capture Position"** and wait for it to finish.
@@ -287,7 +287,7 @@ Corrects for Hard Iron (offsets) and Soft Iron (distortions) effects.
     *   Build and flash the firmware.
 2.  **Run Tool**:
     *   Connect the drone via USB.
-    *   Run: `python3 pytest/calibrate_compass.py`
+    *   Run: `python3 tools/calibrate_compass.py`
 3.  **Capture Data**:
     *   Click **"Start Stream"**.
     *   Rotate the drone in **ALL directions** (Figure-8 motion).
@@ -306,8 +306,8 @@ Corrects for Hard Iron (offsets) and Soft Iron (distortions) effects.
 
 ## Testing & Debugging
 
-- Use `pytest/view_charts.py` to monitor raw sensor values
-- Use `pytest/view_attitude.py` to validate attitude estimation
+- Use `tools/view_charts.py` to monitor raw sensor values
+- Use `tools/view_attitude.py` to validate attitude estimation
 - Enable debug output on UART for real-time monitoring
 - Check module logs for calibration status and error conditions
 
