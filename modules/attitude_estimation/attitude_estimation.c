@@ -98,7 +98,10 @@ static vector3d_t g_mag_vec = {0, 0, 0};
 static vector3d_t g_mag_earth = {0, 0, 0};
 static double g_mag_heading = 0.0;
 static linear_accel_data_t g_linear_accel_out;
-static uint8_t g_monitor_msg[36];
+
+#if ENABLE_ATTITUDE_MONITOR_LOG
+static uint8_t g_monitor_msg[36] = {0};
+#endif
 
 /* 
  * MAGNETOMETER UPDATE
