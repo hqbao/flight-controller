@@ -71,7 +71,7 @@ static optflow_data_t g_optflow_up = {0, 0, 0, 0};
 static optflow_data_t g_optflow_down = {0, 0, 0, 0};
 
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG > 0
-static uint8_t g_msg[12] = {0};
+static uint8_t g_monitor_msg[24] = {0};
 #endif
 
 /* Tuning Parameters */
@@ -275,14 +275,24 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 1
-	float val[3] = {(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z};
+	float val[6] = {
+		(float)g_linear_veloc0.x, (float)g_linear_veloc0.y, (float)g_linear_veloc0.z,
+		(float)g_linear_veloc1.x, (float)g_linear_veloc1.y, (float)g_linear_veloc1.z
+	};
+	memcpy(g_monitor_msg, val, 24);
+	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 24);
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
-	float val[3] = {(float)g_linear_veloc1.x, (float)g_linear_veloc1.y, (float)g_linear_veloc1.z};
+	float val[6] = {
+		(float)g_pos_est0.x, (float)g_pos_est0.y, (float)g_pos_est0.z,
+		(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z
+	};
+	memcpy(g_monitor_msg, val, 24);
+	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 24);
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 3
 	float val[3] = {(float)g_pos_true.z, (float)g_pos_est1.z, (float)g_linear_veloc1.z};
+	memcpy(g_monitor_msg, val, 12);
+	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 12);
 #endif
-	memcpy(g_msg, val, 12);
-	publish(MONITOR_DATA, (uint8_t*)g_msg, 12);
 }
 #endif
 

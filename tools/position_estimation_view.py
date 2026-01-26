@@ -27,10 +27,16 @@ if SERIAL_PORT is None:
 # --- Global State ---
 data_queue = queue.Queue()
 is_collecting = True
-# Vector: Position (Green)
-position = np.array([0.0, 0.0, 0.0])
-position_offset = np.array([0.0, 0.0, 0.0])
+# Two vectors/points to visualize
+vec1 = np.array([0.0, 0.0, 0.0]) # EST0 or VELOC0 (Red)
+vec2 = np.array([0.0, 0.0, 0.0]) # EST1 or VELOC1 (Blue)
 current_limit = 1.0
+
+# Visualization Mode
+# 0: Vector (Lines from Origin) - Good for Velocity
+# 1: Point (Dots only) - Good for Position
+vis_mode = 0 
+
 view_btns = [] # Keep references to buttons
 
 # --- Serial Reader ---
@@ -69,18 +75,24 @@ def serial_reader():
                 
                 payload = ser.read(length)
                 if len(payload) != length: continue
+
+                checksum = ser.read(2) # Read checksum to advance stream
                 
                 if msg_id == MONITOR_DATA_ID:
-                    if length == 12: # 3 floats (vx, vy, vz)
-                        vals = struct.unpack('fff', payload)
+                    if length == 24: # 6 floats (v1_x,y,z, v2_x,y,z)
+                        vals = struct.unpack('<ffffff', payload)
                         data_queue.put(vals)
+                    elif length == 12: # Fallback for old mode 3
+                        vals = struct.unpack('<fff', payload)
+                        # Padding with zeros for vec2
+                        data_queue.put(vals + (0.0, 0.0, 0.0))
                     
     except Exception as e:
         print(f"Serial error: {e}")
 
 # --- GUI ---
 def main():
-    global is_collecting, position, view_btns
+    global is_collecting, vec1, vec2, view_btns, vis_mode
     
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
@@ -90,22 +102,26 @@ def main():
     ax.set_box_aspect((1, 1, 1))
     plt.subplots_adjust(bottom=0.2, right=0.75)
     
-    # Initialize lines
-    # Green: Position
-    line_pos, = ax.plot([0, 0], [0, 0], [0, 0], color='green', linewidth=3, label='Position')
-    head_pos, = ax.plot([0], [0], [0], color='green', marker='o', markersize=8)
+    # Initialize visuals
+    # Red: EST0 / VELOC0
+    line1, = ax.plot([], [], [], color='red', linewidth=2, label='EST0 / VELOC0')
+    head1, = ax.plot([], [], [], color='red', marker='o', markersize=6)
+    
+    # Blue: EST1 / VELOC1
+    line2, = ax.plot([], [], [], color='blue', linewidth=2, label='EST1 / VELOC1')
+    head2, = ax.plot([], [], [], color='blue', marker='o', markersize=6) # Slightly larger head for primary?
     
     # Text for results
-    text_pos = fig.text(0.05, 0.9, "", fontsize=12, color='green')
+    text_info = fig.text(0.05, 0.9, "", fontsize=12)
     
     ax.set_xlim(-1, 1)
     ax.set_ylim(-1, 1)
     ax.set_zlim(-1, 1)
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    ax.legend()
-    ax.set_title('Position Vector Monitor')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend(loc='upper right')
+    ax.set_title('Dual Vector Monitor')
 
     # --- Buttons ---
     # View Buttons
@@ -146,23 +162,20 @@ def main():
     btn_yz.on_clicked(set_view_yz)
     btn_iso.on_clicked(set_view_iso)
 
-    # Zero/Tare Button
-    ax_zero = plt.axes([0.8, 0.42, 0.15, 0.05])
-    btn_zero = Button(ax_zero, 'Zero / Tare')
-    view_btns.append(btn_zero)
+    # Mode Toggle
+    ax_mode = plt.axes([0.8, 0.35, 0.15, 0.05])
+    btn_mode = Button(ax_mode, 'Mode: Vector')
+    view_btns.append(btn_mode)
 
-    def zero_offset(event):
-        global position_offset, current_limit
-        position_offset = np.copy(position)
-        current_limit = 1.0
-        ax.set_xlim(-current_limit, current_limit)
-        ax.set_ylim(-current_limit, current_limit)
-        ax.set_zlim(-current_limit, current_limit)
+    def toggle_mode(event):
+        global vis_mode
+        vis_mode = 1 - vis_mode # Toggle 0 <-> 1
+        btn_mode.label.set_text('Mode: Vector' if vis_mode == 0 else 'Mode: Point')
 
-    btn_zero.on_clicked(zero_offset)
+    btn_mode.on_clicked(toggle_mode)
 
     # Stream Control
-    ax_pause = plt.axes([0.8, 0.3, 0.15, 0.05])
+    ax_pause = plt.axes([0.8, 0.28, 0.15, 0.05])
     btn_pause = Button(ax_pause, 'Pause/Resume')
     view_btns.append(btn_pause)
 
@@ -174,21 +187,43 @@ def main():
     btn_pause.on_clicked(toggle_stream)
 
     def update():
-        global position, position_offset, current_limit
+        global vec1, vec2, current_limit
         
         try:
             while not data_queue.empty():
                 vals = data_queue.get_nowait()
                 if is_collecting:
-                    position = np.array(vals)
+                    vec1 = np.array(vals[0:3])
+                    vec2 = np.array(vals[3:6])
         except queue.Empty:
             pass
             
-        # Calculate displayed position (Raw - Offset)
-        display_position = position - position_offset
+        # Draw Logic
+        if vis_mode == 0: # Vector Mode (Line from Origin)
+            line1.set_data([0, vec1[0]], [0, vec1[1]])
+            line1.set_3d_properties([0, vec1[2]])
+            
+            line2.set_data([0, vec2[0]], [0, vec2[1]])
+            line2.set_3d_properties([0, vec2[2]])
+        else: # Point Mode (Just the point)
+            # To hide lines, we can set them to be the same point or empty. 
+            # Empty is better but difficult to manage with set_data.
+            # Setting start=end works to hide it (zero length line).
+            line1.set_data([vec1[0], vec1[0]], [vec1[1], vec1[1]]) 
+            line1.set_3d_properties([vec1[2], vec1[2]])
+            
+            line2.set_data([vec2[0], vec2[0]], [vec2[1], vec2[1]])
+            line2.set_3d_properties([vec2[2], vec2[2]])
+
+        # Heads (Markers) always at tip
+        head1.set_data([vec1[0]], [vec1[1]])
+        head1.set_3d_properties([vec1[2]])
+        
+        head2.set_data([vec2[0]], [vec2[1]])
+        head2.set_3d_properties([vec2[2]])
         
         # Dynamic Scaling
-        max_val = np.max(np.abs(display_position))
+        max_val = max(np.max(np.abs(vec1)), np.max(np.abs(vec2)))
         target_limit = max(1.0, max_val * 1.2) # Min 1.0m, 20% padding
         
         # Update limit only if we need to expand (scale up)
@@ -198,13 +233,10 @@ def main():
             ax.set_ylim(-current_limit, current_limit)
             ax.set_zlim(-current_limit, current_limit)
 
-        # Update Position Vector
-        line_pos.set_data([0, display_position[0]], [0, display_position[1]])
-        line_pos.set_3d_properties([0, display_position[2]])
-        head_pos.set_data([display_position[0]], [display_position[1]])
-        head_pos.set_3d_properties([display_position[2]])
-        
-        text_pos.set_text(f"Position: X={display_position[0]:.2f}, Y={display_position[1]:.2f}, Z={display_position[2]:.2f} m")
+        text_info.set_text(
+            f"RED (0): {vec1[0]:.2f}, {vec1[1]:.2f}, {vec1[2]:.2f}\n"
+            f"BLUE (1): {vec2[0]:.2f}, {vec2[1]:.2f}, {vec2[2]:.2f}"
+        )
 
     # Animation loop
     plt.show(block=False)
