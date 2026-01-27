@@ -80,6 +80,7 @@ typedef struct {
     double dx;      // Angular displacement X (radians)
     double dy;      // Angular displacement Y (radians)
     double z;       // Range finder altitude (mm)
+    double clarity; // Quality metric (0-100+)
     optflow_direction_t direction; 
 } optflow_data_t;
 

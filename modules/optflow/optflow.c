@@ -30,6 +30,7 @@ static void on_message_received(uint8_t *data, size_t size) {
 		g_optflow_msg.dx = dx_rad / texture_gain;
 		g_optflow_msg.dy = dy_rad / texture_gain;
 		g_optflow_msg.z = (double)raw_z;
+		g_optflow_msg.clarity = (double)clarity;
 		g_optflow_msg.direction = (optflow_direction_t)data[1];
 
 		publish(EXTERNAL_SENSOR_OPTFLOW, (uint8_t*)&g_optflow_msg, sizeof(optflow_data_t));
