@@ -43,8 +43,8 @@
 
 /* Macro to enable/disable sending MONITOR_DATA via logger 
  * 0: Disable
- * 1: Position
- * 2: Velocity
+ * 1: Velocity
+ * 2: Position
  */
 #define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
