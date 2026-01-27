@@ -44,8 +44,8 @@
 #include <messages.h>
 #include <macro.h>
 
-/* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick) */
-#define FUSION_ALGO 3
+/* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick), 4 = Fusion4 (7-State EKF), 5 = Fusion5 (Madgwick+Bias) */
+#define FUSION_ALGO 4
 
 #if FUSION_ALGO == 1
 #include <fusion1.h>
@@ -53,6 +53,10 @@
 #include <fusion2.h>
 #elif FUSION_ALGO == 3
 #include <fusion3.h>
+#elif FUSION_ALGO == 4
+#include <fusion4.h>
+#elif FUSION_ALGO == 5
+#include <fusion5.h>
 #endif
 
 /* Macro to enable/disable sending MONITOR_DATA via logger */
@@ -66,9 +70,13 @@
 #define ATT_F1_GAIN_INT 0.15  // Ki: Integral for gyro bias (divided by freq for time integration)
 #endif
 
-#if FUSION_ALGO == 2
+#if FUSION_ALGO == 2 || FUSION_ALGO == 4
 #define GYRO_NOISE 0.0001
 #define ACCEL_NOISE 100.0
+#endif
+
+#if FUSION_ALGO == 4
+#define BIAS_NOISE 0.00001
 #endif
 
 // Fusion 3 (Madgwick) Gains
@@ -76,8 +84,14 @@
 #define ATT_F3_BETA 0.001
 #endif
 
-// Shared Accelerometer Parameters (Used by Fusion 1, 2, and 3)
-#if FUSION_ALGO == 1 || FUSION_ALGO == 2 || FUSION_ALGO == 3
+// Fusion 5 (Madgwick w/ Bias) Gains
+#if FUSION_ALGO == 5
+#define ATT_F5_BETA 0.001
+#define ATT_F5_ZETA 0.00001
+#endif
+
+// Shared Accelerometer Parameters (Used by Fusion 1, 2, 3, 4, 5)
+#if FUSION_ALGO == 1 || FUSION_ALGO == 2 || FUSION_ALGO == 3 || FUSION_ALGO == 4 || FUSION_ALGO == 5
 #define ATT_ACCEL_SMOOTH 4.0  // Accel LPF bandwidth factor (divided by freq for frequency-invariance)
 #define ATT_F1_LIN_ACC_DECAY 0.5
 #define ATT_F1_LIN_ACCEL_MIN 0.5
@@ -90,6 +104,10 @@ static fusion1_t g_f11;
 static fusion2_t g_f11;
 #elif FUSION_ALGO == 3
 static fusion3_t g_f11;
+#elif FUSION_ALGO == 4
+static fusion4_t g_f11;
+#elif FUSION_ALGO == 5
+static fusion5_t g_f11;
 #endif
 
 static angle3d_t g_angular_state = {0, 0, 0};
@@ -152,6 +170,10 @@ static void gyro_update(uint8_t *data, size_t size) {
 	fusion2_predict(&g_f11, gx, gy, gz, DT);
 #elif FUSION_ALGO == 3
 	fusion3_predict(&g_f11, gx, gy, gz, DT);
+#elif FUSION_ALGO == 4
+	fusion4_predict(&g_f11, gx, gy, gz, DT);
+#elif FUSION_ALGO == 5
+	fusion5_predict(&g_f11, gx, gy, gz, DT);
 #endif
 
 	// Extract Euler angles from quaternion (common for all algorithms)
@@ -192,6 +214,10 @@ static void accel_update(uint8_t *data, size_t size) {
 	fusion2_update(&g_f11, ax, ay, az);
 #elif FUSION_ALGO == 3
 	fusion3_update(&g_f11, ax, ay, az);
+#elif FUSION_ALGO == 4
+	fusion4_update(&g_f11, ax, ay, az);
+#elif FUSION_ALGO == 5
+	fusion5_update(&g_f11, ax, ay, az);
 #endif
 
 	memcpy(&g_linear_accel_out.body, &g_f11.v_linear_acc, sizeof(vector3d_t));
@@ -271,6 +297,16 @@ void attitude_estimation_setup(void) {
 	// Uses ATT_ACCEL_SMOOTH for consistent gravity noise rejection
 	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, MAX_IMU_ACCEL, ACCEL_FREQ);
 	fusion3_remove_linear_accel(&g_f11, ATT_F1_LIN_ACC_DECAY, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX);
+#elif FUSION_ALGO == 4
+    // Initialize Fusion4 (7-State EKF)
+    // Parameters: gyro_noise, bias_noise, accel_noise, accel_scale, lpf_gain
+	// Bias noise set to 1e-5 to allow slow walk estimation
+    fusion4_init(&g_f11, GYRO_NOISE, BIAS_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH / (double)ACCEL_FREQ);
+#elif FUSION_ALGO == 5
+	// Initialize Fusion 5 (Madgwick with Bias)
+	// Parameters: k0 (accel filter), beta (gain), zeta (bias gain), accel_scale, freq
+	fusion5_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F5_BETA, ATT_F5_ZETA, MAX_IMU_ACCEL, ACCEL_FREQ);
+    fusion5_remove_linear_accel(&g_f11, ATT_F1_LIN_ACC_DECAY, ATT_F1_LIN_ACCEL_MIN, ATT_F1_LIN_ACCEL_MAX);
 #endif
 
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);

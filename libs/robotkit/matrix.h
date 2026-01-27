@@ -1,7 +1,7 @@
 #ifndef MATRIX_H
 #define MATRIX_H
 
-#define MATRIX_MAX_SIZE 4
+#define MATRIX_MAX_SIZE 7
 
 typedef struct {
     double data[MATRIX_MAX_SIZE][MATRIX_MAX_SIZE];
