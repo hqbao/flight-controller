@@ -35,7 +35,7 @@
  * 0: Disable
  * 1: Enable (Sends Position and Velocity)
  */
-#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 1
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
@@ -64,24 +64,24 @@ static uint8_t g_monitor_msg[24] = {0};
 #endif
 
 /* Tuning Parameters */
-#define POS_XY_EST0_INTEGRATION_GAIN     0.05
-#define POS_Z_EST0_INTEGRATION_GAIN      1.0
-#define POS_XY_EST0_TRUE_CORRECTION_GAIN 0.5
-#define POS_Z_EST0_TRUE_CORRECTION_GAIN  0.5
-#define POS_XY_EST1_INTEGRATION_GAIN 0.05
-#define POS_Z_EST1_INTEGRATION_GAIN  1.0
-#define POS_XY_EST1_TRUE_CORRECTION_GAIN 20.0
-#define POS_Z_EST1_TRUE_CORRECTION_GAIN  20.0
-#define ALT_DERIVATIVE_SCALE    100.0
-#define BARO_ALPHA_HIGH_ACCEL   0.05
-#define BARO_ALPHA_LOW_ACCEL    0.005
-#define OUTPUT_POS_SCALE        1.0
-#define OUTPUT_VELOC_SCALE      1.0
+/* Cascaded Complementary Filter Parameters */
+#define CCF_STAGE1_XY_INTEG      0.05
+#define CCF_STAGE1_Z_INTEG       1.0
+#define CCF_STAGE1_XY_CORR       0.5
+#define CCF_STAGE1_Z_CORR        0.5
+#define CCF_STAGE2_XY_INTEG      0.05
+#define CCF_STAGE2_Z_INTEG       1.0
+#define CCF_STAGE2_XY_CORR       20.0
+#define CCF_STAGE2_Z_CORR        20.0
+#define CCF_VELOC_XY_FEEDBACK    0.005
+#define CCF_VELOC_Z_FEEDBACK     0.005
+
+#define BARO_ALPHA_HIGH_ACCEL    0.05
+#define BARO_ALPHA_LOW_ACCEL     0.005
+
 #define ACCEL_Z_THRESHOLD       300.0
 #define RANGE_SWITCH_TO_LASER_THRESHOLD 500.0
 #define RANGE_SWITCH_TO_BARO_THRESHOLD 1000.0
-#define VELOC_XY_CORRECTION_GAIN 0.005
-#define VELOC_Z_CORRECTION_GAIN 0.005
 #define OPTFLOW_SCALE 100.0
 #define OPTFLOW_LIMIT_MAX 1.0
 #define OPTFLOW_LIMIT_MIN 0.1
@@ -219,13 +219,13 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_veloc0.y += 1.0 / ACCEL_FREQ * g_linear_accel.y;
 	g_linear_veloc0.z += 1.0 / ACCEL_FREQ * g_linear_accel.z;
 
-	g_pos_est0.x += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.x;
-	g_pos_est0.y += POS_XY_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.y;
-	g_pos_est0.z += POS_Z_EST0_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc0.z;
+	g_pos_est0.x += CCF_STAGE1_XY_INTEG / ACCEL_FREQ * g_linear_veloc0.x;
+	g_pos_est0.y += CCF_STAGE1_XY_INTEG / ACCEL_FREQ * g_linear_veloc0.y;
+	g_pos_est0.z += CCF_STAGE1_Z_INTEG / ACCEL_FREQ * g_linear_veloc0.z;
 	
-	g_pos_est0.x += POS_XY_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est0.x);
-	g_pos_est0.y += POS_XY_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est0.y);
-	g_pos_est0.z += POS_Z_EST0_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est0.z);
+	g_pos_est0.x += CCF_STAGE1_XY_CORR / ACCEL_FREQ * (g_pos_true.x - g_pos_est0.x);
+	g_pos_est0.y += CCF_STAGE1_XY_CORR / ACCEL_FREQ * (g_pos_true.y - g_pos_est0.y);
+	g_pos_est0.z += CCF_STAGE1_Z_CORR / ACCEL_FREQ * (g_pos_true.z - g_pos_est0.z);
 
 	g_linear_veloc1.x = (g_pos_est0.x - g_pos_est0_prev.x) * ACCEL_FREQ;
 	g_linear_veloc1.y = (g_pos_est0.y - g_pos_est0_prev.y) * ACCEL_FREQ;
@@ -234,25 +234,26 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_pos_est0_prev.y = g_pos_est0.y;
 	g_pos_est0_prev.z = g_pos_est0.z;
 	
-	g_linear_veloc0.x += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.x - g_linear_veloc0.x);
-	g_linear_veloc0.y += VELOC_XY_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.y - g_linear_veloc0.y);
-	g_linear_veloc0.z += VELOC_Z_CORRECTION_GAIN / ACCEL_FREQ * (g_linear_veloc1.z - g_linear_veloc0.z);
+	g_linear_veloc0.x += CCF_VELOC_XY_FEEDBACK / ACCEL_FREQ * (g_linear_veloc1.x - g_linear_veloc0.x);
+	g_linear_veloc0.y += CCF_VELOC_XY_FEEDBACK / ACCEL_FREQ * (g_linear_veloc1.y - g_linear_veloc0.y);
+	g_linear_veloc0.z += CCF_VELOC_Z_FEEDBACK / ACCEL_FREQ * (g_linear_veloc1.z - g_linear_veloc0.z);
 
-	g_pos_est1.x += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.x;
-	g_pos_est1.y += POS_XY_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.y;
-	g_pos_est1.z += POS_Z_EST1_INTEGRATION_GAIN / ACCEL_FREQ * g_linear_veloc1.z;
+	g_pos_est1.x += CCF_STAGE2_XY_INTEG / ACCEL_FREQ * g_linear_veloc1.x;
+	g_pos_est1.y += CCF_STAGE2_XY_INTEG / ACCEL_FREQ * g_linear_veloc1.y;
+	g_pos_est1.z += CCF_STAGE2_Z_INTEG / ACCEL_FREQ * g_linear_veloc1.z;
 
-	g_pos_est1.x += POS_XY_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.x - g_pos_est1.x);
-	g_pos_est1.y += POS_XY_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.y - g_pos_est1.y);
-	g_pos_est1.z += POS_Z_EST1_TRUE_CORRECTION_GAIN / ACCEL_FREQ * (g_pos_true.z - g_pos_est1.z);
+	g_pos_est1.x += CCF_STAGE2_XY_CORR / ACCEL_FREQ * (g_pos_true.x - g_pos_est1.x);
+	g_pos_est1.y += CCF_STAGE2_XY_CORR / ACCEL_FREQ * (g_pos_true.y - g_pos_est1.y);
+	g_pos_est1.z += CCF_STAGE2_Z_CORR / ACCEL_FREQ * (g_pos_true.z - g_pos_est1.z);
 
-	vector3d_scale(&g_pos_final, &g_pos_est1, OUTPUT_POS_SCALE);
-	g_pos_final.x = -g_pos_final.x;
-	g_pos_final.y = -g_pos_final.y;
+	g_pos_final.x = -g_pos_est1.x;
+	g_pos_final.y = -g_pos_est1.y;
+	g_pos_final.z = g_pos_est1.z;
 
-	vector3d_scale(&g_linear_veloc_final, &g_linear_veloc1, OUTPUT_VELOC_SCALE);
-	g_linear_veloc_final.x = -g_linear_veloc_final.x;
-	g_linear_veloc_final.y = -g_linear_veloc_final.y;
+	g_linear_veloc_final.x = -g_linear_veloc1.x;
+	g_linear_veloc_final.y = -g_linear_veloc1.y;
+	g_linear_veloc_final.z = g_linear_veloc1.z;
+
 
 	static uint8_t g_pos_est_msg[sizeof(vector3d_t) * 2] = {0};
 	memcpy(g_pos_est_msg, &g_pos_final, sizeof(vector3d_t));
