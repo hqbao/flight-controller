@@ -9,6 +9,11 @@ from matplotlib import animation
 import serial.tools.list_ports
 import struct
 
+# --- Style Config ---
+plt.style.use('dark_background')
+LINE_COLORS = ['#FF5555', '#55FF55', '#5555FF', '#FF55FF', '#55FFFF', '#FFFF00'] # Red, Green, Blue, Magenta, Cyan, Yellow
+LABELS = ['Pos X', 'Pos Y', 'Pos Z', 'Vel X', 'Vel Y', 'Vel Z']
+
 g_baud_rate = 9600
 g_serial_port = None
 ports = serial.tools.list_ports.comports()
@@ -21,7 +26,7 @@ if g_serial_port is None:
   print('No serial port found')
   exit()
 
-max_win_size = 128
+max_win_size = 300
 g_line = np.linspace(start=0, stop=1, num=max_win_size)
 g_val1 = np.zeros(max_win_size, float)
 g_val2 = np.zeros(max_win_size, float)
@@ -30,6 +35,10 @@ g_val4 = np.zeros(max_win_size, float)
 g_val5 = np.zeros(max_win_size, float)
 g_val6 = np.zeros(max_win_size, float)
 g_cur_idx = 0
+
+# Autoscaling State
+g_ylim_pos_z = [ -0.1, 0.1 ]
+g_ylim_vel_z = [ -0.1, 0.1 ]
 
 g_clazz = 0x00
 g_clazz_id = 0x00
@@ -106,50 +115,79 @@ def run_parser():
       pass
 
 queue1 = queue.Queue()
-in_thread1 = Thread(target=run_db_reader, args=(queue1,))
+in_thread1 = Thread(target=run_db_reader, args=(queue1,), daemon=True)
 in_thread1.start()
 
-in_thread2 = Thread(target=run_parser, args=())
+in_thread2 = Thread(target=run_parser, args=(), daemon=True)
 in_thread2.start()
 
-fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+# Setup 2 Subplots for Z
+# Top: Pos Z
+# Bot: Vel Z
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+fig.canvas.manager.set_window_title(f'Skydev Telemetry (Z) - {g_serial_port}')
+
+def update_limits_expand_only(curr_min, curr_max, current_lims, pad_factor=0.2):
+    updated = False
+    # If data goes below min
+    if curr_min < current_lims[0]:
+        # Expand down with padding
+        height = current_lims[1] - curr_min
+        current_lims[0] = curr_min - (height * pad_factor)
+        updated = True
+        
+    # If data goes above max
+    if curr_max > current_lims[1]:
+        # Expand up with padding
+        height = curr_max - current_lims[0]
+        current_lims[1] = curr_max + (height * pad_factor)
+        updated = True
+    return updated
 
 def animate(i):
   global g_clazz, g_line, g_val1, g_val2, g_val3, g_val4, g_val5, g_val6, g_payload_size
+  global g_ylim_pos_z, g_ylim_vel_z
 
-  ax.cla() # clear the previous image
+  for ax in [ax1, ax2]:
+      ax.cla()
+      ax.grid(True, color='#333333', linestyle='--')
+  
+  # --- Configure Axes ---
+  ax1.set_ylabel('Vertical Pos (m)')
+  ax1.set_title('Z Altitude')
+  
+  ax2.set_ylabel('Vertical Vel (m/s)')
+  ax2.set_xlabel('Sample Window')
+  ax2.set_title('Z Velocity')
 
   if g_clazz == 0x00:
-    if g_payload_size >= 4:
-      val1 = np.concatenate((g_val1[g_cur_idx:], g_val1[:g_cur_idx]))
-      ax.plot(g_line, val1, color='red')
-
-    if g_payload_size >= 8:
-      val2 = np.concatenate((g_val2[g_cur_idx:], g_val2[:g_cur_idx]))
-      ax.plot(g_line, val2, color='orange')
-
+    # --- PLOT 1: POS Z (Channel 3) ---
+    data_pos_z = []
+    
     if g_payload_size >= 12:
       val3 = np.concatenate((g_val3[g_cur_idx:], g_val3[:g_cur_idx]))
-      ax.plot(g_line, val3, color='purple')
+      ax1.plot(g_line, val3, color=LINE_COLORS[2], label=f"{LABELS[2]}: {val3[-1]:.3f}") # Pos Z
+      data_pos_z.append(val3)
 
-    if g_payload_size >= 16:
-      val4 = np.concatenate((g_val4[g_cur_idx:], g_val4[:g_cur_idx]))
-      ax.plot(g_line, val4, color='blue')
+    if data_pos_z:
+        all_d = np.concatenate(data_pos_z)
+        update_limits_expand_only(np.min(all_d), np.max(all_d), g_ylim_pos_z)
+        ax1.set_ylim(g_ylim_pos_z[0], g_ylim_pos_z[1])
+    ax1.legend(loc='upper left', fontsize='small')
 
-    if g_payload_size >= 20:
-      val5 = np.concatenate((g_val5[g_cur_idx:], g_val5[:g_cur_idx]))
-      ax.plot(g_line, val5, color='green')
+    # --- PLOT 2: VEL Z (Channel 6) ---
+    data_vel_z = []
 
     if g_payload_size >= 24:
       val6 = np.concatenate((g_val6[g_cur_idx:], g_val6[:g_cur_idx]))
-      ax.plot(g_line, val6, color='cyan')
+      ax2.plot(g_line, val6, color=LINE_COLORS[5], label=f"{LABELS[5]}: {val6[-1]:.3f}") # Vel Z
+      data_vel_z.append(val6)
 
-    # ax.set_ylim([-1, 1])
-    ax.set_xlabel('Sample')
-    ax.set_ylabel('Value')
-    ax.set_title('Compass/Attitude Data')
+    if data_vel_z:
+        all_d = np.concatenate(data_vel_z)
+        update_limits_expand_only(np.min(all_d), np.max(all_d), g_ylim_vel_z)
+        ax2.set_ylim(g_ylim_vel_z[0], g_ylim_vel_z[1])
+    ax2.legend(loc='upper left', fontsize='small')
 
-anim = animation.FuncAnimation(fig, animate, frames=len(g_line) + 1, interval=1, blit=False)
+anim = animation.FuncAnimation(fig, animate, frames=len(g_line) + 1, interval=33, blit=False)
 plt.show()
-
-
