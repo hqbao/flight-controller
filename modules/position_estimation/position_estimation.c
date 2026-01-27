@@ -19,13 +19,9 @@
  * - This makes position hold immune to drone tilt changes
  * 
  * COORDINATE FRAMES:
- * - SENSOR_LINEAR_ACCEL comes in Body-Frame (from Fusion2, Fusion1 doesn't provide it)
+ * - SENSOR_LINEAR_ACCEL comes in Body-Frame
  * - X/Y axes are swapped and negated to match navigation frame
  * - Z-axis uses Body-Frame (assumes mostly level flight)
- * 
- * NOTE: This module currently relies on Fusion2 (EKF) for linear acceleration.
- *       For Fusion1 (Mahony), linear acceleration with gravity removed is not published.
- *       When using Fusion1, position estimation will only use optical flow and altitude sensors.
  */
 #include "position_estimation.h"
 #include <pubsub.h>
@@ -35,18 +31,11 @@
 #include <macro.h>
 #include <messages.h>
 
-/* Structure for SENSOR_LINEAR_ACCEL data
- * Copied from attitude_estimation.h to avoid cross-module include
- */
-
-
-
 /* Macro to enable/disable sending MONITOR_DATA via logger 
  * 0: Disable
- * 1: Velocity
- * 2: Position
+ * 1: Enable (Sends Position and Velocity)
  */
-#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 1
 
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
@@ -274,25 +263,12 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 static void loop_logger(uint8_t *data, size_t size) {
-#if ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 1
 	float val[6] = {
-		(float)g_linear_veloc0.x, (float)g_linear_veloc0.y, (float)g_linear_veloc0.z,
-		(float)g_linear_veloc1.x, (float)g_linear_veloc1.y, (float)g_linear_veloc1.z
+		(float)g_pos_final.x, (float)g_pos_final.y, (float)g_pos_final.z,
+		(float)g_linear_veloc_final.x, (float)g_linear_veloc_final.y, (float)g_linear_veloc_final.z
 	};
 	memcpy(g_monitor_msg, val, 24);
 	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 24);
-#elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
-	float val[6] = {
-		(float)g_pos_est0.x, (float)g_pos_est0.y, (float)g_pos_est0.z,
-		(float)g_pos_est1.x, (float)g_pos_est1.y, (float)g_pos_est1.z
-	};
-	memcpy(g_monitor_msg, val, 24);
-	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 24);
-#elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 3
-	float val[3] = {(float)g_pos_true.z, (float)g_pos_est1.z, (float)g_linear_veloc1.z};
-	memcpy(g_monitor_msg, val, 12);
-	publish(MONITOR_DATA, (uint8_t*)g_monitor_msg, 12);
-#endif
 }
 #endif
 
