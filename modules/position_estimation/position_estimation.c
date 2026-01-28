@@ -42,7 +42,6 @@ static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
 static double g_alt = 0;
 static double g_alt_prev = 0;
-static double g_alt_d = 0;
 static struct {
     double dx;
     double dy;
@@ -52,8 +51,6 @@ static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_pos_true = {0, 0, 0};
 static vector3d_t g_linear_veloc_final = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
-static optflow_data_t g_optflow_up = {0, 0, 0, 0};
-static optflow_data_t g_optflow_down = {0, 0, 0, 0};
 
 static fusion6_t g_fusion_x;
 static fusion6_t g_fusion_y;
@@ -126,11 +123,9 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	double dy_mm = (float)msg->dy * OPTFLOW_SCALE;
 
 	if (msg->direction == OPTFLOW_DOWNWARD) {
-		memcpy(&g_optflow_down, msg, sizeof(optflow_data_t));
 		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
 		g_optflow.dy = LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
 	} else if (msg->direction == OPTFLOW_UPWARD) {
-		memcpy(&g_optflow_up, msg, sizeof(optflow_data_t));
 		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
 		g_optflow.dy = -LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
 	}
@@ -161,9 +156,9 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
 		g_alt = g_optflow.z;
-		g_alt_d = g_alt - g_alt_prev;
+		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		g_pos_true.z += g_alt_d;
+		g_pos_true.z += alt_d;
 	}
 }
 
@@ -179,9 +174,9 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 	if (g_alt_source == ALT_SOURCE_BARO) {
 		// Update altitude
 		g_alt = g_air_pressure_alt;
-		g_alt_d = g_alt - g_alt_prev;
+		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		g_pos_true.z += g_alt_d;
+		g_pos_true.z += alt_d;
 	}
 }
 

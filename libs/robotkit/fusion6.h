@@ -2,7 +2,7 @@
 #define FUSION6_H
 
 /**
- * B1 Complementary Filter (Scalar Version)
+ * Fusion 6: Scalar Cascaded Complementary Filter
  * 
  * A cascaded complementary filter for 1D position estimation.
  * Instantiate this struct for each axis (X, Y, Z).
