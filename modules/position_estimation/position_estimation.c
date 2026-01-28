@@ -7,10 +7,10 @@
  * - Barometer/Laser for altitude
  * 
  * ALGORITHM:
- * - Two-stage estimation with correction from optical flow
- * - EST0: Integrates IMU acceleration to estimate position
- * - EST1: Derives velocity from EST0, integrates again with higher correction gain
- * - Final output blends EST1 with position sensors
+ * - Fusion 6 (Scalar Cascaded Complementary Filter)
+ * - Predict Step: Integrates acceleration (Stage 1) and refines it (Stage 2)
+ * - Update Step: Integrates velocity measurements (Optical Flow) into a reference
+ * - Feedback loop bias-corrects acceleration drift
  * 
  * GYRO DE-ROTATION:
  * - Optical flow measures apparent motion = real motion + rotation effect
@@ -133,12 +133,20 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	g_pos_true.x += flow_dx;
 	g_pos_true.y += flow_dy;
 
+    // Update Velocity Fusion X/Y (Assume ~25Hz flow rate -> 0.04s)
+    double dt_flow = 0.04;
+    fusion6_update(&g_fusion_x, flow_dx / dt_flow, dt_flow);
+    fusion6_update(&g_fusion_y, flow_dy / dt_flow, dt_flow);
+
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
 		g_alt = g_range_finder_alt;
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		g_pos_true.z += alt_d;
+
+        // Update Velocity Fusion Z
+        fusion6_update(&g_fusion_z, alt_d / dt_flow, dt_flow);
 	}
 }
 
@@ -157,6 +165,10 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		g_pos_true.z += alt_d;
+
+        // Update Velocity Fusion Z (Assume ~50Hz baro rate -> 0.02s)
+        double dt_baro = 0.02;
+        fusion6_update(&g_fusion_z, alt_d / dt_baro, dt_baro);
 	}
 }
 
@@ -199,9 +211,10 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	g_linear_accel.y = -la->body.x * MAX_IMU_ACCEL;
 	g_linear_accel.z = la->earth.z * MAX_IMU_ACCEL;
 
-	fusion6_update(&g_fusion_x, g_linear_accel.x, g_pos_true.x);
-    fusion6_update(&g_fusion_y, g_linear_accel.y, g_pos_true.y);
-    fusion6_update(&g_fusion_z, g_linear_accel.z, g_pos_true.z);
+    // Predict state based on acceleration (500Hz -> 0.002s)
+	fusion6_predict(&g_fusion_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
+    fusion6_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
+    fusion6_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
 
 	g_pos_final.x = -g_fusion_x.pos_final;
 	g_pos_final.y = -g_fusion_y.pos_final;
@@ -231,11 +244,11 @@ static void loop_logger(uint8_t *data, size_t size) {
 
 void position_estimation_setup(void) {
 	// XY Axis: Fast integration (0.05), standard correction
-    fusion6_init(&g_fusion_x, (double)ACCEL_FREQ, 0.05, 0.5, 0.05, 20.0, 0.005);
-    fusion6_init(&g_fusion_y, (double)ACCEL_FREQ, 0.05, 0.5, 0.05, 20.0, 0.005);
+    fusion6_init(&g_fusion_x, 0.05, 0.5, 0.05, 20.0, 0.005);
+    fusion6_init(&g_fusion_y, 0.05, 0.5, 0.05, 20.0, 0.005);
     
     // Z Axis: Stronger integration dominance (1.0)
-    fusion6_init(&g_fusion_z, (double)ACCEL_FREQ, 1.0, 0.5, 1.0, 20.0, 0.005);
+    fusion6_init(&g_fusion_z, 1.0, 0.5, 1.0, 20.0, 0.005);
 
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);

@@ -18,13 +18,12 @@ typedef struct {
     double pos_est0;
     double pos_est0_prev; // For derivative calculation
 
-    // Stage 1 (Final)
-    double veloc1;
-    double pos_est1;
-
-    // Outputs
+    // Outputs (Final Stage)
     double pos_final;
     double veloc_final;
+
+    // Internal State
+    double pos_measured_maintained;
 
     // Parameters
     struct {
@@ -36,31 +35,36 @@ typedef struct {
 
         double veloc_feedback;
     } params;
-
-    // Timestep
-    double dt;
 } fusion6_t;
 
 /**
  * Initialize the filter with specific tuning parameters.
  * 
  * @param f Pointer to fusion6 object
- * @param frequency Update frequency in Hz (e.g. 500.0)
  * @param s1_integ Stage 1 integration gain (e.g. 0.05 for XY, 1.0 for Z)
  * @param s1_corr  Stage 1 correction gain (e.g. 0.5)
  * @param s2_integ Stage 2 integration gain (e.g. 0.05 for XY, 1.0 for Z)
  * @param s2_corr  Stage 2 correction gain (e.g. 20.0)
  * @param v_fb     Velocity feedback gain (e.g. 0.005)
  */
-void fusion6_init(fusion6_t *f, double frequency, double s1_integ, double s1_corr, double s2_integ, double s2_corr, double v_fb);
+void fusion6_init(fusion6_t *f, double s1_integ, double s1_corr, double s2_integ, double s2_corr, double v_fb);
 
 /**
- * Update the filter with new measurements.
+ * Predict internal state based on acceleration.
  * 
  * @param f Pointer to fusion6 object
  * @param accel Input acceleration (m/s^2)
- * @param pos_measured Input position measurement (e.g. Optical Flow or Baro)
+ * @param dt Time delta in seconds
  */
-void fusion6_update(fusion6_t *f, double accel, double pos_measured);
+void fusion6_predict(fusion6_t *f, double accel, double dt);
+
+/**
+ * Update the filter with new velocity measurements.
+ * 
+ * @param f Pointer to fusion6 object
+ * @param veloc_measured Input velocity measurement (m/s) (e.g. from optical flow)
+ * @param dt Time delta in seconds
+ */
+void fusion6_update(fusion6_t *f, double veloc_measured, double dt);
 
 #endif
