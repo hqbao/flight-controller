@@ -42,11 +42,7 @@ static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
 static double g_alt = 0;
 static double g_alt_prev = 0;
-static struct {
-    double dx;
-    double dy;
-    double z;
-} g_optflow = {0, 0, 0};
+static double g_range_finder_alt = 0;
 static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_pos_true = {0, 0, 0};
 static vector3d_t g_linear_veloc_final = {0, 0, 0};
@@ -118,44 +114,28 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	optflow_data_t *msg = (optflow_data_t*)data;
 
-	// Scale from radians to mm displacement
-	double dx_mm = (float)msg->dx * OPTFLOW_SCALE;
-	double dy_mm = (float)msg->dy * OPTFLOW_SCALE;
+	double dx = (float)msg->dx * OPTFLOW_SCALE;
+	double dy = (float)msg->dy * OPTFLOW_SCALE;
+
+    double flow_dx = 0;
+    double flow_dy = 0;
 
 	if (msg->direction == OPTFLOW_DOWNWARD) {
-		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
-		g_optflow.dy = LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
+		flow_dx = LIMIT(dx, -g_optflow_limit, g_optflow_limit);
+		flow_dy = LIMIT(dy, -g_optflow_limit, g_optflow_limit);
 	} else if (msg->direction == OPTFLOW_UPWARD) {
-		g_optflow.dx = LIMIT(dx_mm, -g_optflow_limit, g_optflow_limit);
-		g_optflow.dy = -LIMIT(dy_mm, -g_optflow_limit, g_optflow_limit);
+		flow_dx = LIMIT(dx, -g_optflow_limit, g_optflow_limit);
+		flow_dy = -LIMIT(dy, -g_optflow_limit, g_optflow_limit);
 	}
 	
-	if (msg->z > 0) g_optflow.z = msg->z;
+	if (msg->z > 0) g_range_finder_alt = msg->z;
 
-	g_pos_true.x += g_optflow.dx;
-	g_pos_true.y += g_optflow.dy;
-
-	// Auto switch: use laser if range < 500, else use barometer if range > 1000
-    alt_source_t new_alt_source = g_alt_source;
-    if (g_optflow.z > 0 && g_optflow.z < RANGE_SWITCH_TO_LASER_THRESHOLD) {
-        new_alt_source = ALT_SOURCE_LASER;
-    } else if (g_optflow.z > RANGE_SWITCH_TO_BARO_THRESHOLD || g_optflow.z <= 0) {
-        new_alt_source = ALT_SOURCE_BARO;
-    }
-	
-    // Update state
-    if (new_alt_source != g_alt_source) {
-        g_alt_source = new_alt_source;
-        if (g_alt_source == ALT_SOURCE_LASER) {
-            g_alt_prev = g_optflow.z;
-        } else if (g_alt_source == ALT_SOURCE_BARO) {
-            g_alt_prev = g_air_pressure_alt;
-        }
-    }
+	g_pos_true.x += flow_dx;
+	g_pos_true.y += flow_dy;
 
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
-		g_alt = g_optflow.z;
+		g_alt = g_range_finder_alt;
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		g_pos_true.z += alt_d;
@@ -178,6 +158,26 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		g_alt_prev = g_alt;
 		g_pos_true.z += alt_d;
 	}
+}
+
+static void check_altitude_source(uint8_t *data, size_t size) {
+	// Auto switch: use laser if range < 500, else use barometer if range > 1000
+    alt_source_t new_alt_source = g_alt_source;
+    if (g_range_finder_alt > 0 && g_range_finder_alt < RANGE_SWITCH_TO_LASER_THRESHOLD) {
+        new_alt_source = ALT_SOURCE_LASER;
+    } else if (g_range_finder_alt > RANGE_SWITCH_TO_BARO_THRESHOLD || g_range_finder_alt <= 0) {
+        new_alt_source = ALT_SOURCE_BARO;
+    }
+	
+    // Update state
+    if (new_alt_source != g_alt_source) {
+        g_alt_source = new_alt_source;
+        if (g_alt_source == ALT_SOURCE_LASER) {
+            g_alt_prev = g_range_finder_alt;
+        } else if (g_alt_source == ALT_SOURCE_BARO) {
+            g_alt_prev = g_air_pressure_alt;
+        }
+    }
 }
 
 /**
@@ -242,6 +242,7 @@ void position_estimation_setup(void) {
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(OSCILLATION_FREQ_DETECTED, oscillation_freq_update);
 	subscribe(LINEAR_DRIFT_DETECTION, linear_drift_update);
+	subscribe(SCHEDULER_10HZ, check_altitude_source);
 #if ENABLE_POSITION_ESTIMATION_MONITOR_LOG
 	subscribe(SCHEDULER_25HZ, loop_logger);
 #endif
