@@ -9,6 +9,18 @@ from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d import Axes3D
 import time
 
+"""
+Attitude Estimation Visualization Tool
+
+Visualizes the drone's estimated attitude vectors in real-time.
+- Red: Predicted Gravity Vector (Gyro Integration)
+- Blue: True Gravity Vector (Fused Estimate)
+- Green: Accelerometer Vector (Raw Gravity Measurement)
+
+Refreshes at ~60Hz. Requires 'MONITOR_DATA' from the flight controller 
+containing 3 vectors (9 floats) representing v_pred, v_true, v_accel.
+"""
+
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
@@ -16,13 +28,24 @@ MONITOR_DATA_ID = 0x00  # From logger.c
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
+found_port = False
+print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    if port.startswith('/dev/cu.usbmodem') or port.startswith('/dev/cu.usbserial') or port.startswith('/dev/cu.SLAB_USBtoUART'):
+    # Filter for typical STM32/ESP32 USB IDs
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
+        found_port = True
+        print(f"Auto-selected Port: {port} ({desc})")
         break
+    else:
+        print(f"Skipped: {port} ({desc})")
 
-if SERIAL_PORT is None:
-    print('No serial port found. Please configure manually.')
+if not found_port:
+    print('----------------------------------------------------')
+    print('ERROR: No compatible serial port found.')
+    print('Please connect the Flight Controller and try again.')
+    print('----------------------------------------------------')
+
 
 # --- Global State ---
 data_queue = queue.Queue()
@@ -92,10 +115,10 @@ def main():
     
     # Initialize lines
     # Red: Prediction, Blue: True (Measurement), Green: Linear Acceleration
-    line_pred, = ax.plot([0, 0], [0, 0], [0, 0], color='red', linewidth=3, label='Prediction')
+    line_pred, = ax.plot([0, 0], [0, 0], [0, 0], color='red', linewidth=3, label='Gyro Prediction')
     head_pred, = ax.plot([0], [0], [0], color='red', marker='o', markersize=8)
     
-    line_true, = ax.plot([0, 0], [0, 0], [0, 0], color='blue', linewidth=3, label='True (Accel)')
+    line_true, = ax.plot([0, 0], [0, 0], [0, 0], color='blue', linewidth=3, label='Fused Estimate')
     head_true, = ax.plot([0], [0], [0], color='blue', marker='o', markersize=8)
     
     line_linear, = ax.plot([0, 0], [0, 0], [0, 0], color='green', linewidth=2, label='Linear Accel')
@@ -176,17 +199,17 @@ def main():
             
             # Update text
             info_text.set_text(
-                f"Prediction (Red):\n"
+                f"Gyro Predict (Red):\n"
                 f"X: {v_pred[0]:.3f}\n"
                 f"Y: {v_pred[1]:.3f}\n"
                 f"Z: {v_pred[2]:.3f}\n"
                 f"Mag: {np.linalg.norm(v_pred):.3f}\n\n"
-                f"True/Accel (Blue):\n"
+                f"Fused Est (Blue):\n"
                 f"X: {v_true[0]:.3f}\n"
                 f"Y: {v_true[1]:.3f}\n"
                 f"Z: {v_true[2]:.3f}\n"
                 f"Mag: {np.linalg.norm(v_true):.3f}\n\n"
-                f"Linear Accel (Green):\n"
+                f"Linear Acc (Green):\n"
                 f"X: {v_linear_acc[0]:.3f}\n"
                 f"Y: {v_linear_acc[1]:.3f}\n"
                 f"Z: {v_linear_acc[2]:.3f}\n"

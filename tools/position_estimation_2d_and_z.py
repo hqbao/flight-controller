@@ -9,6 +9,18 @@ from matplotlib.widgets import Button
 from matplotlib import gridspec
 import time
 
+"""
+Position Estimation Visualization Tool (2D + Z)
+
+Visualizes the drone's estimated position (X, Y, Z) and velocity.
+- Top Plot: 2D Position (Top-Down X/Y view)
+- Bottom Left: Altitude (Z Position)
+- Bottom Right: Vertical Velocity (Z Velocity)
+
+Refreshes at ~50Hz. Requires 'MONITOR_DATA' from the flight controller
+containing local position output (Pos X, Pos Y, Pos Z, Vel X, Vel Y, Vel Z).
+"""
+
 # --- Configuration ---
 plt.style.use('dark_background')
 
@@ -18,14 +30,22 @@ MONITOR_DATA_ID = 0x00  # From logger.c
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
+found_port = False
+print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    print(f"Found: {port} - {desc}")
-    if port.startswith('/dev/cu.usbmodem') or port.startswith('/dev/cu.usbserial') or port.startswith('/dev/cu.SLAB_USBtoUART'):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
+        found_port = True
+        print(f"Auto-selected Port: {port} ({desc})")
         break
+    else:
+        print(f"Skipped: {port} ({desc})")
 
-if SERIAL_PORT is None:
-    print('No serial port found. Please configure manually.')
+if not found_port:
+    print('----------------------------------------------------')
+    print('ERROR: No compatible serial port found.')
+    print('Please connect the Flight Controller and try again.')
+    print('----------------------------------------------------')
 
 # --- Global State ---
 data_queue = queue.Queue()

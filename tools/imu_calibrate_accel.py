@@ -9,6 +9,19 @@ from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d import Axes3D
 import time
 
+"""
+IMU Accelerometer Calibration Tool
+
+Interactive tool to compute the Bias (B) and Scale (S) matrix 
+for accelerometer calibration using ellipsoid fitting.
+
+Instructions:
+1. Run this script.
+2. Follow on-screen instructions to capture data in 6 orientations.
+3. Compute Calibration.
+4. Update the firmware with the result.
+"""
+
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
@@ -17,13 +30,21 @@ PLOT_LIMIT = 20000 # Assuming 16-bit signed int raw values, 1g ~ 16384
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
+found_port = False
+print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    if port.startswith('/dev/cu.usbmodem') or port.startswith('/dev/cu.usbserial') or port.startswith('/dev/cu.SLAB_USBtoUART'):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
+        found_port = True
+        print(f"Auto-selected Port: {port} ({desc})")
         break
 
-if SERIAL_PORT is None:
-    print('No serial port found. Please configure manually.')
+if not found_port:
+    print('----------------------------------------------------')
+    print('ERROR: No compatible serial port found.')
+    print('Please connect the Flight Controller and try again.')
+    print('----------------------------------------------------')
+
 
 # --- Global State ---
 data_queue = queue.Queue()
