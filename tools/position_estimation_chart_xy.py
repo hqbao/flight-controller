@@ -9,6 +9,13 @@ from matplotlib import animation
 import serial.tools.list_ports
 import struct
 
+"""
+Position Estimation Chart (XY)
+
+Time-series chart for Position X/Y and Velocity X/Y.
+Useful for tuning PID gains and checking sensor fusion stability.
+"""
+
 # --- Style Config ---
 plt.style.use('dark_background')
 LINE_COLORS = ['#FF5555', '#55FF55', '#5555FF', '#FF55FF', '#55FFFF', '#FFFF00'] # Red, Green, Blue, Magenta, Cyan, Yellow
@@ -17,14 +24,19 @@ LABELS = ['Pos X', 'Pos Y', 'Pos Z', 'Vel X', 'Vel Y', 'Vel Z']
 g_baud_rate = 9600
 g_serial_port = None
 ports = serial.tools.list_ports.comports()
-for port, desc, hwid in sorted(ports):
-  print("{}: {} [{}]".format(port, desc, hwid))
-  if port.startswith('/dev/cu.usbmodem') or port.startswith('/dev/cu.usbserial') or port.startswith('/dev/cu.SLAB_USBtoUART'):
-    g_serial_port = port
+found_port = False
 
-if g_serial_port is None:
-  print('No serial port found')
-  exit()
+print("Scanning for ports...")
+for port, desc, hwid in sorted(ports):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+        g_serial_port = port
+        found_port = True
+        print(f"Auto-selected Port: {port} ({desc})")
+        break
+
+if not found_port:
+    print('ERROR: No serial port found')
+    exit()
 
 max_win_size = 300
 g_line = np.linspace(start=0, stop=1, num=max_win_size)

@@ -1,0 +1,200 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="default">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Spherical Coordinates for GPS (Singapore) -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>1.3521</latitude_deg>
+      <longitude_deg>103.8198</longitude_deg>
+      <elevation>0.0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <!-- Essential Plugins -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    
+    <!-- SENSORS PLUGIN -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-altimeter-system" name="gz::sim::systems::Altimeter"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+    
+    <!-- APPLY LINK WRENCH PLUGIN (Must be attached to World) -->
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench">
+        <target_link>quadcopter::base_link</target_link>
+        <topic>/model/quadcopter/wrench</topic>
+    </plugin>
+
+    <!-- Environment -->
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
+    </include>
+    <!-- Ground Plane (Simple Box to avoid Contact Warnings) -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/> 
+    </model>
+
+    <!-- Debug IMU Model -->
+    <model name="debug_imu_box">
+      <pose>2 0 0.5 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.1 0.1 0.1</size></box></geometry>
+        </visual>
+        <sensor name="debug_imu_sensor" type="imu">
+            <always_on>1</always_on>
+            <update_rate>1</update_rate>
+            <topic>debug_imu</topic>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- The Drone Model (Unified) -->
+    <model name="quadcopter">
+      <pose>0 0 0.5 0 0 0</pose>
+
+      <link name="base_link">
+        <inertial>
+          <mass>1.5</mass>
+          <inertia>
+            <ixx>0.06</ixx> <ixy>0</ixy> <ixz>0</ixz>
+            <iyy>0.06</iyy> <iyz>0</iyz>
+            <izz>0.10</izz>
+          </inertia>
+        </inertial>
+
+        <!-- Main Body -->
+        <visual name="body_visual">
+          <geometry> <box> <size>0.15 0.1 0.05</size> </box> </geometry>
+          <material> <ambient>0.1 0.1 0.1 1</ambient> <diffuse>0.1 0.1 0.1 1</diffuse> </material>
+        </visual>
+        
+        <!-- Arms (Static part of the frame) -->
+        <visual name="arm1_visual"> <pose>0.15 -0.15 0 0 0 -0.785</pose> <geometry> <box> <size>0.25 0.02 0.02</size> </box> </geometry> <material> <ambient>0.8 0.1 0.1 1</ambient> <diffuse>0.8 0.1 0.1 1</diffuse> </material> </visual>
+        <visual name="arm2_visual"> <pose>0.15 0.15 0 0 0 0.785</pose> <geometry> <box> <size>0.25 0.02 0.02</size> </box> </geometry> <material> <ambient>0.8 0.1 0.1 1</ambient> <diffuse>0.8 0.1 0.1 1</diffuse> </material> </visual>
+        <visual name="arm3_visual"> <pose>-0.15 -0.15 0 0 0 0.785</pose> <geometry> <box> <size>0.25 0.02 0.02</size> </box> </geometry> <material> <ambient>0.1 0.1 0.1 1</ambient> <diffuse>0.1 0.1 0.1 1</diffuse> </material> </visual>
+        <visual name="arm4_visual"> <pose>-0.15 0.15 0 0 0 -0.785</pose> <geometry> <box> <size>0.25 0.02 0.02</size> </box> </geometry> <material> <ambient>0.1 0.1 0.1 1</ambient> <diffuse>0.1 0.1 0.1 1</diffuse> </material> </visual>
+
+        <!-- Collision (Simplified to cover whole drone) -->
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.4 0.4 0.1</size>
+            </box>
+          </geometry>
+        </collision>
+
+        <sensor name="imu_sensor" type="imu">
+          <always_on>1</always_on>
+          <update_rate>500</update_rate>
+        </sensor>
+        <sensor name="magnetometer_sensor" type="magnetometer">
+            <always_on>1</always_on>
+            <update_rate>100</update_rate>
+        </sensor>
+        <sensor name="altimeter_sensor" type="altimeter">
+            <always_on>1</always_on>
+            <update_rate>100</update_rate>
+        </sensor>
+        <sensor name="navsat_sensor" type="navsat">
+            <always_on>1</always_on>
+            <update_rate>10</update_rate>
+        </sensor>
+      </link>
+      
+      <!-- ROTORS -->
+      <!-- Rotor 1 (Front Right) -->
+      <link name="rotor_0">
+        <pose>0.15 -0.15 0.03 0 0 0</pose>
+        <inertial> <mass>0.005</mass> <inertia> <ixx>1e-5</ixx> <iyy>1e-5</iyy> <izz>1e-5</izz> </inertia> </inertial>
+        <visual name="rotor_0_vis">
+          <geometry> <cylinder> <radius>0.1</radius> <length>0.01</length> </cylinder> </geometry>
+          <material> <ambient>0 0 1 0.5</ambient> <diffuse>0 0 1 0.5</diffuse> </material>
+        </visual>
+      </link>
+      <joint name="rotor_0_joint" type="revolute">
+        <parent>base_link</parent> <child>rotor_0</child>
+        <axis> <xyz>0 0 1</xyz> <limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      </joint>
+
+      <!-- Rotor 2 (Front Left) -->
+      <link name="rotor_1">
+        <pose>0.15 0.15 0.03 0 0 0</pose>
+        <inertial> <mass>0.005</mass> <inertia> <ixx>1e-5</ixx> <iyy>1e-5</iyy> <izz>1e-5</izz> </inertia> </inertial>
+        <visual name="rotor_1_vis">
+          <geometry> <cylinder> <radius>0.1</radius> <length>0.01</length> </cylinder> </geometry>
+          <material> <ambient>0 0 1 0.5</ambient> <diffuse>0 0 1 0.5</diffuse> </material>
+        </visual>
+      </link>
+      <joint name="rotor_1_joint" type="revolute">
+        <parent>base_link</parent> <child>rotor_1</child>
+        <axis> <xyz>0 0 1</xyz> <limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      </joint>
+
+      <!-- Rotor 3 (Back Right) -->
+      <link name="rotor_2">
+        <pose>-0.15 -0.15 0.03 0 0 0</pose>
+        <inertial> <mass>0.005</mass> <inertia> <ixx>1e-5</ixx> <iyy>1e-5</iyy> <izz>1e-5</izz> </inertia> </inertial>
+        <visual name="rotor_2_vis">
+          <geometry> <cylinder> <radius>0.1</radius> <length>0.01</length> </cylinder> </geometry>
+          <material> <ambient>1 1 1 0.5</ambient> <diffuse>1 1 1 0.5</diffuse> </material>
+        </visual>
+      </link>
+      <joint name="rotor_2_joint" type="revolute">
+        <parent>base_link</parent> <child>rotor_2</child>
+        <axis> <xyz>0 0 1</xyz> <limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      </joint>
+
+      <!-- Rotor 4 (Back Left) -->
+      <link name="rotor_3">
+        <pose>-0.15 0.15 0.03 0 0 0</pose>
+        <inertial> <mass>0.005</mass> <inertia> <ixx>1e-5</ixx> <iyy>1e-5</iyy> <izz>1e-5</izz> </inertia> </inertial>
+        <visual name="rotor_3_vis">
+          <geometry> <cylinder> <radius>0.1</radius> <length>0.01</length> </cylinder> </geometry>
+          <material> <ambient>1 1 1 0.5</ambient> <diffuse>1 1 1 0.5</diffuse> </material>
+        </visual>
+      </link>
+      <joint name="rotor_3_joint" type="revolute">
+        <parent>base_link</parent> <child>rotor_3</child>
+        <axis> <xyz>0 0 1</xyz> <limit><lower>-1e16</lower><upper>1e16</upper></limit></axis>
+      </joint>
+
+    </model>
+  </world>
+</sdf>

@@ -34,7 +34,7 @@ The Flight Controller (FC) is the core autopilot system that:
 | **Barometer** | DPS310 (I2C) | ✓ Active |
 | **Optical Flow** | External Module (UART) | ✓ Supported |
 | **GPS** | u-blox UBX Protocol (UART) | ✓ Supported |
-| **Microcontroller** | STM32H7 / ESP32 | ✓ Both Supported |
+| **Microcontroller** | STM32H7 / ESP32 / MacOS (SITL) | ✓ Supported |
 
 ## Demo Videos
 
@@ -51,6 +51,17 @@ The Flight Controller (FC) is the core autopilot system that:
   - **Do NOT** duplicate struct definitions in module headers.
 - **Static Variables:** Prefer file-scope `static` variables over function-scope `static` variables for safety and clarity.
 - **Memory Safety:** Use `memset` and `memcpy` for clearing and copying structs to avoid uninitialized memory or padding issues.
+
+## Algorithm Configuration
+
+The project supports multiple sensor fusion algorithms configurable via compile-time macros.
+
+**Position Estimation:**
+Located in `modules/position_estimation/position_estimation.c`, the `FUSION_ALGO` macro selects the underlying estimation logic:
+- `FUSION_ALGO_COMPLEMENTARY` (Default): Uses Fusion 6 (Complementary Filter) for position estimation. Efficient and stable.
+- `FUSION_ALGO_KALMAN`: Uses Fusion 7 (Kalman Filter) for position estimation. Higher accuracy but requires precise tuning.
+
+To switch algorithms, modify the `#define FUSION_ALGO` at the top of `position_estimation.c`.
 
 ## Project Structure
 

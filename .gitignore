@@ -48,12 +48,17 @@
 *.map
 *.lss
 *.dSYM/
+fly_sitl
 
 # ----------------------------------------------------------------------
 # ESP-IDF (ESP32)
 # ----------------------------------------------------------------------
 # Build directory
 build/
+# SITL Logs
+bridge.log
+gz_server.log
+sitl_storage.bin
 
 # Configuration files (sdkconfig.defaults should be committed instead)
 sdkconfig

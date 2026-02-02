@@ -10,13 +10,19 @@
 #define MIN_LANDING_SPEED 50
 
 /* Control Gains */
-#define POS_CTL_XY_P 0.5
-#define POS_CTL_Z_P 2.0
+/*
+ * NOTE: SI Unit Migration
+ * The scale of input error has changed from ~100 units/m to 1.0 unit/m.
+ * To maintain the same control response, the P-gain should theoretically be increased by ~10x.
+ * Legacy Gain: 50.0  -> Theoretical SI Gain: 500.0
+ * Current value set to 50.0 for manual tuning.
+ */
+#define POS_CTL_XY_P 100.0
+#define POS_CTL_Z_P 2000.0
 
 /* Velocity Scaling */
-#define POS_CTL_VELOC_X_SCALE 0.75
-#define POS_CTL_VELOC_Y_SCALE 0.75
-#define POS_CTL_VELOC_Z_SCALE 2.0
+#define POS_CTL_VELOC_XY_SCALE 100.0
+#define POS_CTL_VELOC_Z_SCALE 2000.0
 
 /* Output Lowpass Filter */
 #define POS_CTL_OUTPUT_LPF_ALPHA_XY 1.0
@@ -33,8 +39,8 @@
 
 /* RC Control */
 #define RC_DEADBAND 0.1
-#define RC_XY_SCALE 3.0
-#define RC_Z_SCALE 40.0
+#define RC_XY_SCALE 0.01
+#define RC_Z_SCALE 0.04
 #define RC_YAW_SCALE -0.5
 
 static state_t g_state = DISARMED;
@@ -114,8 +120,11 @@ static void publish_angular_target(void) {
 }
 
 static void position_update(uint8_t *data, size_t size) {
-	memcpy(&g_pos_final, data, sizeof(vector3d_t));
-	memcpy(&g_veloc_final, &data[sizeof(vector3d_t)], sizeof(vector3d_t));
+	if (size < sizeof(position_state_t)) return;
+
+	position_state_t *state = (position_state_t *)data;
+	g_pos_final = state->position;
+	g_veloc_final = state->velocity;
 	
 	if (g_rc_state_ctl.mode == 2) {
 		reset_pid();
@@ -125,8 +134,8 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_yaw 		= g_yaw_veloc;
 		g_pos_ctl_alt 		= -g_rc_att_ctl.alt * 2;
 	} else {
-		if (g_moving_state_roll == 0) g_veloc_applied.y = g_veloc_final.y - g_veloc_offset.y;
-		if (g_moving_state_pitch == 0) g_veloc_applied.x = g_veloc_final.x - g_veloc_offset.x;
+		if (g_moving_state_roll == 0) g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
+		if (g_moving_state_pitch == 0) g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
 		g_veloc_applied.z = g_veloc_final.z - g_veloc_offset.z;
 
 		// Simple P Control: Output = (Current - Target) * P
@@ -140,8 +149,8 @@ static void position_update(uint8_t *data, size_t size) {
 		g_output_smooth.y += POS_CTL_OUTPUT_LPF_ALPHA_XY * (y_output - g_output_smooth.y);
 		g_output_smooth.z += POS_CTL_OUTPUT_LPF_ALPHA_Z * (z_output - g_output_smooth.z);
 
-		g_pos_ctl_roll 		= LIMIT(g_output_smooth.y + g_veloc_applied.y * POS_CTL_VELOC_Y_SCALE, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
-		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x * POS_CTL_VELOC_X_SCALE, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
+		g_pos_ctl_roll 		= LIMIT(g_output_smooth.y + g_veloc_applied.y, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
+		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
 		g_pos_ctl_yaw 		= g_yaw_veloc;
 		g_pos_ctl_alt 		= g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
 	}

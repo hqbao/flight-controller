@@ -9,21 +9,43 @@ from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d import Axes3D
 import time
 
+"""
+Magnetometer Calibration Tool
+
+Interactive tool to compute Hard Iron (Bias) and Soft Iron (Scale/Skew) 
+calibration for the compass using Ellipsoid Fitting.
+
+Instructions:
+1. Start Stream.
+2. Rotate the drone in all possible orientations (figure-8 motion).
+   Ensure you cover the entire sphere.
+3. Observe the points forming a sphere (green) from the raw ellipsoid (red).
+4. Copy the Bias (B) and Soft Iron Matrix (S) to compass.c.
+"""
+
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
 MONITOR_DATA_ID = 0x00  # From logger.c
-PLOT_LIMIT = 1
+PLOT_LIMIT = 500 # Default limit, auto-expands
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
+found_port = False
+print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    if port.startswith('/dev/cu.usbmodem') or port.startswith('/dev/cu.usbserial') or port.startswith('/dev/cu.SLAB_USBtoUART'):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
+        found_port = True
+        print(f"Auto-selected Port: {port} ({desc})")
         break
 
-if SERIAL_PORT is None:
-    print('No serial port found. Please configure manually.')
+if not found_port:
+    print('----------------------------------------------------')
+    print('ERROR: No compatible serial port found.')
+    print('Please connect the Flight Controller and try again.')
+    print('----------------------------------------------------')
+
 
 # --- Global State ---
 data_queue = queue.Queue()
@@ -316,13 +338,6 @@ def main():
             scat_raw._offsets3d = (data_np[:, 0], data_np[:, 1], data_np[:, 2])
 
             # Update Last Point Plot
-            if len(data_np) > 0:
-                last_pt = data_np[-1]
-                scat_last._offsets3d = ([last_pt[0]], [last_pt[1]], [last_pt[2]])
-            
-            # Dynamic Axis Scaling
-
-
             if len(data_np) > 0:
                 last_pt = data_np[-1]
                 scat_last._offsets3d = ([last_pt[0]], [last_pt[1]], [last_pt[2]])

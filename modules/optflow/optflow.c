@@ -11,7 +11,17 @@ static optflow_data_t g_optflow_msg;
 static void on_message_received(uint8_t *data, size_t size) {
 	//platform_toggle_led(0);
 	if (data[0] == 0x01) { // Optical flow
-		if (size < 20) return;
+		if (size < 22) return;
+
+        // Verify checksum
+        uint8_t ck_a = 0, ck_b = 0;
+        for (size_t i = 0; i < size - 2; i++) {
+            ck_a = ck_a + data[i];
+            ck_b = ck_b + ck_a;
+        }
+        if (ck_a != data[size - 2] || ck_b != data[size - 1]) {
+            return;
+        }
 
 		int32_t raw_dx, raw_dy, raw_z, raw_clarity;
 		memcpy(&raw_dx, &data[4], sizeof(int32_t));
@@ -30,6 +40,8 @@ static void on_message_received(uint8_t *data, size_t size) {
 		g_optflow_msg.dx = dx_rad / texture_gain;
 		g_optflow_msg.dy = dy_rad / texture_gain;
 		g_optflow_msg.z = (double)raw_z;
+		g_optflow_msg.clarity = (double)clarity;
+		g_optflow_msg.dt_us = 40000;
 		g_optflow_msg.direction = (optflow_direction_t)data[1];
 
 		publish(EXTERNAL_SENSOR_OPTFLOW, (uint8_t*)&g_optflow_msg, sizeof(optflow_data_t));
