@@ -10,7 +10,7 @@
  * - Fusion 6 (Scalar Cascaded Complementary Filter) for X/Y/Z axes
  * 
  * KEY FEATURES:
- * - SI Units used throughout (Critical for Kalman Filter stability)
+ * - SI Units used throughout (Critical for filter stability)
  * - 3-State Filter (Pos, Vel, AccelBias) estimates and removes IMU drift
  * 
  * SIMPLIFICATIONS:
@@ -125,7 +125,6 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	 * 3. Scaling is 1:1 (Radians -> m/s). Do NOT divide by 100.
 	 */
 	
-	// Calculate base velocity components (Scalars), assuming height 1 meter
 	double vel_x = msg->dx * 5.0;
 	double vel_y = msg->dy * 5.0;
 
@@ -153,6 +152,9 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
 		g_alt = g_range_finder_alt;
+		
+        // Calculate delta (pseudo-velocity over 1 sec) to maintain continuity
+        // when switching sources or large jumps occur
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		fusion6_update(&g_fusion_z, alt_d, 1.0);
@@ -173,6 +175,8 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 	if (g_alt_source == ALT_SOURCE_BARO) {
 		// Update altitude
 		g_alt = g_air_pressure_alt;
+
+        // Calculate delta (pseudo-velocity over 1 sec) to maintain continuity
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		fusion6_update(&g_fusion_z, alt_d, 1.0);

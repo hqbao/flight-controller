@@ -57,11 +57,7 @@ The Flight Controller (FC) is the core autopilot system that:
 The project supports multiple sensor fusion algorithms configurable via compile-time macros.
 
 **Position Estimation:**
-Located in `modules/position_estimation/position_estimation.c`, the `FUSION_ALGO` macro selects the underlying estimation logic:
-- `FUSION_ALGO_COMPLEMENTARY` (Default): Uses Fusion 6 (Complementary Filter) for position estimation. Efficient and stable.
-- `FUSION_ALGO_KALMAN`: Uses Fusion 7 (Kalman Filter) for position estimation. Higher accuracy but requires precise tuning.
-
-To switch algorithms, modify the `#define FUSION_ALGO` at the top of `position_estimation.c`.
+Located in `modules/position_estimation/position_estimation.c`, position estimation uses the **Fusion 6** algorithm (Scalar Cascaded Complementary Filter). This provides robust position, velocity, and accelerometer bias estimation using a lightweight, efficient 3-stage filter.
 
 ## Project Structure
 
@@ -84,7 +80,7 @@ flight-controller/
 │   ├── air_pressure/          # Barometer driver
 │   ├── gps/                   # GPS receiver (UBX protocol)
 │   ├── optflow/               # Optical flow sensor interface
-│   ├── attitude_estimation/   # Sensor fusion (Kalman/complementary filter)
+│   ├── attitude_estimation/   # Sensor fusion (Mahony/EKF/Madgwick)
 │   ├── attitude_control/      # Attitude stabilization PID loops
 │   ├── speed_control/         # Motor speed / thrust controller
 │   ├── position_estimation/   # Position estimation (GPS/optical flow fusion)
