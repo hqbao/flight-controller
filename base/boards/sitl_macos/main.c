@@ -53,6 +53,7 @@ uint32_t platform_time_ms(void) {
 }
 
 // Storage (File based)
+// Saved in the Current Working Directory (CWD) of the executable
 static const char *STORAGE_FILE = "sitl_storage.bin";
 
 char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data) {

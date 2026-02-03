@@ -23,6 +23,10 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 export GZ_IP=127.0.0.1
 export GZ_SIM_RESOURCE_PATH="$SCRIPT_DIR/models"
 
+# Create logs directory
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+
 echo "🧹 Cleaning up old processes..."
 pkill -9 -f "gz sim"
 pkill -9 -f "sitl_bridge.py"
@@ -32,7 +36,7 @@ sleep 1
 # 1. Start Gazebo Server (Physics)
 echo "🌍 Starting Gazebo Server..."
 # -s: Server only, -r: Run immediately (no pause)
-gz sim -v3 -s -r "$SCRIPT_DIR/models/sitl_combined.sdf" > gz_server.log 2>&1 &
+gz sim -v3 -s -r "$SCRIPT_DIR/models/sitl_combined.sdf" > "$LOG_DIR/gz_server.log" 2>&1 &
 SERVER_PID=$!
 
 echo "⏳ Waiting for server to initialize..."
@@ -45,7 +49,7 @@ PYTHON_EXEC="/opt/homebrew/Cellar/python@3.13/3.13.2/bin/python3"
 if [ ! -f "$PYTHON_EXEC" ]; then
     PYTHON_EXEC="python3" # Fallback
 fi
-$PYTHON_EXEC -u "$SCRIPT_DIR/sitl_bridge.py" > bridge.log 2>&1 &
+$PYTHON_EXEC -u "$SCRIPT_DIR/sitl_bridge.py" > "$LOG_DIR/bridge.log" 2>&1 &
 BRIDGE_PID=$!
 
 # 3. Start Gazebo GUI
@@ -64,10 +68,12 @@ fi
 
 # 4. Start Flight Controller
 echo "🚁 Starting Flight Controller (Game Controller)..."
-FC_PATH="$SCRIPT_DIR/../base/boards/sitl_macos/fly_sitl"
+FC_DIR="$SCRIPT_DIR/../base/boards/sitl_macos"
+FC_PATH="$FC_DIR/fly_sitl"
 
 if [ -f "$FC_PATH" ]; then
-    "$FC_PATH"
+    # Run from the FC directory so storage.bin is created there
+    (cd "$FC_DIR" && ./fly_sitl)
 else
     echo "❌ Error: Flight Controller binary not found at $FC_PATH"
     echo "   Please run './flight-controller/simulation/install.sh' to build it."
