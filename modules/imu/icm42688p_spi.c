@@ -44,9 +44,9 @@ void icm42688p_init_spi(icm42688p_t *icm42688p,
     icm42688p->buffer[1] = (gyro_scale << 5) | gyro_odr;
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
 
-    // Set gyro bandwidth to ODR/2 (4 kHz) for minimal filtering
+    // Set bandwidth to LPF ~180Hz to prevent aliasing (Accel BW=4, Gyro BW=4)
     icm42688p->buffer[0] = ICM42688_GYRO_ACCEL_CONFIG0;
-    icm42688p->buffer[1] = 0x07;  // Gyro BW = 000 (ODR/2), Accel BW = 111 (ODR/320)
+    icm42688p->buffer[1] = 0x44;  
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
 
     // Enable FIFO for gyro data (critical for 8 kHz streaming)
@@ -73,7 +73,7 @@ void icm42688p_init_spi(icm42688p_t *icm42688p,
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
 
     icm42688p->buffer[0] = ICM42688_GYRO_CONFIG_STATIC2;
-    icm42688p->buffer[1] = 0x00; // Disable AA filter
+    icm42688p->buffer[1] = 0x00; // Enable AA filter (0=Enabled, 1=Disabled)
     platform_spi_write(SPI_PORT1, icm42688p->buffer, 2);
 
     // Return to Bank 0
