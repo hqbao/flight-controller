@@ -17,6 +17,7 @@
 #include <logger/logger.h>
 #include <oscillation_detection/oscillation_detection.h>
 #include <linear_drift_detection/linear_drift_detection.h>
+#include <noise_meas/noise_meas.h>
 
 void platform_setup(void) {
 	state_detector_setup();
@@ -38,4 +39,5 @@ void platform_setup(void) {
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
 	logger_setup();
+	noise_meas_setup();
 }
