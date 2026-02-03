@@ -85,6 +85,7 @@ void icm42688p_init_i2c(icm42688p_t *icm42688p,
 }
 
 void icm42688p_read_i2c(icm42688p_t *icm42688p) {
+    icm42688p->buffer[0] = ICM42688_TEMP_DATA1; // The buffer[0] maybe overwritten during the read, so we need to set it again
 	platform_i2c_write_read_dma(icm42688p->i2c_port, ICM42688_ADDRESS,
 			icm42688p->buffer, 1, &icm42688p->buffer[2], 14);
 }
