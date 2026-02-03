@@ -37,7 +37,7 @@
  * 1: Mode 1 - Send Position & Velocity (6 floats, 24 bytes)
  * 2: Mode 2 - Send Optical Flow & Altitude (6 floats, 24 bytes)
  */
-#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 1
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
 /* SI Unit Constants */
 #define GRAVITY_MSS 9.80665
