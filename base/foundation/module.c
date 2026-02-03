@@ -39,5 +39,5 @@ void platform_setup(void) {
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
 	logger_setup();
-	noise_meas_setup();
+	//noise_meas_setup();
 }
