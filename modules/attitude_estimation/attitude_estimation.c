@@ -45,7 +45,7 @@
 #include <macro.h>
 
 /* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick), 4 = Fusion4 (7-State EKF), 5 = Fusion5 (Madgwick+Bias) */
-#define FUSION_ALGO 5
+#define FUSION_ALGO 4
 
 #if FUSION_ALGO == 1
 #include <fusion1.h>
@@ -70,12 +70,14 @@
 #define ATT_F1_GAIN_INT 0.15  // Ki: Integral for gyro bias (divided by freq for time integration)
 #endif
 
-#if FUSION_ALGO == 2 || FUSION_ALGO == 4
-#define GYRO_NOISE 0.00001
+#if FUSION_ALGO == 2
+#define GYRO_NOISE 0.0001
 #define ACCEL_NOISE 100.0
 #endif
 
 #if FUSION_ALGO == 4
+#define GYRO_NOISE 0.0001
+#define ACCEL_NOISE 100.0
 #define BIAS_NOISE 0.00001
 #endif
 
