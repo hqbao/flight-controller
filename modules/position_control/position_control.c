@@ -21,7 +21,7 @@
 #define POS_CTL_Z_P 2000.0
 
 /* Velocity Scaling */
-#define POS_CTL_VELOC_XY_SCALE 100.0
+#define POS_CTL_VELOC_XY_SCALE 50.0
 #define POS_CTL_VELOC_Z_SCALE 2000.0
 
 /* Output Lowpass Filter */
