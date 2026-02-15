@@ -62,7 +62,7 @@ def main():
         pass
     
     if not port:
-        print("No saved GPS config found. Please run ubx_reader.py first to detect GPS.")
+        print("No saved GPS config found. Please run gps_read_upx.py first to detect GPS.")
         return 1
     
     print(f"Configuring GPS on {port} @ {baudrate} baud...")
@@ -107,7 +107,7 @@ def main():
     
     print("\n✓ GPS configured successfully!")
     print("All UBX messages are now enabled.")
-    print("\nYou can now run: python3 ubx_reader.py")
+    print("\nYou can now run: python3 gps_read_upx.py")
     
     return 0
 
