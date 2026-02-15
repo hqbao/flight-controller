@@ -121,7 +121,6 @@ class GPSData:
         self.vel_north = 0.0
         self.vel_east = 0.0
         self.vel_down = 0.0
-        self.ground_speed = 0.0
         self.heading = 0.0
         self.h_acc = 0.0
         self.v_acc = 0.0
@@ -322,7 +321,7 @@ class GPSReader:
             height, hMSL = struct.unpack('<ii', payload[32:40])
             hAcc, vAcc = struct.unpack('<II', payload[40:48])
             
-            velN, velE, velD, gSpeed = struct.unpack('<iiii', payload[48:64])
+            velN, velE, velD, _gSpeed = struct.unpack('<iiii', payload[48:64])
             headMot = struct.unpack('<i', payload[64:68])[0]
             sAcc = struct.unpack('<I', payload[68:72])[0]
             headAcc = struct.unpack('<I', payload[72:76])[0]
@@ -338,7 +337,6 @@ class GPSReader:
             self.gps_data.vel_north = velN * 1e-3
             self.gps_data.vel_east = velE * 1e-3
             self.gps_data.vel_down = velD * 1e-3
-            self.gps_data.ground_speed = gSpeed * 1e-3
             self.gps_data.heading = headMot * 1e-5
             self.gps_data.speed_acc = sAcc * 1e-3
             self.gps_data.heading_acc = headAcc * 1e-5
@@ -455,92 +453,162 @@ class PlotUI:
         self.lat_history = deque(maxlen=history_size)
         self.lon_history = deque(maxlen=history_size)
         self.alt_history = deque(maxlen=history_size)
-        self.speed_history = deque(maxlen=history_size)
         self.heading_history = deque(maxlen=history_size)
+        self.vel_n_history = deque(maxlen=history_size)
+        self.vel_e_history = deque(maxlen=history_size)
+        self.vel_d_history = deque(maxlen=history_size)
         self.sat_history = deque(maxlen=history_size)
         self.hdop_history = deque(maxlen=history_size)
         self.vdop_history = deque(maxlen=history_size)
-        
-        # Create figure (sized for 14" MacBook Pro)
-        self.fig = plt.figure(figsize=(13, 8))
-        self.fig.canvas.manager.set_window_title('U-BLOX ZED-F9P GPS Monitor')
-        
-        gs = GridSpec(3, 3, figure=self.fig, hspace=0.3, wspace=0.3)
-        
-        # Position map
-        self.ax_map = self.fig.add_subplot(gs[0:2, 0])
-        self.ax_map.set_title('Position Track')
-        self.ax_map.set_xlabel('Longitude (°)')
-        self.ax_map.set_ylabel('Latitude (°)')
-        self.ax_map.grid(True, alpha=0.3)
-        
-        # Altitude
-        self.ax_alt = self.fig.add_subplot(gs[0, 1])
-        self.ax_alt.set_title('Altitude')
-        self.ax_alt.set_ylabel('Altitude (m)')
-        self.ax_alt.grid(True, alpha=0.3)
-        
-        # Speed
-        self.ax_speed = self.fig.add_subplot(gs[0, 2])
-        self.ax_speed.set_title('Ground Speed')
-        self.ax_speed.set_ylabel('Speed (m/s)')
-        self.ax_speed.grid(True, alpha=0.3)
-        
-        # Heading
-        self.ax_heading = self.fig.add_subplot(gs[1, 1])
-        self.ax_heading.set_title('Heading')
-        self.ax_heading.set_ylabel('Heading (°)')
-        self.ax_heading.set_ylim(0, 360)
-        self.ax_heading.grid(True, alpha=0.3)
-        
-        # Satellites
-        self.ax_sats = self.fig.add_subplot(gs[1, 2])
-        self.ax_sats.set_title('Satellites')
-        self.ax_sats.set_ylabel('Count')
-        self.ax_sats.grid(True, alpha=0.3)
-        
-        # DOP
-        self.ax_dop = self.fig.add_subplot(gs[2, 0])
-        self.ax_dop.set_title('DOP (Dilution of Precision)')
-        self.ax_dop.set_xlabel('Time (s)')
-        self.ax_dop.set_ylabel('DOP')
-        self.ax_dop.grid(True, alpha=0.3)
-        
-        # Signal strength
-        self.ax_signal = self.fig.add_subplot(gs[2, 1:])
-        self.ax_signal.set_title('Satellite Signal Strength')
-        self.ax_signal.set_xlabel('Satellite')
-        self.ax_signal.set_ylabel('C/N0 (dBHz)')
-        self.ax_signal.grid(True, alpha=0.3)
-        
-        # Status text
-        self.status_text = self.fig.text(0.02, 0.98, '', 
-                                         transform=self.fig.transFigure,
-                                         verticalalignment='top',
-                                         fontfamily='monospace',
-                                         fontsize=9)
-        
-        # Drift measurement controls
-        ax_duration = plt.axes([0.15, 0.02, 0.08, 0.04])
-        self.duration_box = TextBox(ax_duration, 'Window (s):', initial='5.0')
-        self.duration_box.on_submit(self._on_duration_change)
-        
-        ax_button = plt.axes([0.25, 0.02, 0.12, 0.04])
-        self.measure_button = Button(ax_button, 'Reset Origin')
-        self.measure_button.on_clicked(self._reset_drift_origin)
-        
-        ax_reset = plt.axes([0.05, 0.02, 0.08, 0.04])
-        self.reset_button = Button(ax_reset, 'Reset Data')
+        self._last_append_time = 0
+
+        # ── Dark theme ────────────────────────────────────────────────────
+        plt.style.use('dark_background')
+        BG       = '#1a1a2e'
+        PANEL_BG = '#16213e'
+        GRID_CLR = '#334466'
+        TXT_CLR  = '#e0e0e0'
+        ACCENT   = '#0f3460'
+        self._colors = {
+            'north': '#ff6b6b', 'east': '#51cf66', 'down': '#339af0',
+            'alt': '#51cf66', 'sat': '#22b8cf', 'hdop': '#339af0',
+            'vdop': '#ff6b6b', 'track': '#74c0fc', 'dot': '#ff6b6b',
+        }
+
+        # ── Figure & grid ─────────────────────────────────────────────────
+        #   Row 0: status bar  (small)
+        #   Row 1: position | altitude | NED velocity
+        #   Row 2: position | sats     | NED velocity
+        #   Row 3: DOP      | signal   | signal
+        #   Row 4: controls / drift bar (small)
+        self.fig = plt.figure(figsize=(14, 9), facecolor=BG)
+        self.fig.canvas.manager.set_window_title('ZED-F9P GPS Monitor')
+
+        gs = GridSpec(5, 3, figure=self.fig,
+                      height_ratios=[0.6, 1, 1, 1, 0.35],
+                      hspace=0.35, wspace=0.30,
+                      left=0.06, right=0.97, top=0.97, bottom=0.04)
+
+        ax_defaults = dict(facecolor=PANEL_BG)
+
+        # Row 0 — status text across full width
+        self.ax_status = self.fig.add_subplot(gs[0, :], **ax_defaults)
+        self.ax_status.set_axis_off()
+        self.status_text = self.ax_status.text(
+            0.01, 0.5, '', transform=self.ax_status.transAxes,
+            verticalalignment='center', fontfamily='monospace',
+            fontsize=8.5, color=TXT_CLR, linespacing=1.5)
+
+        # Row 1-2 col 0 — Position Track (2 rows)
+        self.ax_map = self.fig.add_subplot(gs[1:3, 0], **ax_defaults)
+        self.ax_map.set_title('Position Track', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_map.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_map.grid(True, alpha=0.15, color=GRID_CLR)
+
+        # Row 1 col 1 — Altitude
+        self.ax_alt = self.fig.add_subplot(gs[1, 1], **ax_defaults)
+        self.ax_alt.set_title('Altitude (MSL)', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_alt.set_ylabel('m', fontsize=8, color=TXT_CLR)
+        self.ax_alt.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_alt.grid(True, alpha=0.15, color=GRID_CLR)
+
+        # Row 2 col 1 — Satellites
+        self.ax_sats = self.fig.add_subplot(gs[2, 1], **ax_defaults)
+        self.ax_sats.set_title('Satellites Used', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_sats.set_ylabel('Count', fontsize=8, color=TXT_CLR)
+        self.ax_sats.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_sats.grid(True, alpha=0.15, color=GRID_CLR)
+
+        # Row 1-2 col 2 — NED Velocity (2 rows)
+        self.ax_vel = self.fig.add_subplot(gs[1:3, 2], **ax_defaults)
+        self.ax_vel.set_title('NED Velocity', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_vel.set_ylabel('m/s', fontsize=8, color=TXT_CLR)
+        self.ax_vel.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_vel.grid(True, alpha=0.15, color=GRID_CLR)
+
+        # Row 3 col 0 — DOP
+        self.ax_dop = self.fig.add_subplot(gs[3, 0], **ax_defaults)
+        self.ax_dop.set_title('DOP', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_dop.set_ylabel('DOP', fontsize=8, color=TXT_CLR)
+        self.ax_dop.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_dop.grid(True, alpha=0.15, color=GRID_CLR)
+
+        # Row 3 col 1-2 — Signal Strength (spans 2 cols)
+        self.ax_signal = self.fig.add_subplot(gs[3, 1:], **ax_defaults)
+        self.ax_signal.set_title('Signal Strength', fontsize=10, color=TXT_CLR, pad=6)
+        self.ax_signal.set_ylabel('C/N0 (dBHz)', fontsize=8, color=TXT_CLR)
+        self.ax_signal.tick_params(colors=TXT_CLR, labelsize=8)
+        self.ax_signal.grid(True, axis='y', alpha=0.15, color=GRID_CLR)
+
+        # Row 4 — controls & drift
+        self.ax_ctrl = self.fig.add_subplot(gs[4, :], **ax_defaults)
+        self.ax_ctrl.set_axis_off()
+
+        ax_reset = self.fig.add_axes([0.06, 0.015, 0.07, 0.03])
+        self.reset_button = Button(ax_reset, 'Reset Data',
+                                   color=ACCENT, hovercolor='#1a4a7a')
+        self.reset_button.label.set_color(TXT_CLR)
+        self.reset_button.label.set_fontsize(8)
         self.reset_button.on_clicked(self._reset_data)
-        
-        self.drift_text = self.fig.text(0.40, 0.035, '', 
-                                       transform=self.fig.transFigure,
-                                       verticalalignment='center',
-                                       fontfamily='monospace',
-                                       fontsize=9,
-                                       color='red')
-        
+
+        ax_duration = self.fig.add_axes([0.21, 0.015, 0.06, 0.03])
+        self.duration_box = TextBox(ax_duration, 'Window (s): ',
+                                    initial='5.0', color=PANEL_BG,
+                                    hovercolor=ACCENT)
+        self.duration_box.label.set_color(TXT_CLR)
+        self.duration_box.label.set_fontsize(8)
+        self.duration_box.text_disp.set_color(TXT_CLR)
+        self.duration_box.on_submit(self._on_duration_change)
+
+        ax_origin = self.fig.add_axes([0.30, 0.015, 0.08, 0.03])
+        self.measure_button = Button(ax_origin, 'Reset Origin',
+                                     color=ACCENT, hovercolor='#1a4a7a')
+        self.measure_button.label.set_color(TXT_CLR)
+        self.measure_button.label.set_fontsize(8)
+        self.measure_button.on_clicked(self._reset_drift_origin)
+
+        self.drift_text = self.fig.text(
+            0.42, 0.028, '', transform=self.fig.transFigure,
+            verticalalignment='center', fontfamily='monospace',
+            fontsize=8.5, color='#ff922b')
+
         self.start_time = time.time()
+
+        # ── Create persistent line artists (avoids ax.clear() each frame) ─
+        C = self._colors
+
+        # Position track — needs full redraw (variable aspect), but cached arrays
+        self._map_line, = self.ax_map.plot([], [], color=C['track'], lw=1.2, alpha=0.7)
+        self._map_dot, = self.ax_map.plot([], [], 'o', color=C['dot'], markersize=7, zorder=5)
+        self._map_arrow = None
+        self.ax_map.set_xlabel('East (m)', fontsize=8, color=TXT_CLR)
+        self.ax_map.set_ylabel('North (m)', fontsize=8, color=TXT_CLR)
+
+        # Altitude
+        self._alt_line, = self.ax_alt.plot([], [], color=C['alt'], lw=1.5)
+        self._alt_fill = None
+
+        # Satellites
+        self._sat_line, = self.ax_sats.plot([], [], color=C['sat'], lw=1.5)
+        self._sat_fill = None
+        self.ax_sats.set_ylim(0, 40)
+
+        # NED Velocity
+        self._vel_n_line, = self.ax_vel.plot([], [], color=C['north'], lw=1.2, label='North')
+        self._vel_e_line, = self.ax_vel.plot([], [], color=C['east'],  lw=1.2, label='East')
+        self._vel_d_line, = self.ax_vel.plot([], [], color=C['down'],  lw=1.2, label='Down')
+        self._vel_zero = self.ax_vel.axhline(0, color=GRID_CLR, lw=0.5)
+        self.ax_vel.legend(loc='upper right', fontsize=7, framealpha=0.4)
+
+        # DOP
+        self._hdop_line, = self.ax_dop.plot([], [], color=C['hdop'], lw=1.5, label='HDOP')
+        self._vdop_line, = self.ax_dop.plot([], [], color=C['vdop'], lw=1.5, label='VDOP')
+        self.ax_dop.set_xlabel('Time (s)', fontsize=8, color=TXT_CLR)
+        self.ax_dop.legend(loc='upper right', fontsize=7, framealpha=0.4)
+        self.ax_dop.set_ylim(0, 5)
+
+        # Signal — must rebuild bars, but only every ~1 s
+        self._signal_frame = 0
         
     def _on_duration_change(self, text):
         """Handle window duration input change"""
@@ -568,8 +636,10 @@ class PlotUI:
         self.lat_history.clear()
         self.lon_history.clear()
         self.alt_history.clear()
-        self.speed_history.clear()
         self.heading_history.clear()
+        self.vel_n_history.clear()
+        self.vel_e_history.clear()
+        self.vel_d_history.clear()
         self.sat_history.clear()
         self.hdop_history.clear()
         self.vdop_history.clear()
@@ -582,165 +652,181 @@ class PlotUI:
         gps.drift_positions.clear()
         gps.drift_max = 0.0
         gps.drift_current = 0.0
+
+        # Reset persistent artists
+        self._map_line.set_data([], [])
+        self._map_dot.set_data([], [])
+        if self._map_arrow is not None:
+            self._map_arrow.remove()
+            self._map_arrow = None
+        self._alt_line.set_data([], [])
+        if self._alt_fill is not None:
+            self._alt_fill.remove()
+            self._alt_fill = None
+        self._sat_line.set_data([], [])
+        if self._sat_fill is not None:
+            self._sat_fill.remove()
+            self._sat_fill = None
+        self._vel_n_line.set_data([], [])
+        self._vel_e_line.set_data([], [])
+        self._vel_d_line.set_data([], [])
+        self._hdop_line.set_data([], [])
+        self._vdop_line.set_data([], [])
     
     def update(self, frame):
-        """Update plots"""
+        """Update plots — uses set_xdata/set_ydata for speed (no ax.clear)"""
         gps = self.gps_reader.gps_data
-        
-        # Update real-time drift measurement
+        C = self._colors
+        GRID_CLR = '#334466'
+
+        # ── Drift measurement ────────────────────────────────────────────
         if gps.drift_origin_set and len(gps.drift_positions) > 0:
-            # Calculate current drift from origin
             gps.drift_current = haversine_distance(
                 gps.drift_origin_lat, gps.drift_origin_lon,
-                gps.latitude, gps.longitude
-            )
-            
-            # Calculate max drift within the time window
+                gps.latitude, gps.longitude)
             now = time.time()
-            cutoff_time = now - gps.drift_window
-            
-            # Filter positions within window
-            window_positions = [(t, lat, lon) for t, lat, lon in gps.drift_positions if t >= cutoff_time]
-            
-            if window_positions:
-                # Calculate max drift in window
-                drifts = [haversine_distance(gps.drift_origin_lat, gps.drift_origin_lon, lat, lon) 
-                         for _, lat, lon in window_positions]
-                gps.drift_max = max(drifts) if drifts else 0.0
-                
-                window_duration = now - window_positions[0][0]
+            cutoff = now - gps.drift_window
+            window = [(t, la, lo) for t, la, lo in gps.drift_positions if t >= cutoff]
+            if window:
+                drifts = [haversine_distance(gps.drift_origin_lat, gps.drift_origin_lon, la, lo)
+                          for _, la, lo in window]
+                gps.drift_max = max(drifts)
+                dur = now - window[0][0]
                 self.drift_text.set_text(
-                    f'Drift (real-time) | Current: {gps.drift_current*100:.1f} cm | '
-                    f'Max in {window_duration:.1f}s window: {gps.drift_max*100:.1f} cm'
-                )
+                    f'Drift | Now: {gps.drift_current*100:.1f} cm | '
+                    f'Max ({dur:.0f}s): {gps.drift_max*100:.1f} cm')
             else:
                 self.drift_text.set_text(
-                    f'Drift (real-time) | Current: {gps.drift_current*100:.1f} cm'
-                )
+                    f'Drift | Now: {gps.drift_current*100:.1f} cm')
         else:
-            self.drift_text.set_text('Waiting for GPS fix...')
-        
-        # Add to history
-        current_time = time.time() - self.start_time
-        self.time_history.append(current_time)
-        self.lat_history.append(gps.latitude)
-        self.lon_history.append(gps.longitude)
-        self.alt_history.append(gps.altitude_msl)
-        self.speed_history.append(gps.ground_speed)
-        self.heading_history.append(gps.heading)
-        self.sat_history.append(gps.num_satellites)
-        self.hdop_history.append(gps.hdop)
-        self.vdop_history.append(gps.vdop)
-        
-        # Update position map
-        self.ax_map.clear()
-        self.ax_map.set_title('Position Track')
-        self.ax_map.set_xlabel('Longitude (°)')
-        self.ax_map.set_ylabel('Latitude (°)')
-        self.ax_map.grid(True, alpha=0.3)
+            self.drift_text.set_text('Waiting for fix…')
+
+        # ── Append history ───────────────────────────────────────────────
+        if gps.last_update_time > self._last_append_time:
+            self._last_append_time = gps.last_update_time
+            t = time.time() - self.start_time
+            self.time_history.append(t)
+            self.lat_history.append(gps.latitude)
+            self.lon_history.append(gps.longitude)
+            self.alt_history.append(gps.altitude_msl)
+            self.heading_history.append(gps.heading)
+            self.vel_n_history.append(gps.vel_north)
+            self.vel_e_history.append(gps.vel_east)
+            self.vel_d_history.append(gps.vel_down)
+            self.sat_history.append(gps.num_satellites)
+            self.hdop_history.append(gps.hdop)
+            self.vdop_history.append(gps.vdop)
+
+        th = list(self.time_history)
+
+        # ── Position Track (must redraw for equal aspect) ────────────────
         if len(self.lat_history) > 1:
-            self.ax_map.plot(self.lon_history, self.lat_history, 'b-', linewidth=1, alpha=0.6)
-            self.ax_map.plot(self.lon_history[-1], self.lat_history[-1], 'ro', markersize=8)
-            if gps.ground_speed > 0.5:
-                dx = 0.00001 * np.sin(np.radians(gps.heading))
-                dy = 0.00001 * np.cos(np.radians(gps.heading))
-                self.ax_map.arrow(self.lon_history[-1], self.lat_history[-1], 
-                                dx, dy, head_width=0.00001, head_length=0.00001, fc='r', ec='r')
-        self.ax_map.set_aspect('equal', adjustable='box')
-        
-        # Update altitude
-        self.ax_alt.clear()
-        self.ax_alt.set_title('Altitude')
-        self.ax_alt.set_ylabel('Altitude (m)')
-        self.ax_alt.grid(True, alpha=0.3)
-        if len(self.time_history) > 0:
-            self.ax_alt.plot(self.time_history, self.alt_history, 'g-', linewidth=2)
-        
-        # Update speed
-        self.ax_speed.clear()
-        self.ax_speed.set_title('Ground Speed')
-        self.ax_speed.set_ylabel('Speed (m/s)')
-        self.ax_speed.grid(True, alpha=0.3)
-        if len(self.time_history) > 0:
-            self.ax_speed.plot(self.time_history, self.speed_history, 'r-', linewidth=2)
-        
-        # Update heading
-        self.ax_heading.clear()
-        self.ax_heading.set_title('Heading')
-        self.ax_heading.set_ylabel('Heading (°)')
-        self.ax_heading.set_ylim(0, 360)
-        self.ax_heading.grid(True, alpha=0.3)
-        if len(self.time_history) > 0:
-            self.ax_heading.plot(self.time_history, self.heading_history, 'm-', linewidth=2)
-        
-        # Update satellites
-        self.ax_sats.clear()
-        self.ax_sats.set_title('Satellites')
-        self.ax_sats.set_ylabel('Count')
-        self.ax_sats.grid(True, alpha=0.3)
-        if len(self.time_history) > 0:
-            self.ax_sats.plot(self.time_history, self.sat_history, 'c-', linewidth=2)
-            self.ax_sats.fill_between(self.time_history, 0, self.sat_history, alpha=0.3)
-        
-        # Update DOP
-        self.ax_dop.clear()
-        self.ax_dop.set_title('DOP (Dilution of Precision)')
-        self.ax_dop.set_xlabel('Time (s)')
-        self.ax_dop.set_ylabel('DOP')
-        self.ax_dop.grid(True, alpha=0.3)
-        if len(self.time_history) > 0:
-            self.ax_dop.plot(self.time_history, self.hdop_history, 'b-', linewidth=2, label='HDOP')
-            self.ax_dop.plot(self.time_history, self.vdop_history, 'r-', linewidth=2, label='VDOP')
-            self.ax_dop.legend(loc='upper right')
-        
-        # Update signal strength
-        self.ax_signal.clear()
-        self.ax_signal.set_title('Satellite Signal Strength')
-        self.ax_signal.set_xlabel('Satellite')
-        self.ax_signal.set_ylabel('C/N0 (dBHz)')
-        self.ax_signal.grid(True, alpha=0.3)
-        
-        if gps.satellites:
-            gnss_names = {0: "GPS", 1: "SBAS", 2: "Galileo", 3: "BeiDou", 5: "QZSS", 6: "GLONASS"}
-            gnss_colors = {0: "blue", 1: "orange", 2: "green", 3: "red", 5: "purple", 6: "cyan"}
-            
-            sorted_sats = sorted(gps.satellites, key=lambda s: (s['gnss'], -s['cno']))
-            
-            labels, values, colors = [], [], []
-            for sat in sorted_sats[:20]:
-                gnss_name = gnss_names.get(sat['gnss'], f"G{sat['gnss']}")
-                labels.append(f"{gnss_name[:3]}\n{sat['svid']}")
-                values.append(sat['cno'])
-                color = gnss_colors.get(sat['gnss'], 'gray')
-                colors.append(color if sat['used'] else 'lightgray')
-            
-            if labels:
-                self.ax_signal.bar(range(len(labels)), values, color=colors, alpha=0.8)
-                self.ax_signal.set_xticks(range(len(labels)))
-                self.ax_signal.set_xticklabels(labels, fontsize=7)
-                self.ax_signal.axhline(y=30, color='orange', linestyle='--', alpha=0.5, label='Good (30 dBHz)')
-                self.ax_signal.axhline(y=40, color='green', linestyle='--', alpha=0.5, label='Excellent (40 dBHz)')
-                self.ax_signal.legend(loc='upper right', fontsize=8)
-        
-        # Update status
-        fix_types = ["No Fix", "Dead Reckoning", "2D Fix", "3D Fix", "GNSS+DR", "Time Only"]
-        fix_type_str = fix_types[gps.fix_type] if gps.fix_type < len(fix_types) else "Unknown"
-        
-        rtk_status = ""
-        if gps.carrier_solution == 1:
-            rtk_status = " | RTK Float"
-        elif gps.carrier_solution == 2:
-            rtk_status = " | RTK Fixed"
-        
-        time_str = ""
+            lats = list(self.lat_history)
+            lons = list(self.lon_history)
+            lat0, lon0 = lats[0], lons[0]
+            cos_lat = np.cos(np.radians(lat0))
+            xs = [(lo - lon0) * 111320 * cos_lat for lo in lons]
+            ys = [(la - lat0) * 110540 for la in lats]
+            self._map_line.set_data(xs, ys)
+            self._map_dot.set_data([xs[-1]], [ys[-1]])
+            # Heading arrow
+            if self._map_arrow is not None:
+                self._map_arrow.remove()
+                self._map_arrow = None
+            h_speed = (gps.vel_north**2 + gps.vel_east**2)**0.5
+            if h_speed > 0.5:
+                rng = max(max(xs) - min(xs), max(ys) - min(ys), 1.0) * 0.08
+                dx = rng * np.sin(np.radians(gps.heading))
+                dy = rng * np.cos(np.radians(gps.heading))
+                self._map_arrow = self.ax_map.annotate(
+                    '', xy=(xs[-1]+dx, ys[-1]+dy), xytext=(xs[-1], ys[-1]),
+                    arrowprops=dict(arrowstyle='->', color=C['dot'], lw=1.5))
+            self.ax_map.relim()
+            self.ax_map.autoscale_view()
+            self.ax_map.set_aspect('equal', adjustable='datalim')
+
+        # ── Altitude (in-place update) ───────────────────────────────────
+        if th:
+            alt_vals = list(self.alt_history)
+            self._alt_line.set_data(th, alt_vals)
+            # Rebuild fill sparingly
+            if self._alt_fill is not None:
+                self._alt_fill.remove()
+            self._alt_fill = self.ax_alt.fill_between(th, alt_vals, alpha=0.08, color=C['alt'])
+            self.ax_alt.relim()
+            self.ax_alt.autoscale_view()
+
+        # ── Satellites (in-place update) ─────────────────────────────────
+        if th:
+            sat_vals = list(self.sat_history)
+            self._sat_line.set_data(th, sat_vals)
+            if self._sat_fill is not None:
+                self._sat_fill.remove()
+            self._sat_fill = self.ax_sats.fill_between(th, 0, sat_vals, alpha=0.12, color=C['sat'])
+            self.ax_sats.set_xlim(th[0], th[-1] if th[-1] > th[0] else th[0] + 1)
+
+        # ── NED Velocity (in-place update) ───────────────────────────────
+        if th:
+            self._vel_n_line.set_data(th, list(self.vel_n_history))
+            self._vel_e_line.set_data(th, list(self.vel_e_history))
+            self._vel_d_line.set_data(th, list(self.vel_d_history))
+            self.ax_vel.relim()
+            self.ax_vel.autoscale_view()
+
+        # ── DOP (in-place update) ────────────────────────────────────────
+        if th:
+            self._hdop_line.set_data(th, list(self.hdop_history))
+            self._vdop_line.set_data(th, list(self.vdop_history))
+            self.ax_dop.set_xlim(th[0], th[-1] if th[-1] > th[0] else th[0] + 1)
+            hdop_max = max(list(self.hdop_history) + list(self.vdop_history))
+            self.ax_dop.set_ylim(0, max(5, hdop_max * 1.2))
+
+        # ── Signal Strength (rebuild bars every 10 frames ≈ 1 s) ────────
+        self._signal_frame += 1
+        if self._signal_frame >= 10:
+            self._signal_frame = 0
+            ax = self.ax_signal
+            # Remove old bars but keep axis styling
+            for container in ax.containers[:]:
+                container.remove()
+            for line in ax.get_lines():
+                line.remove()
+            if gps.satellites:
+                gnss_clr = {0: '#339af0', 1: '#ffa94d', 2: '#51cf66',
+                            3: '#ff6b6b', 5: '#cc5de8', 6: '#22b8cf'}
+                gnss_nm  = {0: 'GPS', 1: 'SBA', 2: 'Gal', 3: 'BDS', 5: 'QZS', 6: 'GLO'}
+                sorted_s = sorted(gps.satellites, key=lambda s: (s['gnss'], -s['cno']))
+                labels, vals, clrs = [], [], []
+                for s in sorted_s[:24]:
+                    labels.append(f"{gnss_nm.get(s['gnss'], '?')}\n{s['svid']}")
+                    vals.append(s['cno'])
+                    c = gnss_clr.get(s['gnss'], '#888888')
+                    clrs.append(c if s['used'] else '#333344')
+                if labels:
+                    ax.bar(range(len(labels)), vals, color=clrs, alpha=0.85, width=0.7)
+                    ax.set_xticks(range(len(labels)))
+                    ax.set_xticklabels(labels, fontsize=6, color='#e0e0e0')
+                    ax.axhline(30, color='#ffa94d', ls='--', lw=0.7, alpha=0.5)
+                    ax.axhline(40, color='#51cf66', ls='--', lw=0.7, alpha=0.5)
+                    ax.set_ylim(0, max(50, max(vals) + 5))
+
+        # ── Status text ──────────────────────────────────────────────────
+        fix_names = ['No Fix', 'Dead Reckoning', '2D Fix', '3D Fix', 'GNSS+DR', 'Time Only']
+        fix_str = fix_names[gps.fix_type] if gps.fix_type < len(fix_names) else '?'
+        rtk = {1: ' RTK-Float', 2: ' RTK-Fixed'}.get(gps.carrier_solution, '')
+        utc = ''
         if gps.time_valid and gps.time_utc:
-            time_str = f"UTC: {gps.time_utc.strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        status = f"""Fix: {fix_type_str}{rtk_status} | Sats: {gps.num_satellites}/{gps.num_satellites_tracked} (used/tracked) | Rate: {gps.update_rate:.1f} Hz
-Position: {gps.latitude:.8f}°, {gps.longitude:.8f}° | Alt: {gps.altitude_msl:.2f} m | Acc: ±{gps.h_acc:.2f} m
-Speed: {gps.ground_speed:.2f} m/s ({gps.ground_speed*3.6:.2f} km/h) | Heading: {gps.heading:.1f}°
-PDOP: {gps.pdop:.2f} | HDOP: {gps.hdop:.2f} | VDOP: {gps.vdop:.2f} | {time_str}"""
-        
+            utc = gps.time_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+        status = (
+            f"Fix: {fix_str}{rtk}  |  Sats: {gps.num_satellites}/{gps.num_satellites_tracked}  "
+            f"|  Rate: {gps.update_rate:.1f} Hz  |  {utc}\n"
+            f"Pos: {gps.latitude:.8f}°, {gps.longitude:.8f}°  |  "
+            f"Alt: {gps.altitude_msl:.2f} m  |  hAcc: ±{gps.h_acc:.2f} m  vAcc: ±{gps.v_acc:.2f} m\n"
+            f"Vel NED: [{gps.vel_north:+.3f}, {gps.vel_east:+.3f}, {gps.vel_down:+.3f}] m/s  "
+            f"|  sAcc: ±{gps.speed_acc:.2f} m/s  |  "
+            f"Hdg: {gps.heading:.1f}° ±{gps.heading_acc:.1f}°  |  "
+            f"PDOP: {gps.pdop:.2f}  HDOP: {gps.hdop:.2f}  VDOP: {gps.vdop:.2f}"
+        )
         self.status_text.set_text(status)
         
     def start(self):
@@ -748,7 +834,7 @@ PDOP: {gps.pdop:.2f} | HDOP: {gps.hdop:.2f} | VDOP: {gps.vdop:.2f} | {time_str}"
         ani = animation.FuncAnimation(
             self.fig, 
             self.update, 
-            interval=500,
+            interval=100,  # 10 Hz to match GPS update rate
             blit=False,
             cache_frame_data=False
         )
@@ -765,7 +851,7 @@ def main():
     
     if not reader.connect():
         print("Failed to connect to GPS")
-        print("\nTip: Make sure ZED-F9P is connected and run 'python3 gps_config.py' if needed")
+        print("\nTip: Make sure ZED-F9P is connected and run 'python3 gps_config_f9p.py' if needed")
         return 1
     
     if not reader.start():
