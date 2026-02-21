@@ -59,6 +59,7 @@ static double g_altitude = 0;
 static double g_set_point_yaw = 0;
 
 static void angular_state_update(uint8_t *data, size_t size) {
+	if (size > sizeof(angle3d_t)) size = sizeof(angle3d_t);
 	memcpy(&g_angular_state, data, size);
 }
 
@@ -70,11 +71,13 @@ static void angular_target_update(uint8_t *data, size_t size) {
 }
 
 static void altitude_control_update(uint8_t *data, size_t size) {
-	g_altitude = *(double*)&data[0];
-	g_take_off_speed = *(double*)&data[8];
+	if (size < 16) return;
+	memcpy(&g_altitude, &data[0], sizeof(double));
+	memcpy(&g_take_off_speed, &data[8], sizeof(double));
 }
 
 static void move_in_control_update(uint8_t *data, size_t size) {
+	if (size > sizeof(rc_att_ctl_t)) size = sizeof(rc_att_ctl_t);
 	memcpy(&g_rc_att_ctl, data, size);
 }
 

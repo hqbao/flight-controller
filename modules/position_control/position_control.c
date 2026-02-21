@@ -13,9 +13,8 @@
 /*
  * NOTE: SI Unit Migration
  * The scale of input error has changed from ~100 units/m to 1.0 unit/m.
- * To maintain the same control response, the P-gain should theoretically be increased by ~10x.
- * Legacy Gain: 50.0  -> Theoretical SI Gain: 500.0
- * Current value set to 50.0 for manual tuning.
+ * P-gain was increased to compensate for the smaller error magnitude.
+ * Legacy Gain: 50.0  -> Current SI Gain: 100.0
  */
 #define POS_CTL_XY_P 100.0
 #define POS_CTL_Z_P 2000.0
@@ -68,27 +67,30 @@ static double g_pos_ctl_alt = 0;
 
 static vector3d_t g_output_smooth = {0, 0, 0};
 
-static int g_moving_state_roll = 0; // 0: Released, 1: Just control
+static int g_moving_state_roll = 0;  // 0: Released, CTL_FREQ: Active stick input
 static int g_moving_state_pitch = 0;
-static int g_moving_state_alt = 0;
+static int g_moving_state_alt = 0;   // Counts down from CTL_FREQ to 0 after release
 
 static double g_landing_speed = MIN_LANDING_SPEED;
 
 static void move_in_control_update(uint8_t *data, size_t size) {
+	if (size < sizeof(rc_att_ctl_t)) return;
 	memcpy(&g_rc_att_ctl, data, sizeof(rc_att_ctl_t));
 }
 
 static void position_target_update(uint8_t *data, size_t size) {
+	if (size < sizeof(vector3d_t)) return;
 	memcpy(&g_pos_target, data, sizeof(vector3d_t));
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	
-	optflow_data_t *msg = (optflow_data_t*)data;
+	optflow_data_t msg;
+	memcpy(&msg, data, sizeof(optflow_data_t));
 	
-	if (msg->direction == 0) { // Downward
-		g_downward_range = msg->z;
+	if (msg.direction == OPTFLOW_DOWNWARD) {
+		g_downward_range = msg.z;
 		if (g_state == LANDING) {
 			if (g_downward_range < LANDING_RANGE_THRESHOLD) {
 				if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down
@@ -122,9 +124,10 @@ static void publish_angular_target(void) {
 static void position_update(uint8_t *data, size_t size) {
 	if (size < sizeof(position_state_t)) return;
 
-	position_state_t *state = (position_state_t *)data;
-	g_pos_final = state->position;
-	g_veloc_final = state->velocity;
+	position_state_t state;
+	memcpy(&state, data, sizeof(position_state_t));
+	g_pos_final = state.position;
+	g_veloc_final = state.velocity;
 	
 	if (g_rc_state_ctl.mode == 2) {
 		reset_pid();
@@ -224,6 +227,7 @@ static void manual_control_update(uint8_t *data, size_t size) {
 
 static void state_control_update(uint8_t *data, size_t size) {
 	rc_state_ctl_t rc_state_ctl = {0};
+	if (size > sizeof(rc_state_ctl_t)) size = sizeof(rc_state_ctl_t);
 	memcpy(&rc_state_ctl, data, size);
 	if (rc_state_ctl.mode == 2 && g_rc_state_ctl.mode < 2) {
 		if (g_state == FLYING) {

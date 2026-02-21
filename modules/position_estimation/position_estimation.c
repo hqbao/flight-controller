@@ -3,7 +3,7 @@
  * 
  * This module estimates the drone's 3D position (X, Y, Z) by fusing:
  * - IMU linear acceleration (Body-Frame with gravity removed)
- * - Optical flow for horizontal position (with gyro de-rotation)
+ * - Optical flow for horizontal velocity
  * - Barometer/Laser for altitude
  * 
  * ALGORITHM:
@@ -37,11 +37,10 @@
  * 1: Mode 1 - Send Position & Velocity (6 floats, 24 bytes)
  * 2: Mode 2 - Send Optical Flow & Altitude (6 floats, 24 bytes)
  */
-#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 1
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
 
 /* SI Unit Constants */
 #define GRAVITY_MSS 9.80665
-#define IMU_RAW_G 16384.0
 
 static double g_air_pressure_alt_raw = 0;
 static double g_air_pressure_alt = 0;
@@ -90,60 +89,57 @@ static alt_source_t g_alt_source = ALT_SOURCE_LASER;
 
 static void gps_position_update(uint8_t *data, size_t size) {
     if (size < sizeof(gps_position_t)) return;
-    gps_position_t *pos = (gps_position_t*)data;
-    // Store for debugging/fusion
-    memcpy(&g_gps_raw_pos, pos, sizeof(gps_position_t));
+    memcpy(&g_gps_raw_pos, data, sizeof(gps_position_t));
 }
 
 static void gps_velocity_update(uint8_t *data, size_t size) {
     if (size < sizeof(gps_velocity_t)) return;
-    gps_velocity_t *vel = (gps_velocity_t*)data;
-    // Store for debugging/fusion
-    memcpy(&g_gps_raw_vel, vel, sizeof(gps_velocity_t));
+    memcpy(&g_gps_raw_vel, data, sizeof(gps_velocity_t));
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
-	optflow_data_t *msg = (optflow_data_t*)data;
+	optflow_data_t msg;
+	memcpy(&msg, data, sizeof(optflow_data_t));
 
 	// Use generic 25Hz assumption (0.04s) as per legacy code
     double dt_flow = 0.04; 
 
 	// 1. Update Altitude (Convert mm to Meters)
-	if (msg->z > 0) g_range_finder_alt = msg->z / 1000.0;
+	if (msg.z > 0) g_range_finder_alt = msg.z / 1000.0;
 
 	/**
 	 * 2. Calculate SI Velocity (m/s) 
 	 * 
 	 * CRITICAL NOTE ON UNITS:
-	 * msg->dx/dy are in Radians. 
+	 * msg.dx/dy are in Radians. 
 	 * Velocity = AngularRate * Height = (dx/dt) * Height
 	 * 
 	 * SIMPLIFIED MODEL:
 	 * 1. Gyro De-Rotation is disabled (assumes small angles).
 	 * 2. Latency Compensation is disabled (assumes low speed).
-	 * 3. Scaling is 1:1 (Radians -> m/s). Do NOT divide by 100.
+	 * 3. Empirical gain of 5.0 applied to angular displacement.
 	 */
 	
-	double vel_x = msg->dx * 5.0;
-	double vel_y = msg->dy * 5.0;
+	double vel_x = msg.dx * 5.0;
+	double vel_y = msg.dy * 5.0;
 
     double flow_vel_x = 0;
     double flow_vel_y = 0;
 
 	// Apply direction and copy to final flow velocity
-	if (msg->direction == OPTFLOW_DOWNWARD) {
+	if (msg.direction == OPTFLOW_DOWNWARD) {
 		flow_vel_x = vel_x;
 		flow_vel_y = vel_y;
 		// Store raw values
-		g_optflow_down_dx = (float)msg->dx;
-		g_optflow_down_dy = (float)msg->dy;
-	} else if (msg->direction == OPTFLOW_UPWARD) {
+		g_optflow_down_dx = (float)msg.dx;
+		g_optflow_down_dy = (float)msg.dy;
+	} else if (msg.direction == OPTFLOW_UPWARD) {
 		flow_vel_x = vel_x;
 		flow_vel_y = -vel_y;
 		// Store raw values
-		g_optflow_up_dx = (float)msg->dx;
-		g_optflow_up_dy = (float)msg->dy;
+		g_optflow_up_dx = (float)msg.dx;
+		g_optflow_up_dy = (float)msg.dy;
 	}
 
     fusion6_update(&g_fusion_x, flow_vel_x, dt_flow);
@@ -164,7 +160,8 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 static void air_pressure_update(uint8_t *data, size_t size) {
 	if (size < sizeof(double)) return;
 	// Incoming is scaled by 1000 (mm). Convert to Meters.
-	g_air_pressure_alt_raw = (*(double*)data) / 1000.0;
+	memcpy(&g_air_pressure_alt_raw, data, sizeof(double));
+	g_air_pressure_alt_raw /= 1000.0;
 	
 	if (fabs(g_linear_accel.z) > ACCEL_Z_THRESHOLD) {
 		g_air_pressure_alt += BARO_ALPHA_HIGH_ACCEL * (g_air_pressure_alt_raw - g_air_pressure_alt);
@@ -217,13 +214,14 @@ static void check_altitude_source(uint8_t *data, size_t size) {
  */
 static void linear_accel_update(uint8_t *data, size_t size) {
 	if (size < sizeof(linear_accel_data_t)) return;
-	linear_accel_data_t *la = (linear_accel_data_t*)data;
+	linear_accel_data_t la;
+	memcpy(&la, data, sizeof(linear_accel_data_t));
 	
 	// Convert to SI Units (m/s^2)
-	// la->body is normalized (1.0 = 1G)
-	g_linear_accel.x = -la->body.y * GRAVITY_MSS;
-	g_linear_accel.y = -la->body.x * GRAVITY_MSS;
-	g_linear_accel.z = la->earth.z * GRAVITY_MSS;
+	// la.body is normalized (1.0 = 1G)
+	g_linear_accel.x = -la.body.y * GRAVITY_MSS;
+	g_linear_accel.y = -la.body.x * GRAVITY_MSS;
+	g_linear_accel.z = la.earth.z * GRAVITY_MSS;
 
     // Predict state based on acceleration (500Hz -> 0.002s)
 	fusion6_predict(&g_fusion_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
@@ -259,7 +257,7 @@ static void loop_logger(uint8_t *data, size_t size) {
     val[4] = g_fusion_y.veloc_final;
     val[5] = g_fusion_z.veloc_final;
 #elif ENABLE_POSITION_ESTIMATION_MONITOR_LOG == 2
-    // Mode 2: Optical Flow & Altitude (amplified 1000x for visibility)
+    // Mode 2: Optical Flow & Altitude (raw values)
     val[0] = g_optflow_down_dx;
     val[1] = g_optflow_down_dy;
     val[2] = g_optflow_up_dx;

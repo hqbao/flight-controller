@@ -18,7 +18,9 @@ static float g_gyro_prev_y = 0;
 static int g_freq_count_y = 0;
 
 static void gyro_update(uint8_t *data, size_t size) {
-	float *g = (float*)data;
+	if (size < 2 * sizeof(float)) return;
+	float g[2];
+	memcpy(g, data, 2 * sizeof(float));
 	g_gyro_sum_x += g[0];
 	g_gyro_sum_y += g[1];
 }

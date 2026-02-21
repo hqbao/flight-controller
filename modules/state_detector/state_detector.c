@@ -7,19 +7,19 @@
 #include <macro.h>
 #include <messages.h>
 
-#define DISARM_RANGE_WHEN_LANDING 10
-#define DISARM_TIME_WHEN_LANDING 50
-#define DISARM_IF_EXCEEDED_ANGLE_RAGE 60
-#define ALLOWED_LANDING_RANGE 500
-#define TOOK_OFF_RANGE 100
+/* Thresholds (units: mm for range, degrees for angles, loop iterations for time) */
+#define DISARM_RANGE_WHEN_LANDING 10     // Range (mm) below which drone is considered landed
+#define DISARM_TIME_WHEN_LANDING 50      // Iterations at 100Hz (~500ms) to confirm landing
+#define DISARM_IF_EXCEEDED_ANGLE_RANGE 60 // Max tilt angle (deg) before emergency disarm
+#define ALLOWED_LANDING_RANGE 500        // Min range (mm) to allow landing mode
+#define TOOK_OFF_RANGE 100               // Range (mm) to confirm takeoff complete
 
+/* RC Input Constants */
 #define RC_STATE_DISARMED 0
 #define RC_STATE_ARMED 1
-#define STICK_MIN -90
-#define STICK_MAX 90
-#define TAKEOFF_THROTTLE 5
-#define OPTFLOW_TYPE_DOWNWARD 0
-#define OPTFLOW_RANGE_OFFSET 12
+#define STICK_MIN -90                    // Min stick position (degrees)
+#define STICK_MAX 90                     // Max stick position (degrees)
+#define TAKEOFF_THROTTLE 5               // Throttle threshold to start takeoff (degrees)
 
 static uint8_t g_module_initialized[MODULE_ID_MAX] = {0};
 
@@ -34,19 +34,22 @@ static double g_air_pressure = 0;
 static double g_downward_range = 0;
 
 static void state_control_update(uint8_t *data, size_t size) {
+	if (size > sizeof(rc_state_ctl_t)) size = sizeof(rc_state_ctl_t);
 	memcpy(&g_rc_state_ctl, data, size);
 }
 
 static void move_in_control_update(uint8_t *data, size_t size) {
+	if (size > sizeof(rc_att_ctl_t)) size = sizeof(rc_att_ctl_t);
 	memcpy(&g_rc_att_ctl, data, size);
 }
 
 static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	
-	optflow_data_t *msg = (optflow_data_t*)data;
-	if (msg->direction == OPTFLOW_TYPE_DOWNWARD) {
-		g_downward_range = msg->z;
+	optflow_data_t msg;
+	memcpy(&msg, data, sizeof(optflow_data_t));
+	if (msg.direction == OPTFLOW_DOWNWARD) {
+		g_downward_range = msg.z;
 	}
 }
 
@@ -107,8 +110,8 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	}
 
 	if (g_state == TAKING_OFF || g_state == FLYING) {
-		if (fabs(g_angular_state.roll) > DISARM_IF_EXCEEDED_ANGLE_RAGE
-				|| fabs(g_angular_state.pitch) > DISARM_IF_EXCEEDED_ANGLE_RAGE) {
+		if (fabs(g_angular_state.roll) > DISARM_IF_EXCEEDED_ANGLE_RANGE
+				|| fabs(g_angular_state.pitch) > DISARM_IF_EXCEEDED_ANGLE_RANGE) {
 			g_state = DISARMED;
 		}
 	}
@@ -144,14 +147,16 @@ static void module_initialized_update(uint8_t *data, size_t size) {
 		return;
 	}
 	
-	module_initialized_t *module_initialized = (module_initialized_t *)data;
+	module_initialized_t module_initialized;
+	memcpy(&module_initialized, data, sizeof(module_initialized_t));
 	
-	if (module_initialized->id < MODULE_ID_MAX) {
-		g_module_initialized[module_initialized->id] = module_initialized->initialized;
+	if (module_initialized.id < MODULE_ID_MAX) {
+		g_module_initialized[module_initialized.id] = module_initialized.initialized;
 	}
 }
 
 static void angular_state_update(uint8_t *data, size_t size) {
+	if (size > sizeof(angle3d_t)) size = sizeof(angle3d_t);
 	memcpy(&g_angular_state, data, size);
 }
 

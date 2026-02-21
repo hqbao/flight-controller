@@ -76,12 +76,16 @@ static void calculate_results(noise_stats_t *stats) {
 // Called at high frequency (1kHz)
 static void on_gyro_update(uint8_t *data, size_t size) {
     if (size < 3 * sizeof(float)) return;
-    update_stats(&g_gyro_stats, (float*)data);
+    float vals[3];
+    memcpy(vals, data, 3 * sizeof(float));
+    update_stats(&g_gyro_stats, vals);
 }
 
 static void on_accel_update(uint8_t *data, size_t size) {
     if (size < 3 * sizeof(float)) return;
-    update_stats(&g_accel_stats, (float*)data);
+    float vals[3];
+    memcpy(vals, data, 3 * sizeof(float));
+    update_stats(&g_accel_stats, vals);
 }
 
 // Called at low frequency (5Hz) to report stats

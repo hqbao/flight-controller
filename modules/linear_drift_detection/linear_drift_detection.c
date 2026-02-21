@@ -2,18 +2,7 @@
 #include <pubsub.h>
 #include <vector3d.h>
 #include <string.h>
-
-typedef enum {
-	OPTFLOW_DOWNWARD = 0,
-	OPTFLOW_UPWARD = 1,
-} optflow_direction_t;
-
-typedef struct {
-    double dx;
-    double dy;
-    double z;
-    optflow_direction_t direction; 
-} optflow_data_t;
+#include <messages.h>
 
 static double g_integrated_flow_x = 0;
 static double g_integrated_flow_y = 0;
@@ -25,12 +14,13 @@ static vector3d_t g_drift_msg;
 
 static void on_optflow_update(uint8_t *data, size_t size) {
     if (size < sizeof(optflow_data_t)) return;
-    optflow_data_t *msg = (optflow_data_t*)data;
+    optflow_data_t msg;
+    memcpy(&msg, data, sizeof(optflow_data_t));
 
-    double flow_dx = msg->dx;
-    double flow_dy = msg->dy;
+    double flow_dx = msg.dx;
+    double flow_dy = msg.dy;
 
-    if (msg->direction == OPTFLOW_UPWARD) {
+    if (msg.direction == OPTFLOW_UPWARD) {
         flow_dy = -flow_dy;
     }
 
