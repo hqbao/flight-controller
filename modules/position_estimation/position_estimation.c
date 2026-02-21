@@ -37,7 +37,7 @@
  * 1: Mode 1 - Send Position & Velocity (6 floats, 24 bytes)
  * 2: Mode 2 - Send Optical Flow & Altitude (6 floats, 24 bytes)
  */
-#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 0
+#define ENABLE_POSITION_ESTIMATION_MONITOR_LOG 1
 
 /* SI Unit Constants */
 #define GRAVITY_MSS 9.80665
@@ -265,7 +265,7 @@ static void loop_logger(uint8_t *data, size_t size) {
     val[2] = g_optflow_up_dx;
     val[3] = g_optflow_up_dy;
     val[4] = (float)g_range_finder_alt;
-    val[5] = (float)g_alt;
+    val[5] = (float)g_air_pressure_alt_raw;
 #endif
 
 	memcpy(g_monitor_msg, val, 24);

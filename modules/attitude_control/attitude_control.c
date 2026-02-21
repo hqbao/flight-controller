@@ -20,21 +20,21 @@
 
 /* PID Gains */
 // Roll
-#define ATT_ROLL_P 8.0
+#define ATT_ROLL_P 6.0
 #define ATT_ROLL_I 1.0
-#define ATT_ROLL_D 4.0
+#define ATT_ROLL_D 3.0
 #define ATT_ROLL_I_LIMIT 5.0
 
 // Pitch
-#define ATT_PITCH_P 8.0
+#define ATT_PITCH_P 6.0
 #define ATT_PITCH_I 1.0
-#define ATT_PITCH_D 4.0
+#define ATT_PITCH_D 3.0
 #define ATT_PITCH_I_LIMIT 5.0
 
 // Yaw
-#define ATT_YAW_P 40.0
+#define ATT_YAW_P 20.0
 #define ATT_YAW_I 1.0
-#define ATT_YAW_D 20.0
+#define ATT_YAW_D 10.0
 #define ATT_YAW_I_LIMIT 5.0
 
 // Smoothing
