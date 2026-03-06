@@ -62,7 +62,6 @@ flight-controller/
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── linear_drift_detection/    #   Sustained linear drift detector
 │   ├── oscillation_detection/     #   High-frequency oscillation detector
-│   ├── noise_meas/                #   Sensor noise measurement & analytics
 │   ├── logger/                    #   UART telemetry framing
 │   └── local_storage/             #   Persistent configuration storage
 │
@@ -78,10 +77,7 @@ flight-controller/
 │   ├── position_estimation_2d_and_z.py # 2D + altitude chart
 │   ├── position_estimation_chart_xy.py # XY position time-series
 │   ├── position_estimation_chart_z.py  # Z position time-series
-│   ├── position_estimation_optflow.py  # Optical flow position view
-│   ├── noise_analytics_view.py    #   Sensor noise analytics
-│   ├── process_noise_stream.py    #   Process noise data stream
-│   └── read_noise_stream.py       #   Read noise data stream
+│   └── position_estimation_optflow.py  # Optical flow position view
 │
 └── simulation/                    # Software-in-the-loop (SITL)
     ├── install.sh                 #   Install SITL dependencies
@@ -215,7 +211,6 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_view.py` | 3D position & velocity vectors |
 | `position_estimation_2d.py` | 2D XY position chart |
 | `position_estimation_chart_z.py` | Altitude time-series |
-| `noise_analytics_view.py` | Sensor noise analytics |
 | `gps_read_upx.py` | GPS satellite/position monitor |
 
 > **Note:** Enable exactly **one** `ENABLE_*_MONITOR_LOG` macro at a time. Multiple enabled macros cause UART corruption.
