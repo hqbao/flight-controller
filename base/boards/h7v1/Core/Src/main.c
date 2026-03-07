@@ -146,6 +146,14 @@ static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
 static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
 static uart_rx_t g_uart_rx4 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
 
+// DMA ring buffers — receive in batches to avoid per-byte ISR overhead.
+// At 38400 baud: 16 bytes/half = ~4.2ms of buffering before data loss.
+// At 9600 baud:  8 bytes/half = ~8.3ms of buffering.
+// This reduces total UART ISR rate from ~12,500/s to ~720/s.
+#define UART_DMA_BUF_SIZE 32
+static uint8_t g_uart_dma_buf[4][UART_DMA_BUF_SIZE];
+static uart_rx_t *g_uart_rx_map[4] = {&g_uart_rx1, &g_uart_rx2, &g_uart_rx3, &g_uart_rx4};
+
 void platform_toggle_led(char led) {
 	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
 }
@@ -304,6 +312,12 @@ static void handle_protocol_msg(uart_rx_t *msg) {
 
 static void read_uart_byte(uart_rx_t *g_uart_rx) {
 	if (g_uart_rx->stage == 5) {
+		// Guard against buffer overflow from corrupted payload_size
+		if (g_uart_rx->buffer_idx >= MAX_UART_BUFFER_SIZE) {
+			g_uart_rx->stage = 0;
+			g_uart_rx->protocol = PROTOCOL_NONE;
+			return;
+		}
 		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
 		g_uart_rx->buffer_idx++;
 		// Plus 2-byte class-id, 2-byte length and 2-byte checksum
@@ -348,7 +362,13 @@ static void read_uart_byte(uart_rx_t *g_uart_rx) {
 		if (g_uart_rx->buffer_idx == 4) {
 			// Both protocols have length at bytes 2-3 (little-endian)
 			g_uart_rx->payload_size = *(uint16_t*)&g_uart_rx->buffer[2];
-			g_uart_rx->stage = 5;
+			// Reject corrupted length — total frame must fit in buffer
+			if (g_uart_rx->payload_size > MAX_UART_BUFFER_SIZE - 6) {
+				g_uart_rx->stage = 0;
+				g_uart_rx->protocol = PROTOCOL_NONE;
+			} else {
+				g_uart_rx->stage = 5;
+			}
 		}
 	} else {
 		g_uart_rx->stage = 0;
@@ -356,21 +376,34 @@ static void read_uart_byte(uart_rx_t *g_uart_rx) {
 	}
 }
 
+// Process a range of bytes from a DMA ring buffer through the parser
+static void process_dma_bytes(int uart_idx, int start, int end) {
+	uart_rx_t *rx = g_uart_rx_map[uart_idx];
+	for (int i = start; i < end; i++) {
+		rx->byte = g_uart_dma_buf[uart_idx][i];
+		read_uart_byte(rx);
+	}
+}
+
+static int uart_instance_to_idx(UART_HandleTypeDef *huart) {
+	if (huart->Instance == USART1) return 0;
+	if (huart->Instance == USART2) return 1;
+	if (huart->Instance == USART3) return 2;
+	if (huart->Instance == UART4)  return 3;
+	return -1;
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == USART1) {
-		read_uart_byte(&g_uart_rx1);
+	int idx = uart_instance_to_idx(huart);
+	if (idx >= 0) {
+		process_dma_bytes(idx, UART_DMA_BUF_SIZE / 2, UART_DMA_BUF_SIZE);
 	}
+}
 
-	if (huart->Instance == USART2) {
-		read_uart_byte(&g_uart_rx2);
-	}
-
-	if (huart->Instance == USART3) {
-		read_uart_byte(&g_uart_rx3);
-	}
-
-	if (huart->Instance == UART4) {
-		read_uart_byte(&g_uart_rx4);
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart) {
+	int idx = uart_instance_to_idx(huart);
+	if (idx >= 0) {
+		process_dma_bytes(idx, 0, UART_DMA_BUF_SIZE / 2);
 	}
 }
 
@@ -523,11 +556,11 @@ int main(void)
   // Setup platform modules
   platform_setup();
 
-  // Start UART communication
-  HAL_UART_Receive_DMA(&huart1, &g_uart_rx1.byte, 1);
-  HAL_UART_Receive_DMA(&huart2, &g_uart_rx2.byte, 1);
-  HAL_UART_Receive_DMA(&huart3, &g_uart_rx3.byte, 1);
-  HAL_UART_Receive_DMA(&huart4, &g_uart_rx4.byte, 1);
+  // Start UART communication — all use DMA ring buffers
+  HAL_UART_Receive_DMA(&huart1, g_uart_dma_buf[0], UART_DMA_BUF_SIZE);
+  HAL_UART_Receive_DMA(&huart2, g_uart_dma_buf[1], UART_DMA_BUF_SIZE);
+  HAL_UART_Receive_DMA(&huart3, g_uart_dma_buf[2], UART_DMA_BUF_SIZE);
+  HAL_UART_Receive_DMA(&huart4, g_uart_dma_buf[3], UART_DMA_BUF_SIZE);
 
   // PPM input capture
   HAL_TIM_IC_Start_IT(&htim16, TIM_CHANNEL_1);

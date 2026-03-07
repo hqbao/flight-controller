@@ -126,14 +126,30 @@ Hardware access only through `base/foundation/platform.h`:
 | `SCHEDULER_5HZ` | GPS navigation, low-rate updates |
 | `SCHEDULER_1HZ` | State updates |
 
-### Sensor Topics (Interrupt-Driven)
+### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
 - `SENSOR_COMPASS` — Calibrated compass vector
 - `ANGULAR_STATE_UPDATE` — Estimated attitude (roll, pitch, yaw)
 - `POSITION_STATE_UPDATE` — Estimated position and velocity
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
-- `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data
+- `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → parser)
 - `MONITOR_DATA` — Telemetry for UART streaming
+
+### UART Receive Architecture (STM32H7)
+All 4 UART ports use **DMA circular ring buffers** (32 bytes each) instead of per-byte DMA:
+- DMA hardware fills the buffer continuously with zero CPU cost
+- `HAL_UART_RxHalfCpltCallback` processes bytes 0–15 (first half)
+- `HAL_UART_RxCpltCallback` processes bytes 16–31 (second half)
+- At 38400 baud, each half provides **~4.2ms of buffering** before data loss
+- Reduces total UART ISR rate from ~12,500/s to ~720/s
+- Protocol parser validates `payload_size` against buffer bounds to prevent overflow from corrupted length fields
+
+| UART | Baud | Device | Protocol |
+|------|------|--------|----------|
+| USART1 | 9600 | Telemetry output | DB |
+| USART2 | 38400 | GPS | UBX |
+| USART3 | 38400 | GPS/external | UBX |
+| UART4 | 38400 | Optical flow (flight-optflow) | DB |
 
 ## Building & Flashing
 
