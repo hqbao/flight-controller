@@ -39,6 +39,46 @@ if [[ "$1" == "clean" ]]; then
     exit 0
 fi
 
+# Pre-build: Patch CubeIDE-generated makefiles for platform/ folder integration
+# STM32CubeIDE may regenerate Debug/ makefiles from .cproject, which resets our
+# custom patches. This ensures the platform/ folder is always included.
+
+# Strip -fcyclomatic-complexity (CubeIDE generates it, Homebrew toolchain rejects it)
+find "$DEBUG_DIR" -name "subdir.mk" -exec sed -i '' 's/ -fcyclomatic-complexity//g' {} + 2>/dev/null || true
+
+# Add -I../platform to Core/Src compile rules (if missing)
+if ! grep -q '\-I\.\./platform' "$DEBUG_DIR/Core/Src/subdir.mk" 2>/dev/null; then
+    sed -i '' 's|-I../../../foundation|-I../../../foundation -I../platform|g' "$DEBUG_DIR/Core/Src/subdir.mk"
+fi
+
+# Remove dshot references from Core/Src/subdir.mk (they live in platform/ now)
+# CubeIDE may regenerate these entries — remove them to avoid duplicate symbols
+sed -i '' '/\.\.\/Core\/Src\/dshot\.c/d;/\.\.\/Core\/Src\/dshot_ex\.c/d' "$DEBUG_DIR/Core/Src/subdir.mk" 2>/dev/null || true
+sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR/Core/Src/subdir.mk" 2>/dev/null || true
+sed -i '' '/\.\/Core\/Src\/dshot\.d/d;/\.\/Core\/Src\/dshot_ex\.d/d' "$DEBUG_DIR/Core/Src/subdir.mk" 2>/dev/null || true
+sed -i '' 's| \./Core/Src/dshot\.cyclo \./Core/Src/dshot\.d \./Core/Src/dshot\.o \./Core/Src/dshot\.su \./Core/Src/dshot_ex\.cyclo \./Core/Src/dshot_ex\.d \./Core/Src/dshot_ex\.o \./Core/Src/dshot_ex\.su||g' "$DEBUG_DIR/Core/Src/subdir.mk" 2>/dev/null || true
+
+# Add platform/subdir.mk to makefile (if missing)
+if ! grep -q 'platform/subdir.mk' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include Core/Src/subdir.mk|-include platform/subdir.mk\
+-include Core/Src/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+
+# Add platform to sources.mk SUBDIRS (if missing)
+if ! grep -q '^platform' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/state_detector/a\
+platform \\
+' "$DEBUG_DIR/sources.mk"
+fi
+
+# Add platform .o files to objects.list (if missing)
+if ! grep -q 'platform/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./platform/dshot.o"\n"./platform/dshot_ex.o"\n"./platform/platform_common.o"\n"./platform/platform_i2c.o"\n"./platform/platform_pwm.o"\n"./platform/platform_rc.o"\n"./platform/platform_spi.o"\n"./platform/platform_uart.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
+# Remove dshot from Core/Src in objects.list (they live in platform/ now)
+sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+
 # Build
 echo -e "${YELLOW}Building...${NC}"
 cd "$DEBUG_DIR"

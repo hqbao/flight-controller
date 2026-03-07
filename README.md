@@ -36,6 +36,9 @@ flight-controller/
 ├── base/
 │   ├── boards/                    # Board-specific HAL implementations
 │   │   ├── h7v1/                  #   STM32H7 board
+│   │   │   ├── Core/              #     CubeIDE-generated code (main.c, IRQ, MSP)
+│   │   │   ├── platform/          #     Platform HAL drivers (see below)
+│   │   │   └── Drivers/           #     STM32 HAL/CMSIS drivers
 │   │   ├── p4v1/                  #   ESP32-P4 board
 │   │   └── s3v1/                  #   ESP32-S3 board
 │   └── foundation/                # Platform abstraction, pub/sub, macros
@@ -114,6 +117,21 @@ Hardware access only through `base/foundation/platform.h`:
 - Port enums: `I2C_PORT1`, `UART_PORT2`, `SPI_PORT3`
 - **Never** include HAL headers (`stm32h7xx_hal.h`, `driver/i2c.h`) in module code
 
+#### STM32H7 Platform Drivers (`base/boards/h7v1/platform/`)
+All STM32 HAL implementations are separated from CubeIDE-generated code into dedicated driver files:
+
+| File | Purpose |
+|------|---------|
+| `platform_hw.h` | Extern declarations for all HAL peripheral handles |
+| `platform_i2c.c` | I2C read/write/DMA + `HAL_I2C_MemRxCpltCallback` |
+| `platform_spi.c` | SPI stubs + `HAL_SPI_TxRxCpltCallback` |
+| `platform_uart.c` | UART send, DMA ring buffers, DB/UBX parser, error recovery |
+| `platform_pwm.c` | PWM + DShot + DShot Extended motor protocols |
+| `platform_rc.c` | RC PPM decoder via TIM16 input capture |
+| `platform_common.c` | LED toggle, delay, time, console |
+| `dshot.c` / `dshot.h` | DShot600 protocol (16-bit frames, 8 ports on TIM1+TIM2) |
+| `dshot_ex.c` / `dshot_ex.h` | DShot Extended protocol (32-bit frames, 4 ports on TIM1) |
+
 ### Scheduler Topics
 | Rate | Usage |
 |------|-------|
@@ -136,6 +154,8 @@ Hardware access only through `base/foundation/platform.h`:
 - `MONITOR_DATA` — Telemetry for UART streaming
 
 ### UART Receive Architecture (STM32H7)
+Implemented in `base/boards/h7v1/platform/platform_uart.c`.
+
 All 4 UART ports use **DMA circular ring buffers** (32 bytes each) instead of per-byte DMA:
 - DMA hardware fills the buffer continuously with zero CPU cost
 - `HAL_UART_RxHalfCpltCallback` processes bytes 0–15 (first half)
@@ -143,6 +163,7 @@ All 4 UART ports use **DMA circular ring buffers** (32 bytes each) instead of pe
 - At 38400 baud, each half provides **~4.2ms of buffering** before data loss
 - Reduces total UART ISR rate from ~12,500/s to ~720/s
 - Protocol parser validates `payload_size` against buffer bounds to prevent overflow from corrupted length fields
+- `HAL_UART_ErrorCallback` auto-restarts DMA after any UART error (overrun, framing, noise) — prevents permanent reception loss
 
 | UART | Baud | Device | Protocol |
 |------|------|--------|----------|
@@ -155,9 +176,9 @@ All 4 UART ports use **DMA circular ring buffers** (32 bytes each) instead of pe
 
 ### STM32H7
 ```bash
-cd flight-controller
-make BOARD=h7v1
-make flash BOARD=h7v1
+cd flight-controller/base/boards/h7v1
+./build.sh            # Build (auto-patches CubeIDE makefiles)
+./build-flash.sh      # Build + flash
 ```
 
 ### ESP32 (requires ESP-IDF v5.x)
