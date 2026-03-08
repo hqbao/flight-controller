@@ -37,6 +37,8 @@ SEND_LOG_ID = 0x00
 # Log class constants (match messages.h)
 LOG_CLASS_NONE      = 0x00
 LOG_CLASS_IMU_GYRO  = 0x05
+LOG_CLASS_POSITION_OPTFLOW = 0x06
+LOG_CLASS_ATTITUDE_MAG = 0x07
 DB_CMD_LOG_CLASS    = 0x03
 
 # FFT Parameters

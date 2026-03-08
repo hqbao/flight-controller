@@ -22,14 +22,13 @@ MODE 2 DATA (6 floats, 24 bytes):
 NOTE: Values are raw radians (small values).
 
 USAGE:
-1. Set logging mode in position_estimation.c:
-   #define POSITION_MONITOR_MODE 2
-   
-2. Build and flash the flight controller (SITL or STM32)
+1. Build and flash the flight controller (SITL or STM32)
 
-3. Run this script:
+2. Run this script:
    python3 position_estimation_optflow.py
-   (Log class is set automatically via UART command on connect)
+
+3. Click "Start Log" to activate optical flow streaming
+   (Log class is set automatically via UART command — no recompilation needed)
 
 The script auto-detects the serial port and displays 3 real-time plots:
 - Optical Flow Downward (dx, dy) in radians
@@ -52,6 +51,9 @@ LOG_CLASS_IMU_ACCEL = 0x01
 LOG_CLASS_COMPASS   = 0x02
 LOG_CLASS_ATTITUDE  = 0x03
 LOG_CLASS_POSITION  = 0x04
+LOG_CLASS_IMU_GYRO  = 0x05
+LOG_CLASS_POSITION_OPTFLOW = 0x06
+LOG_CLASS_ATTITUDE_MAG = 0x07
 DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
 
 # Auto-detect serial port
@@ -295,7 +297,7 @@ if __name__ == '__main__':
     btn_log = Button(ax_log, 'Start Log', color='#335533', hovercolor='#557755')
     def start_log(event):
         if g_serial and g_serial.is_open:
-            send_log_class_command(g_serial, LOG_CLASS_POSITION)
+            send_log_class_command(g_serial, LOG_CLASS_POSITION_OPTFLOW)
         else:
             print('Serial not connected')
     btn_log.on_clicked(start_log)

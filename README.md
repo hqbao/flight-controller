@@ -70,17 +70,22 @@ flight-controller/
 │
 ├── tools/                         # Python host tools
 │   ├── gps_config_f9p.py          #   ZED-F9P GPS configuration (UBX-CFG-VALSET)
-│   ├── gps_read_upx.py            #   GPS real-time monitor & visualizer
+│   ├── gps_read_ubx.py            #   GPS real-time monitor & visualizer
 │   ├── gps_sim_ubx.py             #   GPS simulator (UBX NAV-PVT)
 │   ├── imu_calibrate_accel.py     #   Accelerometer calibration (6-position)
 │   ├── compass_calibrate.py       #   Compass calibration (ellipsoid fit)
 │   ├── attitude_estimation_view.py#   3D attitude visualization
+│   ├── attitude_estimation_mag_view.py # 3D magnetometer debug
 │   ├── position_estimation_view.py#   3D position visualization
 │   ├── position_estimation_2d.py  #   2D position chart (XY)
 │   ├── position_estimation_2d_and_z.py # 2D + altitude chart
 │   ├── position_estimation_chart_xy.py # XY position time-series
 │   ├── position_estimation_chart_z.py  # Z position time-series
 │   └── position_estimation_optflow.py  # Optical flow position view
+│
+├── tools/                         # FFT & Vibration Analysis
+│   ├── fft_view.py                #   Real-time FFT spectrum viewer
+│   └── fft_spectrogram.py         #   Waterfall spectrogram viewer
 │
 └── simulation/                    # Software-in-the-loop (SITL)
     ├── install.sh                 #   Install SITL dependencies
@@ -250,7 +255,10 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_IMU_ACCEL` | `0x01` | `imu.c` | Raw accelerometer (3 floats) |
 | `LOG_CLASS_COMPASS` | `0x02` | `compass.c` | Raw or calibrated compass (3 floats) |
 | `LOG_CLASS_ATTITUDE` | `0x03` | `attitude_estimation.c` | Attitude vectors (9 floats) |
-| `LOG_CLASS_POSITION` | `0x04` | `position_estimation.c` | Position or velocity (3 floats) |
+| `LOG_CLASS_POSITION` | `0x04` | `position_estimation.c` | Position & velocity (6 floats) |
+| `LOG_CLASS_IMU_GYRO` | `0x05` | `fft.c` | Gyro Z batch (50× int16) |
+| `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | `position_estimation.c` | Optical flow & altitude (6 floats) |
+| `LOG_CLASS_ATTITUDE_MAG` | `0x07` | `attitude_estimation.c` | Mag debug: raw, earth, attitude (9 floats) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one.
 
@@ -260,10 +268,14 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | Tool | Purpose |
 |------|---------|
 | `attitude_estimation_view.py` | 3D attitude (gravity, linear accel) |
+| `attitude_estimation_mag_view.py` | 3D magnetometer debug (tilt compensation) |
 | `position_estimation_view.py` | 3D position & velocity vectors |
 | `position_estimation_2d.py` | 2D XY position chart |
 | `position_estimation_chart_z.py` | Altitude time-series |
-| `gps_read_upx.py` | GPS satellite/position monitor |
+| `position_estimation_optflow.py` | Optical flow & altitude debug |
+| `fft_view.py` | Real-time FFT spectrum viewer |
+| `fft_spectrogram.py` | Waterfall spectrogram viewer |
+| `gps_read_ubx.py` | GPS satellite/position monitor |
 
 ## Related Projects
 

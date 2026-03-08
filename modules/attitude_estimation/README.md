@@ -42,7 +42,6 @@ Select via `FUSION_ALGO` constant in the source.
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `FUSION_ALGO` | `4` | Active algorithm (7-State EKF) |
-| `ATTITUDE_MONITOR_MODE` | `1` | 1=Fusion debug, 2=Mag debug |
 | `DT` | 1/1000.0 | Gyro prediction timestep |
 | `GYRO_NOISE` | 0.0001 | EKF process noise |
 | `ACCEL_NOISE` | 100.0 | EKF measurement noise |
@@ -84,12 +83,17 @@ yaw   =  euler.z * RAD2DEG;
 | `SENSOR_MAG_HEADING_UPDATE` | `double` — heading (degrees) | 25 Hz |
 | `SEND_LOG` | 9 floats: v_pred, v_true, v_linear_acc | 10 Hz |
 
-## Log Class
+## Log Classes
 
-`LOG_CLASS_ATTITUDE` (0x03) — streams predicted gravity, true gravity, and linear acceleration vectors.
+| Log Class | ID | Data |
+|-----------|----|------|
+| `LOG_CLASS_ATTITUDE` | 0x03 | Fusion debug: v_pred, v_true, v_linear_acc (9 floats, 36 bytes) |
+| `LOG_CLASS_ATTITUDE_MAG` | 0x07 | Mag debug: raw mag, earth mag, attitude vector (9 floats, 36 bytes) |
+
+Both are runtime-selectable — no recompilation needed.
 
 ## Tools
 
 | Tool | Purpose |
 |------|---------|
-| `attitude_estimation_view.py` | 3D visualization of attitude vectors |
+| `attitude_estimation_view.py` | 3D visualization of attitude vectors || `attitude_estimation_mag_view.py` | 3D magnetometer debug visualization |

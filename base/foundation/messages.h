@@ -129,6 +129,8 @@ typedef struct {
 #define LOG_CLASS_ATTITUDE              0x03
 #define LOG_CLASS_POSITION              0x04
 #define LOG_CLASS_IMU_GYRO              0x05
+#define LOG_CLASS_POSITION_OPTFLOW      0x06
+#define LOG_CLASS_ATTITUDE_MAG          0x07
 
 // DB message command ID for log class control (from Python tools)
 #define DB_CMD_LOG_CLASS                0x03

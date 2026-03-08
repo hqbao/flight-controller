@@ -42,8 +42,10 @@ Only one log class is active at a time. Python tools send `DB_CMD_LOG_CLASS` (0x
 | `LOG_CLASS_IMU_ACCEL` | 0x01 | imu — 3 accel floats |
 | `LOG_CLASS_COMPASS` | 0x02 | compass — 3 mag floats |
 | `LOG_CLASS_ATTITUDE` | 0x03 | attitude_estimation — 9 floats |
-| `LOG_CLASS_POSITION` | 0x04 | position_estimation — 6 floats |
+| `LOG_CLASS_POSITION` | 0x04 | position_estimation — 6 floats (pos + vel) |
 | `LOG_CLASS_IMU_GYRO` | 0x05 | fft — 50× int16 batch |
+| `LOG_CLASS_POSITION_OPTFLOW` | 0x06 | position_estimation — 6 floats (optflow + alt) |
+| `LOG_CLASS_ATTITUDE_MAG` | 0x07 | attitude_estimation — 9 floats (mag debug) |
 
 ## Configuration
 

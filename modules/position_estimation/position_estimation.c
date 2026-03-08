@@ -32,12 +32,6 @@
 #include <macro.h>
 #include <messages.h>
 
-/* Position monitor data mode:
- * 1: Mode 1 - Send Position & Velocity (6 floats, 24 bytes)
- * 2: Mode 2 - Send Optical Flow & Altitude (6 floats, 24 bytes)
- */
-#define POSITION_MONITOR_MODE 1
-
 /* SI Unit Constants */
 #define GRAVITY_MSS 9.80665
 
@@ -56,7 +50,7 @@ static fusion6_t g_fusion_y;
 static fusion6_t g_fusion_z;
 
 static uint8_t g_monitor_msg[24] = {0};
-static uint8_t g_log_active = 0;
+static uint8_t g_log_class = LOG_CLASS_NONE;
 
 /* Optical Flow Data Storage for Logging */
 static float g_optflow_down_dx = 0.0f;
@@ -244,31 +238,35 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
-	g_log_active = (data[0] == LOG_CLASS_POSITION);
+	if (data[0] == LOG_CLASS_POSITION || data[0] == LOG_CLASS_POSITION_OPTFLOW) {
+		g_log_class = data[0];
+	} else {
+		g_log_class = LOG_CLASS_NONE;
+	}
 }
 
 static void loop_logger(uint8_t *data, size_t size) {
-	if (!g_log_active) return;
+	if (g_log_class == LOG_CLASS_NONE) return;
 
     float val[6];
 
-#if POSITION_MONITOR_MODE == 1
-    // Mode 1: Position & Velocity
-    val[0] = g_fusion_x.pos_final;
-    val[1] = g_fusion_y.pos_final;
-    val[2] = g_fusion_z.pos_final;
-    val[3] = g_fusion_x.veloc_final;
-    val[4] = g_fusion_y.veloc_final;
-    val[5] = g_fusion_z.veloc_final;
-#elif POSITION_MONITOR_MODE == 2
-    // Mode 2: Optical Flow & Altitude (raw values)
-    val[0] = g_optflow_down_dx;
-    val[1] = g_optflow_down_dy;
-    val[2] = g_optflow_up_dx;
-    val[3] = g_optflow_up_dy;
-    val[4] = (float)g_range_finder_alt;
-    val[5] = (float)g_air_pressure_alt_raw;
-#endif
+	if (g_log_class == LOG_CLASS_POSITION) {
+		// Position & Velocity (6 floats, 24 bytes)
+		val[0] = g_fusion_x.pos_final;
+		val[1] = g_fusion_y.pos_final;
+		val[2] = g_fusion_z.pos_final;
+		val[3] = g_fusion_x.veloc_final;
+		val[4] = g_fusion_y.veloc_final;
+		val[5] = g_fusion_z.veloc_final;
+	} else if (g_log_class == LOG_CLASS_POSITION_OPTFLOW) {
+		// Optical Flow & Altitude (6 floats, 24 bytes)
+		val[0] = g_optflow_down_dx;
+		val[1] = g_optflow_down_dy;
+		val[2] = g_optflow_up_dx;
+		val[3] = g_optflow_up_dy;
+		val[4] = (float)g_range_finder_alt;
+		val[5] = (float)g_air_pressure_alt_raw;
+	}
 
 	memcpy(g_monitor_msg, val, 24);
 	publish(SEND_LOG, (uint8_t*)g_monitor_msg, 24);

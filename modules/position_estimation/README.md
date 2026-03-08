@@ -49,7 +49,6 @@ Automatic hysteresis-based switching between laser range finder and barometer:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `POSITION_MONITOR_MODE` | `1` | 1=Pos/Vel, 2=Optflow/Alt debug |
 | `GRAVITY_MSS` | `9.80665` | Gravity constant (m/s²) |
 | `BARO_ALPHA_HIGH_ACCEL` | `0.05` | Baro LPF under high accel |
 | `BARO_ALPHA_LOW_ACCEL` | `0.005` | Baro LPF under low accel |
@@ -79,9 +78,14 @@ Fusion6 init: `(1.0, 0.5, 1.0, 20.0, 0.1)` for all axes.
 | `POSITION_STATE_UPDATE` | `position_state_t` — pos + vel (`vector3d_t`) | 500 Hz |
 | `SEND_LOG` | 6 floats: pos XYZ + vel XYZ | 25 Hz |
 
-## Log Class
+## Log Classes
 
-`LOG_CLASS_POSITION` (0x04) — streams position and velocity (6 floats, 24 bytes).
+| Log Class | ID | Data |
+|-----------|----|------|
+| `LOG_CLASS_POSITION` | 0x04 | Position & velocity (6 floats, 24 bytes) |
+| `LOG_CLASS_POSITION_OPTFLOW` | 0x06 | Optical flow & altitude (6 floats, 24 bytes) |
+
+Both are runtime-selectable — no recompilation needed.
 
 ## Tools
 

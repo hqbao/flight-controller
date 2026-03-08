@@ -61,12 +61,6 @@
 #include <fusion5.h>
 #endif
 
-/* Attitude monitor data mode:
- * 1: Fusion (v_pred, v_true, v_linear_acc)
- * 2: Mag debug (raw mag, earth mag, attitude vector)
- */
-#define ATTITUDE_MONITOR_MODE 1
-
 #define DT (1.0 / GYRO_FREQ)
 
 // Fusion 1 (Mahony) Gains
@@ -125,7 +119,7 @@ static double g_mag_heading = 0.0;
 static linear_accel_data_t g_linear_accel_out;
 
 static uint8_t g_monitor_msg[36] = {0};
-static uint8_t g_log_active = 0;
+static uint8_t g_log_class = LOG_CLASS_NONE;
 
 /* 
  * MAGNETOMETER UPDATE
@@ -233,49 +227,47 @@ static void accel_update(uint8_t *data, size_t size) {
 
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
-	g_log_active = (data[0] == LOG_CLASS_ATTITUDE);
+	if (data[0] == LOG_CLASS_ATTITUDE || data[0] == LOG_CLASS_ATTITUDE_MAG) {
+		g_log_class = data[0];
+	} else {
+		g_log_class = LOG_CLASS_NONE;
+	}
 }
 
 static void loop_logger(uint8_t *data, size_t size) {
-	if (!g_log_active) return;
+	if (g_log_class == LOG_CLASS_NONE) return;
 
 	float v1_x, v1_y, v1_z;
 	float v2_x, v2_y, v2_z;
 	float v3_x, v3_y, v3_z;
 
-#if ATTITUDE_MONITOR_MODE == 2
-	// Mode 2: Magnetometer Debugging (Raw Mag, Earth Mag, Attitude Vector)
-	v1_x = (float)g_mag_vec.x;
-	v1_y = (float)g_mag_vec.y;
-	v1_z = (float)g_mag_vec.z;
+	if (g_log_class == LOG_CLASS_ATTITUDE_MAG) {
+		// Mag debug: raw mag, earth mag, attitude vector
+		v1_x = (float)g_mag_vec.x;
+		v1_y = (float)g_mag_vec.y;
+		v1_z = (float)g_mag_vec.z;
 
-	v2_x = (float)g_mag_earth.x;
-	v2_y = (float)g_mag_earth.y;
-	v2_z = (float)g_mag_earth.z;
+		v2_x = (float)g_mag_earth.x;
+		v2_y = (float)g_mag_earth.y;
+		v2_z = (float)g_mag_earth.z;
 
-	v3_x = (float)g_f11.v_pred.x;
-	v3_y = (float)g_f11.v_pred.y;
-	v3_z = (float)g_f11.v_pred.z;
-#else
-	// Mode 1: Fusion Debugging (Attitude Vector, Measured Gravity, Linear Accel)
-	/* Pack 3 vectors into SEND_LOG message for visualization
-	   Format: 9 floats - v_pred(3), v_true(3), v_linear_acc(3) */
+		v3_x = (float)g_f11.v_pred.x;
+		v3_y = (float)g_f11.v_pred.y;
+		v3_z = (float)g_f11.v_pred.z;
+	} else {
+		// Fusion debug: v_pred, v_true, v_linear_acc
+		v1_x = (float)g_f11.v_pred.x;
+		v1_y = (float)g_f11.v_pred.y;
+		v1_z = (float)g_f11.v_pred.z;
 
-	// Predicted gravity vector (from quaternion)
-	v1_x = (float)g_f11.v_pred.x;
-	v1_y = (float)g_f11.v_pred.y;
-	v1_z = (float)g_f11.v_pred.z;
-	
-	// True/measured gravity vector (from accelerometer)
-	v2_x = (float)g_f11.v_true.x;
-	v2_y = (float)g_f11.v_true.y;
-	v2_z = (float)g_f11.v_true.z;
-	
-	// Linear acceleration (body frame, gravity removed)
-	v3_x = (float)g_f11.v_linear_acc.x;
-	v3_y = (float)g_f11.v_linear_acc.y;
-	v3_z = (float)g_f11.v_linear_acc.z;
-#endif
+		v2_x = (float)g_f11.v_true.x;
+		v2_y = (float)g_f11.v_true.y;
+		v2_z = (float)g_f11.v_true.z;
+
+		v3_x = (float)g_f11.v_linear_acc.x;
+		v3_y = (float)g_f11.v_linear_acc.y;
+		v3_z = (float)g_f11.v_linear_acc.z;
+	}
 	
 	memcpy(&g_monitor_msg[0], &v1_x, sizeof(float));
 	memcpy(&g_monitor_msg[4], &v1_y, sizeof(float));
