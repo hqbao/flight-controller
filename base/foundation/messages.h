@@ -121,4 +121,15 @@ typedef struct {
 	uint8_t reliable;   // 1=reliable, 0=not reliable
 } gps_quality_t;
 
+
+// --- Log Class IDs (runtime-selectable via NOTIFY_LOG_CLASS) ---
+#define LOG_CLASS_NONE                  0x00
+#define LOG_CLASS_IMU_ACCEL             0x01
+#define LOG_CLASS_COMPASS               0x02
+#define LOG_CLASS_ATTITUDE              0x03
+#define LOG_CLASS_POSITION              0x04
+
+// DB message command ID for log class control (from Python tools)
+#define DB_CMD_LOG_CLASS                0x03
+
 #endif // MESSAGES_H

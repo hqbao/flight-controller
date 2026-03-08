@@ -1,38 +1,47 @@
 #include "logger.h"
 #include <pubsub.h>
 #include <platform.h>
-#include <vector3d.h>
 #include <macro.h>
+#include <messages.h>
 #include <string.h>
 
-#define LOGGER_PAYLOAD_SIZE 1024
+// Baud rate budget (UART_PORT1 = 9600 baud, 8N1 = 960 bytes/sec):
+//   Frame = header(6) + payload(N) + checksum(2) = N + 8 bytes
+//   At 25 Hz: max frame = 960/25 = 38 bytes -> max payload = 30 bytes (7 floats)
+//   At 10 Hz: max frame = 960/10 = 96 bytes -> max payload = 88 bytes (22 floats)
+//   Callers control send rate via their own scheduler subscriptions.
+
+#define LOGGER_MAX_PAYLOAD 120
 #define LOGGER_OUTPUT_SIZE 128
 #define LOGGER_HEADER_SIZE 6
 #define LOGGER_CHECKSUM_SIZE 2
 
-static uint8_t g_payload[LOGGER_PAYLOAD_SIZE] = {0};
-static uint16_t g_payload_size = 0;
+static uint8_t g_log_class = LOG_CLASS_NONE;
 static uint8_t g_output_msg[LOGGER_OUTPUT_SIZE] = {'d', 'b', 0x00 /* ID */, 0x00 /* Class */};
 
-static void data_update(uint8_t *data, size_t size) {
-    if (size > LOGGER_PAYLOAD_SIZE) {
-        size = LOGGER_PAYLOAD_SIZE;
-    }
-	g_payload_size = size;
-	memcpy(g_payload, data, size);
+// Receive DB message from UART (sent by Python tools)
+// DB_CMD_LOG_CLASS (0x03): payload[0] = log class to activate
+static void on_db_message(uint8_t *data, size_t size) {
+	if (size < 5) return;
+	if (data[0] != DB_CMD_LOG_CLASS) return;
+
+	g_log_class = data[4];
+	g_output_msg[3] = g_log_class;
+	publish(NOTIFY_LOG_CLASS, &g_log_class, 1);
 }
 
-static void logger_loop_25hz(uint8_t *data, size_t size) {
-    if (g_payload_size > LOGGER_OUTPUT_SIZE - LOGGER_HEADER_SIZE - LOGGER_CHECKSUM_SIZE) {
-        g_payload_size = LOGGER_OUTPUT_SIZE - LOGGER_HEADER_SIZE - LOGGER_CHECKSUM_SIZE;
-    }
+static void send_log(uint8_t *data, size_t size) {
+	if (size > LOGGER_MAX_PAYLOAD) {
+		size = LOGGER_MAX_PAYLOAD;
+	}
 
 	int buf_idx = LOGGER_HEADER_SIZE;
-	memcpy(&g_output_msg[buf_idx], &g_payload, g_payload_size); buf_idx += g_payload_size;
+	memcpy(&g_output_msg[buf_idx], data, size);
+	buf_idx += size;
 
-	uint16_t payload_size = buf_idx - LOGGER_HEADER_SIZE;
+	uint16_t payload_size = (uint16_t)size;
 	memcpy(&g_output_msg[4], &payload_size, 2);
-	
+
 	// Calculate checksum: sum of ID + Class + length bytes + payload bytes
 	uint16_t checksum = g_output_msg[2] + g_output_msg[3] + g_output_msg[4] + g_output_msg[5];
 	for (int i = LOGGER_HEADER_SIZE; i < buf_idx; i++) {
@@ -44,7 +53,7 @@ static void logger_loop_25hz(uint8_t *data, size_t size) {
 }
 
 void logger_setup(void) {
-	subscribe(MONITOR_DATA, data_update);
-	subscribe(SCHEDULER_25HZ, logger_loop_25hz);
+	subscribe(DB_MESSAGE_UPDATE, on_db_message);
+	subscribe(SEND_LOG, send_log);
 }
 

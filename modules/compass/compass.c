@@ -12,12 +12,12 @@
  * --- COMPASS CALIBRATION GUIDE ---
  * 
  * 1. SETUP
- *    - Set ENABLE_COMPASS_MONITOR_LOG to 2 (Raw Data) in this file.
  *    - Flash firmware and connect via USB.
  *    - Run 'python3 tools/compass_calibrate.py'.
  * 
  * 2. DATA COLLECTION
- *    - Click "Start Stream" in the Python tool.
+ *    - Click "Start Log" — yellow live dot shows current reading.
+ *    - Click "Start Stream" to begin collecting data points.
  *    - Rotate the drone in ALL directions (figure-8 motion).
  *    - Ensure you cover the entire sphere surface.
  *    - Collect at least 1000+ points.
@@ -30,7 +30,6 @@
  * 4. SAVING
  *    - Copy the resulting Hard Iron Bias (B) and Soft Iron Matrix (S) 
  *      into the g_mag_offset and g_mag_scale variables below.
- *    - Set ENABLE_COMPASS_MONITOR_LOG back to 0 (or 1 for debug).
  * 
  * 5. MATHEMATICAL MODEL
  *    The calibration applies the following linear correction:
@@ -50,12 +49,11 @@
  *      (stretching/squashing the sphere into an ellipsoid).
  */
 
-/* Macro to enable/disable sending MONITOR_DATA via logger 
- * 0: Disable
+/* Compass monitor data mode:
  * 1: Calibrated
  * 2: Raw
  */
-#define ENABLE_COMPASS_MONITOR_LOG 0
+#define COMPASS_MONITOR_MODE 1
 
 struct bmm350_dev BMMdev = {0};
 struct bmm350_mag_temp_data mag_temp_data;
@@ -64,9 +62,8 @@ struct bmm350_mag_temp_data mag_temp_data;
 static vector3d_t g_compass_cal = {0};
 static vector3d_t g_compass_raw = {0};
 
-#if ENABLE_COMPASS_MONITOR_LOG > 0
 static uint8_t g_monitor_msg[12] = {0};
-#endif
+static uint8_t g_log_active = 0;
 
 /* Calibration parameters: B (Offset) and S (Soft Iron / Scale) */
 static double g_mag_offset[3] = {-26.13, -25.83, 15.53};
@@ -128,12 +125,18 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	publish(SENSOR_COMPASS, (uint8_t*)&mag_vec, sizeof(vector3d_t));
 }
 
-#if ENABLE_COMPASS_MONITOR_LOG
+static void on_notify_log_class(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_log_active = (data[0] == LOG_CLASS_COMPASS);
+}
+
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Send compass data as MONITOR_DATA
+	if (!g_log_active) return;
+
+	/* Send compass data as SEND_LOG
 	   Format: 3 floats (x, y, z) */
 	
-#if ENABLE_COMPASS_MONITOR_LOG == 2
+#if COMPASS_MONITOR_MODE == 2
 	float raw_x = (float)g_compass_raw.x;
 	float raw_y = (float)g_compass_raw.y;
 	float raw_z = (float)g_compass_raw.z;
@@ -151,9 +154,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 	memcpy(&g_monitor_msg[8], &cal_z, sizeof(float));
 #endif
 	
-	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
+	publish(SEND_LOG, g_monitor_msg, sizeof(g_monitor_msg));
 }
-#endif
 
 void compass_setup(void) {
 	BMMdev.read = i2c_read;
@@ -168,9 +170,8 @@ void compass_setup(void) {
 	bmm350_set_powermode(BMM350_NORMAL_MODE, &BMMdev);
 
 	subscribe(SCHEDULER_25HZ, loop_25hz);
-#if ENABLE_COMPASS_MONITOR_LOG
+	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_25HZ, loop_logger);
-#endif
 	
 	// Publish module initialized status
 	module_initialized_t module_initialized;

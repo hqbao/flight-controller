@@ -17,8 +17,9 @@ Visualizes the drone's estimated position (X, Y, Z) and velocity.
 - Bottom Left: Altitude (Z Position)
 - Bottom Right: Vertical Velocity (Z Velocity)
 
-Refreshes at ~50Hz. Requires 'MONITOR_DATA' from the flight controller
+Refreshes at ~50Hz. Receives 'SEND_LOG' data from the flight controller
 containing local position output (Pos X, Pos Y, Pos Z, Vel X, Vel Y, Vel Z).
+The log class is set automatically via UART command on connect.
 """
 
 # --- Configuration ---
@@ -26,7 +27,15 @@ plt.style.use('dark_background')
 
 SERIAL_PORT = None
 BAUD_RATE = 9600
-MONITOR_DATA_ID = 0x00  # From logger.c
+SEND_LOG_ID = 0x00  # Log data message ID
+
+# Log class constants (match messages.h)
+LOG_CLASS_NONE      = 0x00
+LOG_CLASS_IMU_ACCEL = 0x01
+LOG_CLASS_COMPASS   = 0x02
+LOG_CLASS_ATTITUDE  = 0x03
+LOG_CLASS_POSITION  = 0x04
+DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
@@ -50,6 +59,7 @@ if not found_port:
 # --- Global State ---
 data_queue = queue.Queue()
 is_collecting = True
+g_serial = None
 
 # Data Points
 vec_pos_xy = np.array([0.0, 0.0]) # Pos X, Y
@@ -68,6 +78,20 @@ vis_mode = 0
 
 view_btns = [] # Keep references to buttons
 
+# --- Log Class Command ---
+def send_log_class_command(ser, log_class):
+    """Send DB frame to set active log class on the flight controller."""
+    msg_id = DB_CMD_LOG_CLASS
+    msg_class = 0x00
+    length = 1
+    payload = bytes([log_class])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.flush()
+    print(f"  \u2192 Log class set to 0x{log_class:02X}")
+
 # --- Serial Reader ---
 def serial_reader():
     global SERIAL_PORT
@@ -76,6 +100,8 @@ def serial_reader():
 
     try:
         with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
+            global g_serial
+            g_serial = ser
             print(f"Connected to {SERIAL_PORT}")
             while True:
                 # Header: 'db' or 'bd' (0x64 0x62)
@@ -107,7 +133,7 @@ def serial_reader():
 
                 checksum = ser.read(2) # Read checksum to advance stream
                 
-                if msg_id == MONITOR_DATA_ID:
+                if msg_id == SEND_LOG_ID:
                     if length == 24: # 6 floats (Pos XYZ, Vel XYZ)
                         vals = struct.unpack('<ffffff', payload)
                         # Extract components:
@@ -219,6 +245,19 @@ def main():
         ax_z_vel.set_ylim(-z_vel_limit, z_vel_limit)
         
     btn_reset.on_clicked(reset_scale)
+
+    # Start Log
+    ax_log = plt.axes([0.75, 0.02, 0.15, 0.05])
+    btn_log = Button(ax_log, 'Start Log', color='#335533', hovercolor='#557755')
+    view_btns.append(btn_log)
+    
+    def start_log(event):
+        if g_serial and g_serial.is_open:
+            send_log_class_command(g_serial, LOG_CLASS_POSITION)
+        else:
+            print('Serial not connected')
+    
+    btn_log.on_clicked(start_log)
 
     def update_plot():
         global vec_pos_xy, vec_vel_xy, val_pos_z, val_vel_z

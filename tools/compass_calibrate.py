@@ -26,7 +26,15 @@ Instructions:
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
-MONITOR_DATA_ID = 0x00  # From logger.c
+SEND_LOG_ID = 0x00  # Log data message ID
+
+# Log class constants (match messages.h)
+LOG_CLASS_NONE      = 0x00
+LOG_CLASS_IMU_ACCEL = 0x01
+LOG_CLASS_COMPASS   = 0x02
+LOG_CLASS_ATTITUDE  = 0x03
+LOG_CLASS_POSITION  = 0x04
+DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
 PLOT_LIMIT = 500 # Default limit, auto-expands
 
 # Auto-detect serial port
@@ -51,8 +59,25 @@ if not found_port:
 data_queue = queue.Queue()
 raw_data_points = []
 is_collecting = False
+g_serial = None
 calibration_result = (np.zeros(3), np.eye(3))
 last_calibration_time = 0
+g_received_count = 0
+g_last_raw = None
+
+# --- Log Class Command ---
+def send_log_class_command(ser, log_class):
+    """Send DB frame to set active log class on the flight controller."""
+    msg_id = DB_CMD_LOG_CLASS
+    msg_class = 0x00
+    length = 1
+    payload = bytes([log_class])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.flush()
+    print(f"  \u2192 Log class set to 0x{log_class:02X}")
 
 # --- Serial Reader ---
 def serial_reader():
@@ -62,6 +87,8 @@ def serial_reader():
 
     try:
         with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
+            global g_serial
+            g_serial = ser
             print(f"Connected to {SERIAL_PORT}")
             while True:
                 # Header: 'db' or 'bd' (0x64 0x62)
@@ -91,7 +118,7 @@ def serial_reader():
                 payload = ser.read(length)
                 if len(payload) != length: continue
                 
-                if msg_id == MONITOR_DATA_ID and length == 12:
+                if msg_id == SEND_LOG_ID and length == 12:
                     x, y, z = struct.unpack('fff', payload)
                     if abs(x) <= 500 and abs(y) <= 500 and abs(z) <= 500:
                         data_queue.put((x, y, z))
@@ -165,6 +192,7 @@ def calibrate_magnetometer(data):
 
 def main():
     global is_collecting, raw_data_points, calibration_result, last_calibration_time
+    global g_received_count, g_last_raw
     
     # State flags
     show_raw = True
@@ -185,6 +213,7 @@ def main():
     scat_raw = ax.scatter([], [], [], c='r', marker='o', s=5, label='Raw Data')
     scat_last = ax.scatter([], [], [], c='k', marker='o', s=30, label='Last Point', depthshade=False)
     scat_corr = ax.scatter([], [], [], c='g', marker='o', s=5, label='Corrected Data')
+    scat_live = ax.scatter([], [], [], c='yellow', marker='D', s=80, label='Live Reading', depthshade=False)
     
     # Helper to calculate and format mag field info
     def get_mag_info_text(B, S, last_pt_raw=None):
@@ -207,14 +236,16 @@ def main():
     instructions = (
         "INSTRUCTIONS:\n\n"
         "1. Connect drone via USB.\n"
-        "2. Click 'Start Stream'.\n"
-        "3. Rotate drone in ALL\n"
+        "2. Click 'Start Log'.\n"
+        "   Yellow dot = live data.\n"
+        "3. Click 'Start Stream'.\n"
+        "4. Rotate drone in ALL\n"
         "   directions (Figure-8).\n"
         "   Cover the full sphere.\n"
-        "4. Watch 'Corrected Data'\n"
+        "5. Watch 'Corrected Data'\n"
         "   (Green) become a sphere.\n"
-        "5. Stop Stream.\n"
-        "6. Copy B and S to compass.c."
+        "6. Stop Stream.\n"
+        "7. Copy B and S to compass.c."
     )
     info_text = text_ax.text(0, 1, instructions, fontsize=9, va='top', fontfamily='monospace')
     
@@ -306,6 +337,15 @@ def main():
     btn_stream = Button(btn_stream_ax, 'Start Stream')
     btn_stream.on_clicked(toggle_stream)
 
+    btn_log_ax = plt.axes([start_x + (width*1.5 + gap)*4, row2_y, width*1.5, 0.05])
+    btn_log = Button(btn_log_ax, 'Start Log', color='#335533', hovercolor='#557755')
+    def start_log(event):
+        if g_serial and g_serial.is_open:
+            send_log_class_command(g_serial, LOG_CLASS_COMPASS)
+        else:
+            print('Serial not connected')
+    btn_log.on_clicked(start_log)
+
     # Row 3: Actions
     row3_y = 0.01
     btn_reset_ax = plt.axes([start_x, row3_y, width*2, 0.05])
@@ -324,9 +364,13 @@ def main():
     
     # --- Main Loop ---
     while True:
+        data_updated = False
         points_added = False
         while not data_queue.empty():
             pt = data_queue.get()
+            g_received_count += 1
+            g_last_raw = pt
+            data_updated = True
             if is_collecting:
                 raw_data_points.append(pt)
                 points_added = True
@@ -379,6 +423,29 @@ def main():
                                      f"Hard Iron Bias B:\n{B_str}\n\n"
                                      f"Soft Iron Matrix S:\n{S_str}\n\n"
                                      f"Latest Calibrated (Unit):\n[{last_pt[0]:.3f}, {last_pt[1]:.3f}, {last_pt[2]:.3f}]")
+
+        # Update live dot and status when new data arrived (even if not collecting)
+        if data_updated and g_last_raw is not None:
+            scat_live._offsets3d = ([g_last_raw[0]], [g_last_raw[1]], [g_last_raw[2]])
+            # Auto-scale for live dot if no collected points yet
+            if len(raw_data_points) == 0:
+                lv = max(abs(g_last_raw[0]), abs(g_last_raw[1]), abs(g_last_raw[2]), 0.1)
+                limit = lv * 1.5
+                ax.set_xlim(-limit, limit)
+                ax.set_ylim(-limit, limit)
+                ax.set_zlim(-limit, limit)
+            # Show live status when not collecting and no points yet
+            if not is_collecting and len(raw_data_points) == 0:
+                mag = np.sqrt(g_last_raw[0]**2 + g_last_raw[1]**2 + g_last_raw[2]**2)
+                info_text.set_text(
+                    f"LIVE DATA ({g_received_count} frames)\n\n"
+                    f"Mag X: {g_last_raw[0]:.1f} uT\n"
+                    f"Mag Y: {g_last_raw[1]:.1f} uT\n"
+                    f"Mag Z: {g_last_raw[2]:.1f} uT\n"
+                    f"Field:  {mag:.1f} uT\n\n"
+                    f"Click 'Start Stream'\n"
+                    f"then rotate drone."
+                )
 
         plt.pause(0.05)
         if not plt.fignum_exists(fig.number):

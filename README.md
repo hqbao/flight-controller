@@ -151,7 +151,8 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 - `POSITION_STATE_UPDATE` — Estimated position and velocity
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
 - `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → parser)
-- `MONITOR_DATA` — Telemetry for UART streaming
+- `SEND_LOG` — Immediate telemetry output (module publishes data → logger sends UART frame)
+- `NOTIFY_LOG_CLASS` — Runtime log class selection (from Python tool → UART → logger → all modules)
 
 ### UART Receive Architecture (STM32H7)
 Implemented in `base/boards/h7v1/platform/platform_uart.c`.
@@ -210,18 +211,18 @@ cd simulation
 ## Sensor Calibration
 
 ### Accelerometer (Static Multi-Position)
-1. Set `#define ENABLE_ACCEL_MONITOR_LOG 1` in `modules/imu/imu.c`, build & flash
+1. Build & flash firmware, connect via USB
 2. Run `python3 tools/imu_calibrate_accel.py`
-3. Place drone in 6 orientations (flat, left, right, nose up/down, inverted), capture each
-4. Click "Compute Calib", copy bias vector & scale matrix into `modules/imu/imu.c`
-5. Set `ENABLE_ACCEL_MONITOR_LOG 0`, re-flash
+3. Click **"Start Log"** — yellow live dot appears showing current reading
+4. Place drone in 6 orientations (flat, left, right, nose up/down, inverted), click **"Capture Position"** for each
+5. Click **"Compute Calib"**, copy bias vector & scale matrix into `modules/imu/imu.c`
 
 ### Compass (Ellipsoid Fit)
-1. Set `#define ENABLE_COMPASS_MONITOR_LOG 2` in `modules/compass/compass.c`, build & flash
+1. Build & flash firmware, connect via USB
 2. Run `python3 tools/compass_calibrate.py`
-3. Rotate drone in all directions (figure-8 motion)
-4. Copy hard iron bias & soft iron matrix into `modules/compass/compass.c`
-5. Set `ENABLE_COMPASS_MONITOR_LOG 0`, re-flash
+3. Click **"Start Log"** — yellow live dot appears showing current reading
+4. Click **"Start Stream"**, then rotate drone in all directions (figure-8 motion)
+5. Copy hard iron bias & soft iron matrix into `modules/compass/compass.c`
 
 ### Gyroscope
 - **Automatic** on every boot — keep drone stationary for 2 seconds after power-on
@@ -237,7 +238,21 @@ cd simulation
 ```
 'd' 'b' [ID] [Class] [Length_LE] [Payload] [Checksum_LE]
 ```
-- Class `0x00`: `MONITOR_DATA` — float32 sensor/fusion values
+- ID `0x00`: `SEND_LOG` — float32 sensor/fusion values (log class set in Class byte)
+- ID `0x03`: `DB_CMD_LOG_CLASS` — command from Python tool to select active log class
+
+### Runtime Log Class Selection
+Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. Each tool has a **"Start Log"** button that sends the appropriate class.
+
+| Log Class | Value | Module | Data |
+|-----------|-------|--------|------|
+| `LOG_CLASS_NONE` | `0x00` | — | Stops all logging |
+| `LOG_CLASS_IMU_ACCEL` | `0x01` | `imu.c` | Raw accelerometer (3 floats) |
+| `LOG_CLASS_COMPASS` | `0x02` | `compass.c` | Raw or calibrated compass (3 floats) |
+| `LOG_CLASS_ATTITUDE` | `0x03` | `attitude_estimation.c` | Attitude vectors (9 floats) |
+| `LOG_CLASS_POSITION` | `0x04` | `position_estimation.c` | Position or velocity (3 floats) |
+
+> **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one.
 
 ### Python Viewers
 Install dependencies: `pip install pyserial matplotlib numpy`
@@ -249,15 +264,6 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_2d.py` | 2D XY position chart |
 | `position_estimation_chart_z.py` | Altitude time-series |
 | `gps_read_upx.py` | GPS satellite/position monitor |
-
-> **Note:** Enable exactly **one** `ENABLE_*_MONITOR_LOG` macro at a time. Multiple enabled macros cause UART corruption.
-
-| Macro | Module | Streams |
-|-------|--------|---------|
-| `ENABLE_ACCEL_MONITOR_LOG` | `imu.c` | Raw accelerometer data |
-| `ENABLE_COMPASS_MONITOR_LOG` | `compass.c` | Raw (2) or calibrated (1) compass |
-| `ENABLE_ATTITUDE_MONITOR_LOG` | `attitude_estimation.c` | Attitude vectors |
-| `ENABLE_POSITION_ESTIMATION_MONITOR_LOG` | `position_estimation.c` | Position (1) or velocity (2) |
 
 ## Related Projects
 

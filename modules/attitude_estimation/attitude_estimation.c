@@ -31,7 +31,7 @@
  * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
  * - SENSOR_ATTITUDE_VECTOR: v_pred (predicted gravity vector in body frame)
  * - SENSOR_LINEAR_ACCEL: {v_linear_acc (body), v_linear_acc_earth_frame}
- * - MONITOR_DATA (if enabled): v_pred, v_true, v_linear_acc for visualization
+ * - SEND_LOG (if enabled): v_pred, v_true, v_linear_acc for visualization
  * 
  * VECTOR NAMING (unified across all fusion algorithms):
  * - v_pred: Predicted gravity from quaternion
@@ -61,8 +61,11 @@
 #include <fusion5.h>
 #endif
 
-/* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_ATTITUDE_MONITOR_LOG 0
+/* Attitude monitor data mode:
+ * 1: Fusion (v_pred, v_true, v_linear_acc)
+ * 2: Mag debug (raw mag, earth mag, attitude vector)
+ */
+#define ATTITUDE_MONITOR_MODE 1
 
 #define DT (1.0 / GYRO_FREQ)
 
@@ -121,9 +124,8 @@ static vector3d_t g_mag_earth = {0, 0, 0};
 static double g_mag_heading = 0.0;
 static linear_accel_data_t g_linear_accel_out;
 
-#if ENABLE_ATTITUDE_MONITOR_LOG
 static uint8_t g_monitor_msg[36] = {0};
-#endif
+static uint8_t g_log_active = 0;
 
 /* 
  * MAGNETOMETER UPDATE
@@ -229,13 +231,19 @@ static void accel_update(uint8_t *data, size_t size) {
 	publish(SENSOR_LINEAR_ACCEL, (uint8_t*)&g_linear_accel_out, sizeof(linear_accel_data_t));
 }
 
-#if ENABLE_ATTITUDE_MONITOR_LOG
+static void on_notify_log_class(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_log_active = (data[0] == LOG_CLASS_ATTITUDE);
+}
+
 static void loop_logger(uint8_t *data, size_t size) {
+	if (!g_log_active) return;
+
 	float v1_x, v1_y, v1_z;
 	float v2_x, v2_y, v2_z;
 	float v3_x, v3_y, v3_z;
 
-#if ENABLE_ATTITUDE_MONITOR_LOG == 2
+#if ATTITUDE_MONITOR_MODE == 2
 	// Mode 2: Magnetometer Debugging (Raw Mag, Earth Mag, Attitude Vector)
 	v1_x = (float)g_mag_vec.x;
 	v1_y = (float)g_mag_vec.y;
@@ -250,7 +258,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 	v3_z = (float)g_f11.v_pred.z;
 #else
 	// Mode 1: Fusion Debugging (Attitude Vector, Measured Gravity, Linear Accel)
-	/* Pack 3 vectors into MONITOR_DATA message for visualization
+	/* Pack 3 vectors into SEND_LOG message for visualization
 	   Format: 9 floats - v_pred(3), v_true(3), v_linear_acc(3) */
 
 	// Predicted gravity vector (from quaternion)
@@ -279,9 +287,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 	memcpy(&g_monitor_msg[28], &v3_y, sizeof(float));
 	memcpy(&g_monitor_msg[32], &v3_z, sizeof(float));
 
-	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
+	publish(SEND_LOG, g_monitor_msg, sizeof(g_monitor_msg));
 }
-#endif
 
 void attitude_estimation_setup(void) {
 #if FUSION_ALGO == 1
@@ -317,8 +324,8 @@ void attitude_estimation_setup(void) {
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
 	subscribe(SENSOR_COMPASS, mag_update);
 
-#if ENABLE_ATTITUDE_MONITOR_LOG
-	subscribe(SCHEDULER_25HZ, loop_logger);
-#endif
+	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
+	// 10 Hz: 36-byte payload (9 floats) exceeds 30-byte max at 25 Hz (9600 baud)
+	subscribe(SCHEDULER_10HZ, loop_logger);
 }
 

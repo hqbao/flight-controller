@@ -17,14 +17,23 @@ Visualizes the drone's estimated attitude vectors in real-time.
 - Blue: True Gravity Vector (Fused Estimate)
 - Green: Accelerometer Vector (Raw Gravity Measurement)
 
-Refreshes at ~60Hz. Requires 'MONITOR_DATA' from the flight controller 
+Refreshes at ~60Hz. Receives 'SEND_LOG' data from the flight controller
 containing 3 vectors (9 floats) representing v_pred, v_true, v_accel.
+The log class is set automatically via UART command on connect.
 """
 
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
-MONITOR_DATA_ID = 0x00  # From logger.c
+SEND_LOG_ID = 0x00  # Log data message ID
+
+# Log class constants (match messages.h)
+LOG_CLASS_NONE      = 0x00
+LOG_CLASS_IMU_ACCEL = 0x01
+LOG_CLASS_COMPASS   = 0x02
+LOG_CLASS_ATTITUDE  = 0x03
+LOG_CLASS_POSITION  = 0x04
+DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
@@ -50,10 +59,25 @@ if not found_port:
 # --- Global State ---
 data_queue = queue.Queue()
 is_collecting = True
+g_serial = None
 # Vectors: v_pred (Red), v_true (Blue), v_linear_acc (Green)
 v_pred = np.array([0.0, 0.0, 0.0])
 v_true = np.array([0.0, 0.0, 0.0])
 v_linear_acc = np.array([0.0, 0.0, 0.0])
+
+# --- Log Class Command ---
+def send_log_class_command(ser, log_class):
+    """Send DB frame to set active log class on the flight controller."""
+    msg_id = DB_CMD_LOG_CLASS
+    msg_class = 0x00
+    length = 1
+    payload = bytes([log_class])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.flush()
+    print(f"  \u2192 Log class set to 0x{log_class:02X}")
 
 # --- Serial Reader ---
 def serial_reader():
@@ -63,6 +87,8 @@ def serial_reader():
 
     try:
         with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
+            global g_serial
+            g_serial = ser
             print(f"Connected to {SERIAL_PORT}")
             while True:
                 # Header: 'db' or 'bd' (0x64 0x62)
@@ -92,7 +118,7 @@ def serial_reader():
                 payload = ser.read(length)
                 if len(payload) != length: continue
                 
-                if msg_id == MONITOR_DATA_ID:
+                if msg_id == SEND_LOG_ID:
                     if length == 36: # 9 floats
                         vals = struct.unpack('fffffffff', payload)
                         # v_pred (0-2), v_true (3-5), v_linear_acc (6-8)
@@ -159,6 +185,18 @@ def main():
         btn_stream.label.set_text('Start Stream' if not is_collecting else 'Stop Stream')
         
     btn_stream.on_clicked(toggle_stream)
+
+    # Start Log
+    btn_log_ax = plt.axes([start_x + 0.16, 0.04, 0.15, 0.05])
+    btn_log = Button(btn_log_ax, 'Start Log', color='#335533', hovercolor='#557755')
+    
+    def start_log(event):
+        if g_serial and g_serial.is_open:
+            send_log_class_command(g_serial, LOG_CLASS_ATTITUDE)
+        else:
+            print('Serial not connected')
+    
+    btn_log.on_clicked(start_log)
     
     # Setup Axes
     ax.set_xlim(-1.2, 1.2)

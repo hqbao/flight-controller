@@ -6,6 +6,7 @@ from threading import Thread
 from serial import Serial
 import numpy as np
 from matplotlib import animation
+from matplotlib.widgets import Button
 import serial.tools.list_ports
 import struct
 
@@ -55,9 +56,34 @@ g_ylim_vel_xy = [ -0.1, 0.1 ]
 g_clazz = 0x00
 g_clazz_id = 0x00
 g_payload_size = 0
+g_serial = None
+
+# --- Log Class Constants (match messages.h) ---
+SEND_LOG_ID         = 0x00
+LOG_CLASS_NONE      = 0x00
+LOG_CLASS_IMU_ACCEL = 0x01
+LOG_CLASS_COMPASS   = 0x02
+LOG_CLASS_ATTITUDE  = 0x03
+LOG_CLASS_POSITION  = 0x04
+DB_CMD_LOG_CLASS    = 0x03
+
+def send_log_class_command(ser, log_class):
+    """Send DB frame to set active log class on the flight controller."""
+    msg_id = DB_CMD_LOG_CLASS
+    msg_class = 0x00
+    length = 1
+    payload = bytes([log_class])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.flush()
+    print(f"  \u2192 Log class set to 0x{log_class:02X}")
 
 def run_db_reader(in_queue):
+  global g_serial
   with Serial(g_serial_port, g_baud_rate, timeout=3) as stream:
+    g_serial = stream
     while True:
       byte = stream.read(1)
       if len(byte) == 1 and (byte[0] == 0x62 or byte[0] == 0x64): # 'b' or 'd'
@@ -212,4 +238,15 @@ def animate(i):
     ax2.legend(loc='upper left', fontsize='small')
 
 anim = animation.FuncAnimation(fig, animate, frames=len(g_line) + 1, interval=33, blit=False)
+
+plt.subplots_adjust(bottom=0.12)
+ax_log = plt.axes([0.45, 0.02, 0.12, 0.04])
+btn_log = Button(ax_log, 'Start Log', color='#335533', hovercolor='#557755')
+def start_log(event):
+    if g_serial and g_serial.is_open:
+        send_log_class_command(g_serial, LOG_CLASS_POSITION)
+    else:
+        print('Serial not connected')
+btn_log.on_clicked(start_log)
+
 plt.show()

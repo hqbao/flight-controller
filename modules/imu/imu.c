@@ -23,9 +23,9 @@
  * 2. ACCELEROMETER CALIBRATION (Manual)
  *    - Requires external Python tool: tools/imu_calibrate_accel.py
  *    - Steps:
- *      a. Set ENABLE_ACCEL_MONITOR_LOG to 1 in this file.
- *      b. Flash firmware and connect via USB.
- *      c. Run 'python3 tools/imu_calibrate_accel.py'.
+ *      a. Flash firmware and connect via USB.
+ *      b. Run 'python3 tools/imu_calibrate_accel.py'.
+ *      c. Click "Start Log" — yellow live dot shows current reading.
  *      d. Place drone in 6+ static positions (flat, sides, nose up/down, etc).
  *         Click "Capture Position" for each.
  *      e. Click "Compute Calib".
@@ -33,7 +33,6 @@
  *         g_imu1 struct initialization below.
  *         - Bias (B) goes to gyro_offset[0], [1], [2].
  *         - Scale (S) goes to accel_scale[3][3].
- *      g. Set ENABLE_ACCEL_MONITOR_LOG back to 0.
  * 
  * 3. MATHEMATICAL MODEL
  *    The calibration applies the following linear correction:
@@ -53,8 +52,8 @@
  *      a perfect sphere of radius 1g.
  */
 
-/* Macro to enable/disable sending MONITOR_DATA via logger */
-#define ENABLE_ACCEL_MONITOR_LOG 0
+/* Macro to select accel monitor data mode (1=calibrated accel) */
+#define ACCEL_MONITOR_MODE 1
 
 #define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
 #define IMU_MOTION 32
@@ -83,9 +82,9 @@ typedef struct {
 	topic_t topic_accel_update;
 } imu_t;
 
-#if ENABLE_ACCEL_MONITOR_LOG
 static uint8_t g_monitor_msg[12] = {0};
-#endif
+static uint8_t g_log_active = 0;
+
 static imu_t g_imu1 = {
 	.imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0},
 	.gyro_accel = {0},
@@ -252,9 +251,15 @@ static void publish_accel_loop(uint8_t *data, size_t size) {
 	}
 }
 
-#if ENABLE_ACCEL_MONITOR_LOG
+static void on_notify_log_class(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_log_active = (data[0] == LOG_CLASS_IMU_ACCEL);
+}
+
 static void loop_logger(uint8_t *data, size_t size) {
-	/* Pack raw accel into MONITOR_DATA message
+	if (!g_log_active) return;
+
+	/* Pack raw accel into SEND_LOG message
 	   Format: 3 float32 values (ax, ay, az) */
 	
 	float ax = g_imu1.gyro_accel[0];
@@ -265,9 +270,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 	memcpy(&g_monitor_msg[4], &ay, sizeof(float));
 	memcpy(&g_monitor_msg[8], &az, sizeof(float));
 	
-	publish(MONITOR_DATA, g_monitor_msg, sizeof(g_monitor_msg));
+	publish(SEND_LOG, g_monitor_msg, sizeof(g_monitor_msg));
 }
-#endif
 
 static void check_gyro_calibration(uint8_t *data, size_t size) {
 	// Request calibration status from local storage
@@ -342,9 +346,8 @@ void imu_setup(void) {
 	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
 	subscribe(SENSOR_CHECK_GYRO_CALIBRATION, check_gyro_calibration);
 	subscribe(LOCAL_STORAGE_RESULT, handle_storage_result);
-#if ENABLE_ACCEL_MONITOR_LOG
+	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_25HZ, loop_logger);
-#endif
 	
 	// Publish module initialized status
 	module_initialized_t module_initialized = {.id = MODULE_ID_IMU, .initialized = 1};
