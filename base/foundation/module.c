@@ -17,6 +17,7 @@
 #include <logger/logger.h>
 #include <oscillation_detection/oscillation_detection.h>
 #include <linear_drift_detection/linear_drift_detection.h>
+#include <fft/fft.h>
 
 void platform_setup(void) {
 	state_detector_setup();
@@ -37,5 +38,6 @@ void platform_setup(void) {
 	//gps_navigation_setup();
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
+	fft_setup();
 	logger_setup();
 }

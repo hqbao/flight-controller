@@ -79,6 +79,20 @@ fi
 # Remove dshot from Core/Src in objects.list (they live in platform/ now)
 sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
 
+# Add fft module to build (if missing — CubeIDE doesn't know about it)
+if ! grep -q 'modules/fft' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/fault_handler/subdir.mk|-include modules/fft/subdir.mk\
+-include modules/fault_handler/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/fft' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/fault_handler/a\
+modules/fft \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/fft/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/fft/fft.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
 # Build
 echo -e "${YELLOW}Building...${NC}"
 cd "$DEBUG_DIR"
