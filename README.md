@@ -281,9 +281,10 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 
 | Project | Description |
 |---------|-------------|
-| [`../optflow/`](../optflow/) | Optical flow library (Lucas-Kanade dense) |
-| [`../robotkit/`](../robotkit/) | Math, sensor fusion, PID control library |
-| [`../flight-optflow/`](../flight-optflow/) | ESP32 optical flow sensor application |
+| [flight-optflow](https://github.com/hqbao/flight-optflow) | ESP32 optical flow sensor application |
+| [flight-vision](https://github.com/hqbao/flight-vision) | OAK-D W visual navigation module |
+| robotkit | Math, sensor fusion, PID control library |
+| optflow | Optical flow library (Lucas-Kanade dense) |
 
 ## License
 
