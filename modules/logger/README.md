@@ -30,7 +30,7 @@ Python tool (USB)                    Module (e.g. attitude_estimation)
 
 - Header: 6 bytes
 - Checksum: 16-bit sum of bytes [2 .. end of payload]
-- UART: `UART_PORT1` at 9600 baud (960 bytes/sec)
+- UART: `UART_PORT1` (USART1) at 9600 baud, TX + RX (960 bytes/sec)
 
 ## Log Class System
 
@@ -39,7 +39,7 @@ Only one log class is active at a time. Python tools send `DB_CMD_LOG_CLASS` (0x
 | Log Class | ID | Module |
 |-----------|----|--------|
 | `LOG_CLASS_NONE` | 0x00 | Stop all logging |
-| `LOG_CLASS_IMU_ACCEL` | 0x01 | imu — 3 accel floats |
+| `LOG_CLASS_IMU_ACCEL_RAW` | 0x01 | imu — 3 accel floats |
 | `LOG_CLASS_COMPASS` | 0x02 | compass — 3 mag floats |
 | `LOG_CLASS_ATTITUDE` | 0x03 | attitude_estimation — 9 floats |
 | `LOG_CLASS_POSITION` | 0x04 | position_estimation — 6 floats (pos + vel) |

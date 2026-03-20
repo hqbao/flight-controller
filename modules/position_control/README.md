@@ -22,6 +22,11 @@ POSITION_STATE_UPDATE (500 Hz)
     └─► ALTITUDE_CONTROL_UPDATE (altitude + takeoff speed)
 ```
 
+### Position→Angle Mapping
+- **X error** (forward of target) → positive pitch (nose up) to fly back → **no negation**
+- **Y error** (right of target) → negative roll (right wing up) to fly left → **negated**
+- **Z error** (above target) → less throttle to descend → **negated**
+
 ## Flight Modes
 
 | Mode | RC Button | Behavior |
@@ -59,7 +64,7 @@ When landing state is active:
 |-------|------|---------|
 | `POSITION_STATE_UPDATE` | 500 Hz | Current position/velocity |
 | `POSITION_TARGET_UPDATE` | Event | Navigation waypoint target |
-| `STATE_DETECTION_UPDATE` | Event | Flight state changes |
+| `FLIGHT_STATE_UPDATE` | Event | Flight state changes |
 | `RC_STATE_UPDATE` | Event | Arm/mode from RC |
 | `RC_MOVE_IN_UPDATE` | Event | RC stick inputs |
 | `EXTERNAL_SENSOR_OPTFLOW` | Event | Optflow for sensor health check |

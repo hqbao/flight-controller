@@ -381,7 +381,7 @@ void core0() {
     // Setup platform modules
     platform_setup();
 
-    subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
+    subscribe(CALIBRATION_GYRO_STATUS, on_imu_calibration_result);
     subscribe(SENSOR_ATTITUDE_VECTOR, state_vector_update);
 
     while (1) {

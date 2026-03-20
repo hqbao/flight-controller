@@ -90,6 +90,8 @@ char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data);
 void platform_toggle_led(char led);
 uint32_t platform_time_ms(void);
 void platform_delay(uint32_t ms);
+void platform_reset(void);
+void platform_get_chip_id(uint8_t *id_out);  // 8 bytes (64-bit unique ID)
 
 char platform_storage_read(uint16_t start, uint16_t size, uint8_t *data);
 char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data);

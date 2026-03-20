@@ -362,8 +362,8 @@ while True:
             
             # Scale Factors
             t_x = cmd_roll * 1.0  # Body Roll Torque
-            t_y = -cmd_pitch * 1.0 # Body Pitch Torque (Nose Down is negative Y in some frames, let's keep sign consistent)
-            t_z = -cmd_yaw * 0.5   # Body Yaw Torque
+            t_y = -cmd_pitch * 1.0 # Body Pitch Torque (positive cmd_pitch = front faster, needs negative Y torque for nose-down in ENU)
+            t_z = cmd_yaw * 0.5   # Body Yaw Torque (NED: positive yaw = CW from above = negative Gazebo Z rotation)
             
             # Rotate Torque Vector [t_x, t_y, t_z] by Quaternion to World Frame
             # v' = v + 2 * cross(r, cross(r, v) + w * v) 

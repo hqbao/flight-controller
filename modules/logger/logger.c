@@ -16,18 +16,41 @@
 #define LOGGER_HEADER_SIZE 6
 #define LOGGER_CHECKSUM_SIZE 2
 
-static uint8_t g_log_class = LOG_CLASS_NONE;
-static uint8_t g_output_msg[LOGGER_OUTPUT_SIZE] = {'d', 'b', 0x00 /* ID */, 0x00 /* Class */};
+static uint8_t g_log_class = LOG_CLASS_HEART_BEAT;
+static uint8_t g_output_msg[LOGGER_OUTPUT_SIZE] = {'d', 'b', 0x00 /* ID */, LOG_CLASS_HEART_BEAT /* Class */};
+static uint32_t g_heartbeat_counter = 0;
 
 // Receive DB message from UART (sent by Python tools)
 // DB_CMD_LOG_CLASS (0x03): payload[0] = log class to activate
+// DB_CMD_CHIP_ID  (0x09): respond with 8-byte unique chip ID
 static void on_db_message(uint8_t *data, size_t size) {
 	if (size < 5) return;
+
+	if (data[0] == DB_CMD_RESET) {
+		platform_reset();
+		return;
+	}
+
+	if (data[0] == DB_CMD_CHIP_ID) {
+		uint8_t chip_id[8];
+		platform_get_chip_id(chip_id);
+		publish(SEND_LOG, chip_id, 8);
+		return;
+	}
+
 	if (data[0] != DB_CMD_LOG_CLASS) return;
 
 	g_log_class = data[4];
 	g_output_msg[3] = g_log_class;
 	publish(NOTIFY_LOG_CLASS, &g_log_class, 1);
+}
+
+// Heartbeat: 1 Hz while no other log class is active
+static void loop_heartbeat(uint8_t *data, size_t size) {
+	if (g_log_class != LOG_CLASS_HEART_BEAT) return;
+
+	float counter = (float)(g_heartbeat_counter++);
+	publish(SEND_LOG, (uint8_t*)&counter, sizeof(float));
 }
 
 static void send_log(uint8_t *data, size_t size) {
@@ -55,5 +78,6 @@ static void send_log(uint8_t *data, size_t size) {
 void logger_setup(void) {
 	subscribe(DB_MESSAGE_UPDATE, on_db_message);
 	subscribe(SEND_LOG, send_log);
+	subscribe(SCHEDULER_1HZ, loop_heartbeat);
 }
 

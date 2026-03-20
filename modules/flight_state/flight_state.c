@@ -1,4 +1,4 @@
-#include "state_detector.h"
+#include "flight_state.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
@@ -21,7 +21,7 @@
 #define STICK_MAX 90                     // Max stick position (degrees)
 #define TAKEOFF_THROTTLE 5               // Throttle threshold to start takeoff (degrees)
 
-static uint8_t g_module_initialized[MODULE_ID_MAX] = {0};
+static sensor_health_t g_sensor_health = {0};
 
 static angle3d_t g_angular_state = {0, 0, 0};
 static rc_state_ctl_t g_rc_state_ctl = {0};
@@ -29,8 +29,9 @@ static rc_state_ctl_t g_rc_state_ctl_prev = {0};
 static rc_att_ctl_t g_rc_att_ctl = {0};
 static state_t g_state = DISARMED;
 static state_t g_state_prev = DISARMED;
-static char g_imu_calibrated = 0;
-static double g_air_pressure = 0;
+static char g_gyro_calibrated = 0;
+static char g_accel_calibrated = 0;
+static char g_mag_calibrated = 0;
 static double g_downward_range = 0;
 
 static void state_control_update(uint8_t *data, size_t size) {
@@ -53,14 +54,24 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	}
 }
 
-static void air_pressure_update(uint8_t *data, size_t size) {
-	if (size >= sizeof(double)) {
-		memcpy(&g_air_pressure, data, sizeof(double));
-	}
+static void on_sensor_health_update(uint8_t *data, size_t size) {
+	if (size < sizeof(sensor_health_t)) return;
+	memcpy(&g_sensor_health, data, sizeof(sensor_health_t));
 }
 
-static void on_imu_calibration_result(uint8_t *data, size_t size) {
-	if (data[0] == 1) g_imu_calibrated = 1;
+static void on_gyro_calibration_status(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_gyro_calibrated = (data[0] == 1);
+}
+
+static void on_accel_calibration_status(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_accel_calibrated = (data[0] == 1);
+}
+
+static void on_mag_calibration_status(uint8_t *data, size_t size) {
+	if (size < 1) return;
+	g_mag_calibrated = (data[0] == 1);
 }
 
 static void loop_100hz(uint8_t *data, size_t size) {
@@ -69,7 +80,12 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	}
 
 	if (g_rc_state_ctl.state == RC_STATE_ARMED && g_rc_state_ctl_prev.state == RC_STATE_DISARMED) {
-		if (g_imu_calibrated == 1) {
+		if (g_gyro_calibrated
+				&& g_accel_calibrated
+				//&& g_mag_calibrated
+				&& g_sensor_health.optflow_down
+				&& g_sensor_health.optflow_up
+				&& g_sensor_health.downward_range) {
 			g_state = ARMED;
 		}
 	}
@@ -136,23 +152,10 @@ static void loop_100hz(uint8_t *data, size_t size) {
 	memcpy(&g_rc_state_ctl_prev, &g_rc_state_ctl, sizeof(rc_state_ctl_t));
 
 	if (g_state != g_state_prev) {
-		publish(STATE_DETECTION_UPDATE, (uint8_t*)&g_state, 1);
+		publish(FLIGHT_STATE_UPDATE, (uint8_t*)&g_state, 1);
 	}
 
 	g_state_prev = g_state;
-}
-
-static void module_initialized_update(uint8_t *data, size_t size) {
-	if (size < sizeof(module_initialized_t)) {
-		return;
-	}
-	
-	module_initialized_t module_initialized;
-	memcpy(&module_initialized, data, sizeof(module_initialized_t));
-	
-	if (module_initialized.id < MODULE_ID_MAX) {
-		g_module_initialized[module_initialized.id] = module_initialized.initialized;
-	}
 }
 
 static void angular_state_update(uint8_t *data, size_t size) {
@@ -160,75 +163,14 @@ static void angular_state_update(uint8_t *data, size_t size) {
 	memcpy(&g_angular_state, data, size);
 }
 
-static void loop_1hz(uint8_t *data, size_t size) {
-	// Check if all setup modules are ready, then trigger IMU calibration check
-	uint8_t local_storage_initialized = g_module_initialized[MODULE_ID_LOCAL_STORAGE];
-	uint8_t imu_initialized = g_module_initialized[MODULE_ID_IMU];
-	uint8_t air_pressure_initialized = g_module_initialized[MODULE_ID_AIR_PRESSURE];
-	
-	static uint8_t calibration_triggered = 0;
-	if (!calibration_triggered && local_storage_initialized && imu_initialized && air_pressure_initialized) {
-		publish(SENSOR_CHECK_GYRO_CALIBRATION, NULL, 0);
-		calibration_triggered = 1;
-	}
-}
-
-static void loop_50hz(uint8_t *data, size_t size) {
-	// Check modules in priority order and determine flash count
-	uint8_t flash_count = 0;
-	
-	uint8_t optflow_initialized = g_module_initialized[MODULE_ID_OPTFLOW];
-	uint8_t gps_initialized = g_module_initialized[MODULE_ID_GPS];
-	
-	// Check in priority order - highest priority first
-	if (g_imu_calibrated == 0) {
-		flash_count = 5;
-	} else if (g_air_pressure == 0) {
-		flash_count = 4;
-	} else if (g_downward_range == 0) {
-		flash_count = 3;
-	} else if (!optflow_initialized) {
-		flash_count = 2;
-	} else if (!gps_initialized) {
-		flash_count = 1;
-	}
-	
-	static uint16_t counter = 0;
-	counter++;
-	
-	if (flash_count == 0) {
-		// All modules ready - no flashing
-		return;
-	} else {
-		// Flash N times in 500ms (25 cycles), then pause 500ms (25 cycles)
-		uint16_t total_cycle = 50; // 1 second cycle
-		uint16_t flash_period = 25; // 500ms for flashing
-		
-		if (counter <= flash_period) {
-			// Flashing phase: toggle every (25/(2*N)) cycles for N flashes
-			uint16_t toggle_interval = flash_period / (2 * flash_count);
-			if (toggle_interval < 1) toggle_interval = 1;
-			
-			if ((counter - 1) % toggle_interval == 0) {
-				platform_toggle_led(0);
-			}
-		}
-		
-		if (counter >= total_cycle) {
-			counter = 0;
-		}
-	}
-}
-
-void state_detector_setup(void) {
-	subscribe(MODULE_INITIALIZED_UPDATE, module_initialized_update);
-	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
+void flight_state_setup(void) {
+	subscribe(CALIBRATION_GYRO_STATUS, on_gyro_calibration_status);
+	subscribe(CALIBRATION_ACCEL_STATUS, on_accel_calibration_status);
+	subscribe(CALIBRATION_MAG_STATUS, on_mag_calibration_status);
+	subscribe(SENSOR_HEALTH_UPDATE, on_sensor_health_update);
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
 	subscribe(SCHEDULER_100HZ, loop_100hz);
-	subscribe(SCHEDULER_50HZ, loop_50hz);
-	subscribe(SCHEDULER_1HZ, loop_1hz);
 }

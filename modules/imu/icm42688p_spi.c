@@ -91,6 +91,8 @@ void icm42688p_read_spi(icm42688p_t *icm42688p) {
 
 void icm42688p_get_spi(icm42688p_t *icm42688p, float *data) {
     uint8_t *buffer = &icm42688p->buffer[3];
+    int16_t temp_raw = (int16_t)(buffer[0] << 8 | buffer[1]);
+
     int16_t ax = (int16_t) (buffer[2] << 8 | buffer[3]);
     int16_t ay = (int16_t) (buffer[4] << 8 | buffer[5]);
     int16_t az = (int16_t) (buffer[6] << 8 | buffer[7]);
@@ -104,4 +106,5 @@ void icm42688p_get_spi(icm42688p_t *icm42688p, float *data) {
     data[3] = gx;
     data[4] = gy;
     data[5] = gz;
+    data[6] = (float)temp_raw / 132.48f + 25.0f;
 }

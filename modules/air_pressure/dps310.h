@@ -26,6 +26,16 @@ int16_t dps310_sleep();
 
 int16_t dps310_reset();
 
+// --- Continuous (background) mode ---
+// Start autonomous pressure+temperature measurements at configured rates.
+// Result registers update automatically — no blocking trigger/poll needed.
+int16_t dps310_start_continuous(void);
+
+// ISR-safe read of latest pressure+temperature from result registers.
+// Uses platform_i2c_write_read (HAL_I2C_Mem_Read) — no SysTick dependency.
+// Requires dps310_start_continuous() to have been called first.
+int16_t dps310_read_continuous(float *p_temperature, float *p_pressure);
+
 float get_altitude(void);
 
 #endif

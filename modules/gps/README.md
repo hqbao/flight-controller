@@ -9,7 +9,7 @@ Parses incoming **UBX NAV-PVT** messages from a u-blox GPS receiver and publishe
 ```
 u-blox ZED-F9P (UART 38400 baud)
     │
-    ▼  DMA ring buffer → UBX parser
+    ▼  DMA ring buffer → auto-detect DB/UBX parser
   UBX_MESSAGE_UPDATE
     │
     ▼  Validate: NAV class (0x01), PVT message (0x07)
@@ -25,7 +25,7 @@ u-blox ZED-F9P (UART 38400 baud)
 |-----------|-------|
 | Receiver | u-blox ZED-F9P |
 | Interface | UART (38400 baud) |
-| Protocol | UBX only (NMEA disabled) |
+| Protocol | UBX (NMEA disabled on receiver; parser also auto-detects DB) |
 | Update rate | 10 Hz |
 | Configuration tool | `python3 tools/gps_config_f9p.py` |
 

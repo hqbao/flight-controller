@@ -22,16 +22,23 @@
  *    - Update filter corrections
  * 
  * COORDINATE FRAMES:
- * - Body Frame: X=forward, Y=right, Z=down (aircraft convention)
- * - Sensor axes are negated to match body frame:
- *   gx = -raw_gx, gy = -raw_gy, gz = raw_gz
- *   ax = -raw_ax, ay = -raw_ay, az = raw_az
+ * - Body Frame: NED/FRD (X=forward, Y=right, Z=down)
+ * - Earth Frame: NED (X=north, Y=east, Z=down)
+ * - ICM-42688P sensor axes: X=right, Y=forward on PCB
+ * - PCB mounted face-up, sensor X/Y swapped relative to body:
+ *   Sensor Y (forward) → body X (forward), Sensor X (right) → body Y (right)
+ *   body_gx = -raw_gy, body_gy = -raw_gx, body_gz = -raw_gz
+ *   body_ax = -raw_ay, body_ay = -raw_ax, body_az = -raw_az
+ * - At rest, accel reads (0, 0, -1g) in NED body frame
  * 
  * OUTPUT:
  * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
  * - SENSOR_ATTITUDE_VECTOR: v_pred (predicted gravity vector in body frame)
  * - SENSOR_LINEAR_ACCEL: {v_linear_acc (body), v_linear_acc_earth_frame}
- * - SEND_LOG (if enabled): v_pred, v_true, v_linear_acc for visualization
+ * - SEND_LOG (if enabled):
+ *   LOG_CLASS_ATTITUDE (0x03):       v_pred, v_true, v_linear_acc (body frame)
+ *   LOG_CLASS_ATTITUDE_EARTH (0x13): v_pred, v_true, v_linear_acc_earth_frame
+ *   LOG_CLASS_ATTITUDE_MAG (0x07):   raw mag, earth mag, v_pred
  * 
  * VECTOR NAMING (unified across all fusion algorithms):
  * - v_pred: Predicted gravity from quaternion
@@ -71,12 +78,12 @@
 
 #if FUSION_ALGO == 2
 #define GYRO_NOISE 0.0001
-#define ACCEL_NOISE 100.0
+#define ACCEL_NOISE 1000.0
 #endif
 
 #if FUSION_ALGO == 4
 #define GYRO_NOISE 0.0001
-#define ACCEL_NOISE 100.0
+#define ACCEL_NOISE 1000.0
 #define BIAS_NOISE 0.00001
 #endif
 
@@ -112,8 +119,9 @@ static fusion5_t g_f11;
 #endif
 
 static angle3d_t g_angular_state = {0, 0, 0};
+static vector3d_t g_raw_gyro = {0, 0, 0};
 static vector3d_t g_raw_accel = {0, 0, 0};
-static vector3d_t g_mag_vec = {0, 0, 0};
+static vector3d_t g_mag_vec = {0, 0, 1};
 static vector3d_t g_mag_earth = {0, 0, 0};
 static double g_mag_heading = 0.0;
 static linear_accel_data_t g_linear_accel_out;
@@ -133,16 +141,20 @@ static void mag_update(uint8_t *data, size_t size) {
     vector3d_t euler;
     quat_to_euler(&euler, &g_f11.q);
 
-    // 2. Create Tilt-Only quaternion (Yaw=0)
+    // 2. Create Tilt-Only quaternion (Yaw=0) — NED: roll=euler.x, pitch=euler.y
+    // q_tilt represents body-to-earth rotation (tilt only, no yaw)
     quaternion_t q_tilt;
-    quat_from_euler(&q_tilt, euler.y, euler.x, 0);
+    quat_from_euler(&q_tilt, euler.x, euler.y, 0);
 
-    // 3. Un-tilt mag vector to Earth frame horizontal plane
-    quaternion_t q_tilt_conj;
-    quat_conjugate(&q_tilt_conj, &q_tilt);
-    quat_rotate_vector(&g_mag_earth, &q_tilt_conj, &g_mag_vec);
+    // 3. Rotate body-frame mag vector to Earth frame horizontal plane
+    // q_tilt rotates body→earth, which un-tilts the body-frame mag reading
+    quat_rotate_vector(&g_mag_earth, &q_tilt, &g_mag_vec);
 
     // 4. Calculate Heading
+    // After tilt compensation, g_mag_earth is in a level frame with X=nose direction.
+    // atan2(y, x) gives the angle of magnetic North relative to the nose.
+    // We want heading = angle of nose relative to North, which is the negative:
+    //   heading = -atan2(y, x) = atan2(-y, x)
     g_mag_heading = atan2(-g_mag_earth.y, g_mag_earth.x) * RAD2DEG;
 
     publish(SENSOR_MAG_HEADING_UPDATE, (uint8_t*)&g_mag_heading, sizeof(double));
@@ -158,29 +170,30 @@ static void gyro_update(uint8_t *data, size_t size) {
     memcpy(&raw_gy, &data[4], sizeof(float));
     memcpy(&raw_gz, &data[8], sizeof(float));
 
-	// Convert sensor frame to body frame (negate X and Y)
-	float gx = -raw_gx;
-	float gy = -raw_gy;
-	float gz = raw_gz;
+	// Convert sensor frame to NED body frame (FRD: X=fwd, Y=right, Z=down)
+	// Sensor Y (forward) → body X, Sensor X (right) → body Y, both negated
+	g_raw_gyro.x = -raw_gy;
+	g_raw_gyro.y = -raw_gx;
+	g_raw_gyro.z = -raw_gz;
 
 	// Run prediction step (algorithm-specific)
 #if FUSION_ALGO == 1
-	fusion1_predict(&g_f11, gx, gy, gz, DT);
+	fusion1_predict(&g_f11, g_raw_gyro.x, g_raw_gyro.y, g_raw_gyro.z, DT);
 #elif FUSION_ALGO == 2
-	fusion2_predict(&g_f11, gx, gy, gz, DT);
+	fusion2_predict(&g_f11, g_raw_gyro.x, g_raw_gyro.y, g_raw_gyro.z, DT);
 #elif FUSION_ALGO == 3
-	fusion3_predict(&g_f11, gx, gy, gz, DT);
+	fusion3_predict(&g_f11, g_raw_gyro.x, g_raw_gyro.y, g_raw_gyro.z, DT);
 #elif FUSION_ALGO == 4
-	fusion4_predict(&g_f11, gx, gy, gz, DT);
+	fusion4_predict(&g_f11, g_raw_gyro.x, g_raw_gyro.y, g_raw_gyro.z, DT);
 #elif FUSION_ALGO == 5
-	fusion5_predict(&g_f11, gx, gy, gz, DT);
+	fusion5_predict(&g_f11, g_raw_gyro.x, g_raw_gyro.y, g_raw_gyro.z, DT);
 #endif
 
-	// Extract Euler angles from quaternion (common for all algorithms)
+	// Extract Euler angles from quaternion (NED: roll=X, pitch=Y, yaw=Z)
 	vector3d_t euler;
 	quat_to_euler(&euler, &g_f11.q);
-	g_angular_state.roll = -euler.y * RAD2DEG;
-	g_angular_state.pitch = euler.x * RAD2DEG;
+	g_angular_state.roll = euler.x * RAD2DEG;
+	g_angular_state.pitch = euler.y * RAD2DEG;
 	g_angular_state.yaw = euler.z * RAD2DEG;
 
 	// All fusion algorithms now use v_pred consistently
@@ -199,10 +212,11 @@ static void accel_update(uint8_t *data, size_t size) {
     memcpy(&raw_ay, &data[4], sizeof(float));
     memcpy(&raw_az, &data[8], sizeof(float));
 
-	// Convert sensor frame to body frame (negate X and Y)
-	float ax = -raw_ax;
-	float ay = -raw_ay;
-	float az = raw_az;
+	// Convert sensor frame to NED body frame (FRD: X=fwd, Y=right, Z=down)
+	// Sensor Y (forward) → body X, Sensor X (right) → body Y, both negated
+	float ax = -raw_ay;
+	float ay = -raw_ax;
+	float az = -raw_az;
 
 	g_raw_accel.x = ax;
 	g_raw_accel.y = ay;
@@ -227,7 +241,7 @@ static void accel_update(uint8_t *data, size_t size) {
 
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
-	if (data[0] == LOG_CLASS_ATTITUDE || data[0] == LOG_CLASS_ATTITUDE_MAG) {
+	if (data[0] == LOG_CLASS_ATTITUDE || data[0] == LOG_CLASS_ATTITUDE_MAG || data[0] == LOG_CLASS_ATTITUDE_EARTH) {
 		g_log_class = data[0];
 	} else {
 		g_log_class = LOG_CLASS_NONE;
@@ -254,8 +268,21 @@ static void loop_logger(uint8_t *data, size_t size) {
 		v3_x = (float)g_f11.v_pred.x;
 		v3_y = (float)g_f11.v_pred.y;
 		v3_z = (float)g_f11.v_pred.z;
+	} else if (g_log_class == LOG_CLASS_ATTITUDE_EARTH) {
+		// Earth frame debug: v_pred, v_true, v_linear_acc_earth_frame
+		v1_x = (float)g_f11.v_pred.x;
+		v1_y = (float)g_f11.v_pred.y;
+		v1_z = (float)g_f11.v_pred.z;
+
+		v2_x = (float)g_f11.v_true.x;
+		v2_y = (float)g_f11.v_true.y;
+		v2_z = (float)g_f11.v_true.z;
+
+		v3_x = (float)g_f11.v_linear_acc_earth_frame.x;
+		v3_y = (float)g_f11.v_linear_acc_earth_frame.y;
+		v3_z = (float)g_f11.v_linear_acc_earth_frame.z;
 	} else {
-		// Fusion debug: v_pred, v_true, v_linear_acc
+		// Fusion debug: v_pred, v_true, v_linear_acc (body frame)
 		v1_x = (float)g_f11.v_pred.x;
 		v1_y = (float)g_f11.v_pred.y;
 		v1_z = (float)g_f11.v_pred.z;
@@ -293,7 +320,7 @@ void attitude_estimation_setup(void) {
 	// Initialize Fusion2 (EKF)
 	// Parameters: gyro_noise, accel_noise, accel_scale, lpf_gain
 	// Passing ATT_ACCEL_SMOOTH converted to per-sample gain (gain / freq)
-	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH / (double)ACCEL_FREQ);
+	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, 1.0);
 #elif FUSION_ALGO == 3
 	// Initialize Fusion3 (Madgwick filter)
 	// Parameters: k0 (accel smoothing gain), beta, freq
@@ -304,7 +331,7 @@ void attitude_estimation_setup(void) {
     // Initialize Fusion4 (7-State EKF)
     // Parameters: gyro_noise, bias_noise, accel_noise, accel_scale, lpf_gain
 	// Bias noise set to 1e-5 to allow slow walk estimation
-    fusion4_init(&g_f11, GYRO_NOISE, BIAS_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH / (double)ACCEL_FREQ);
+    fusion4_init(&g_f11, GYRO_NOISE, BIAS_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, 1.0);
 #elif FUSION_ALGO == 5
 	// Initialize Fusion 5 (Madgwick with Bias)
 	// Parameters: k0 (accel filter), beta (gain), zeta (bias gain), accel_scale, freq

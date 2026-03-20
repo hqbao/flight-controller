@@ -39,7 +39,6 @@ Each parameter is 4 bytes (float). Addressed by `param_id × 4`.
 1. Read flash block (132 bytes)
 2. Validate CRC32 (polynomial 0xEDB88320)
 3. If invalid → write defaults, recalculate CRC32
-4. Publish `MODULE_INITIALIZED_UPDATE` with `MODULE_ID_LOCAL_STORAGE`
 
 ## PubSub Interface
 
@@ -53,4 +52,3 @@ Each parameter is 4 bytes (float). Addressed by `param_id × 4`.
 | Topic | Data |
 |-------|------|
 | `LOCAL_STORAGE_RESULT` | `param_storage_t` — id + float value |
-| `MODULE_INITIALIZED_UPDATE` | `module_initialized_t` — MODULE_ID_LOCAL_STORAGE |

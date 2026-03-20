@@ -2,31 +2,22 @@
 
 ## Overview
 
-PID-based inner-loop attitude stabilization. Computes motor speed commands for 8 motors from roll/pitch/yaw error using three independent PID controllers at 1 kHz.
+PID-based inner-loop attitude stabilization. Computes roll/pitch/yaw corrections from three independent PID controllers at 1 kHz and publishes them to the mix control module.
 
 ## Data Flow
 
 ```
-ANGULAR_STATE_UPDATE (1 kHz)    RC_MOVE_IN_UPDATE    ANGULAR_TARGET_UPDATE
-    │                               │                        │
-    ▼                               ▼                        ▼
-  Current angles              RC stick input          Position controller target
-    │                               │                        │
-    └──────────────────────┬────────┘────────────────────────┘
-                           │
-                     PID Controllers
-                    (Roll / Pitch / Yaw)
-                           │
-                     Motor Mixer (8-motor)
-                           │
-                     ► SPEED_CONTROL_UPDATE (int[8])
-```
-
-## Motor Mixing
-
-8-motor X-configuration octocopter. Each motor receives:
-```
-speed[i] = base_throttle ± roll_output ± pitch_output ± yaw_output
+ANGULAR_STATE_UPDATE (1 kHz)    ANGULAR_TARGET_UPDATE    ALTITUDE_CONTROL_UPDATE
+    │                                   │                        │
+    ▼                                   ▼                        ▼
+  Current angles              Position controller target   Altitude + throttle
+    │                                   │                        │
+    └───────────────────────┬───────────┘────────────────────────┘
+                            │
+                      PID Controllers
+                     (Roll / Pitch / Yaw)
+                            │
+                      ► MIX_CONTROL_UPDATE (mix_control_input_t)
 ```
 
 ## PID Configuration
@@ -40,19 +31,15 @@ speed[i] = base_throttle ± roll_output ± pitch_output ± yaw_output
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `MIN_SPEED` | 150 | Minimum motor command (brushless) |
-| `MAX_SPEED` | 1800 | Maximum motor command (brushless) |
-| `MOTOR_TYPE` | 1 | 1=Brushless, 2=Brushed |
 | `ATT_CTL_FREQ` | 1000 | Control loop frequency (Hz) |
 
 ## State Machine Behavior
 
-| Flight State | Motor Output |
-|--------------|-------------|
-| DISARMED / ARMED | 0 (motors off) |
-| READY | MIN_SPEED (idle) |
-| TAKING_OFF / FLYING / LANDING | PID control active |
-| TESTING | Direct RC passthrough |
+| Flight State | Behavior |
+|--------------|----------|
+| DISARMED / ARMED / READY / TESTING | No PID output |
+| TAKING_OFF | PID active, yaw setpoint locked to current heading |
+| FLYING / LANDING | PID active |
 
 PID controllers are reset on ARM/READY/TAKING_OFF transitions.
 
@@ -61,15 +48,13 @@ PID controllers are reset on ARM/READY/TAKING_OFF transitions.
 ### Subscriptions
 | Topic | Rate | Purpose |
 |-------|------|---------|
-| `ANGULAR_STATE_UPDATE` | 1 kHz | Current attitude |
+| `ANGULAR_STATE_UPDATE` | 1 kHz | Current attitude (roll, pitch, yaw) |
 | `SCHEDULER_1KHZ` | 1 kHz | Control loop tick |
-| `STATE_DETECTION_UPDATE` | Event | Flight state changes |
-| `RC_MOVE_IN_UPDATE` | Event | RC stick inputs |
+| `FLIGHT_STATE_UPDATE` | Event | Flight state changes |
 | `ANGULAR_TARGET_UPDATE` | Event | Target angles from position control |
-| `ALTITUDE_CONTROL_UPDATE` | Event | Altitude/throttle target |
+| `ALTITUDE_CONTROL_UPDATE` | Event | Altitude + throttle target |
 
 ### Publications
 | Topic | Data | Rate |
 |-------|------|------|
-| `SPEED_CONTROL_UPDATE` | `int[8]` — motor speeds | 1 kHz |
-| `SPEED_CONTROL_SETUP` | Trigger — initialize motor drivers | Once |
+| `MIX_CONTROL_UPDATE` | `mix_control_input_t` — PID outputs + altitude | 1 kHz (flight states only) |

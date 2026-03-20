@@ -6,12 +6,13 @@ SRCS = main.c module_sim.c \
        $(FC_ROOT)/modules/rc_receiver/rc_receiver.c \
        $(FC_ROOT)/modules/attitude_estimation/attitude_estimation.c \
        $(FC_ROOT)/modules/attitude_control/attitude_control.c \
+       $(FC_ROOT)/modules/mix_control/mix_control.c \
        $(FC_ROOT)/modules/local_storage/local_storage.c \
        $(FC_ROOT)/modules/logger/logger.c \
        $(FC_ROOT)/modules/fault_handler/fault_handler.c \
-       $(FC_ROOT)/modules/oscillation_detection/oscillation_detection.c \
-       $(FC_ROOT)/modules/linear_drift_detection/linear_drift_detection.c \
-       $(FC_ROOT)/modules/state_detector/state_detector.c \
+       $(FC_ROOT)/modules/fault_detector/fault_detector.c \
+       $(FC_ROOT)/modules/flight_state/flight_state.c \
+       $(FC_ROOT)/modules/flight_telemetry/flight_telemetry.c \
        $(FC_ROOT)/modules/position_estimation/position_estimation.c
 
 BUILD_DIR = build
@@ -25,13 +26,14 @@ CFLAGS = -Wall -Wextra -Wno-unused-parameter -Wno-c23-extensions -I/usr/local/in
          -I$(FC_ROOT)/base/foundation -I$(FC_ROOT)/base/common \
          -I$(FC_ROOT)/modules \
 		 -I$(FC_ROOT)/modules/rc_receiver -I$(FC_ROOT)/modules/attitude_control \
+		 -I$(FC_ROOT)/modules/mix_control \
 		 -I$(FC_ROOT)/modules/attitude_estimation \
 		 -I$(FC_ROOT)/modules/local_storage \
 		 -I$(FC_ROOT)/modules/logger \
 		 -I$(FC_ROOT)/modules/fault_handler \
-		 -I$(FC_ROOT)/modules/oscillation_detection \
-		 -I$(FC_ROOT)/modules/linear_drift_detection \
+		 -I$(FC_ROOT)/modules/fault_detector \
 		 -I$(FC_ROOT)/modules/position_estimation \
+		 -I$(FC_ROOT)/modules/flight_telemetry \
 		 -I$(FC_ROOT)/libs/robotkit
 
 # Build Mode Configuration (Default to Debug)

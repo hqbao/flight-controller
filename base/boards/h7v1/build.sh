@@ -66,7 +66,7 @@ fi
 
 # Add platform to sources.mk SUBDIRS (if missing)
 if ! grep -q '^platform' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
-    sed -i '' '/^modules\/state_detector/a\
+    sed -i '' '/^modules\/flight_state/a\
 platform \\
 ' "$DEBUG_DIR/sources.mk"
 fi
@@ -78,6 +78,15 @@ fi
 
 # Remove dshot from Core/Src in objects.list (they live in platform/ now)
 sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+
+# Remove deleted modules (oscillation_detection, linear_drift_detection) from CubeIDE build
+sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
+sed -i '' '/linear_drift_detection/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
+sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/sources.mk" 2>/dev/null || true
+sed -i '' '/linear_drift_detection/d' "$DEBUG_DIR/sources.mk" 2>/dev/null || true
+sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+sed -i '' '/linear_drift_detection/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+rm -rf "$DEBUG_DIR/modules/oscillation_detection" "$DEBUG_DIR/modules/linear_drift_detection" 2>/dev/null || true
 
 # Add fft module to build (if missing — CubeIDE doesn't know about it)
 if ! grep -q 'modules/fft' "$DEBUG_DIR/makefile" 2>/dev/null; then
@@ -91,6 +100,51 @@ modules/fft \\
 fi
 if ! grep -q 'modules/fft/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
     printf '"./modules/fft/fft.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
+# Add calibration module to build (if missing — CubeIDE doesn't know about it)
+if ! grep -q 'modules/calibration' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/compass/subdir.mk|-include modules/calibration/subdir.mk\
+-include modules/compass/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/calibration' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/compass/a\
+modules/calibration \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/calibration/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/calibration/calibration.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/calibration/calibration_gyro.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/calibration/calibration_accel.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/calibration/calibration_mag.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
+# Add mix_control module to build (if missing — CubeIDE doesn't know about it)
+if ! grep -q 'modules/mix_control' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/attitude_control/subdir.mk|-include modules/mix_control/subdir.mk\
+-include modules/attitude_control/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/mix_control' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/attitude_control/a\
+modules/mix_control \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/mix_control/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/mix_control/mix_control.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
+# Add flight_telemetry module to build (if missing — CubeIDE doesn't know about it)
+if ! grep -q 'modules/flight_telemetry' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/flight_state/subdir.mk|-include modules/flight_telemetry/subdir.mk\
+-include modules/flight_state/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/flight_telemetry' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/flight_state/a\
+modules/flight_telemetry \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/flight_telemetry/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/flight_telemetry/flight_telemetry.o"\n' >> "$DEBUG_DIR/objects.list"
 fi
 
 # Build

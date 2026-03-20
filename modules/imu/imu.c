@@ -10,346 +10,200 @@
 #include <macro.h>
 #include <messages.h>
 
-/* 
- * --- IMU CALIBRATION GUIDE ---
- * 
- * 1. GYROSCOPE CALIBRATION (Automatic)
- *    - Performed automatically on startup or when triggered.
- *    - Requires the device to be completely stationary for 2 seconds.
- *    - Logic: Collects samples for 2s. If the spread (Max - Min) of any axis 
- *      exceeds IMU_MOTION (32 LSB ~ 2 dps), calibration fails and retries.
- *    - Result: Updates gyro_offset[3], [4], [5].
- * 
- * 2. ACCELEROMETER CALIBRATION (Manual)
- *    - Requires external Python tool: tools/imu_calibrate_accel.py
- *    - Steps:
- *      a. Flash firmware and connect via USB.
- *      b. Run 'python3 tools/imu_calibrate_accel.py'.
- *      c. Click "Start Log" — yellow live dot shows current reading.
- *      d. Place drone in 6+ static positions (flat, sides, nose up/down, etc).
- *         Click "Capture Position" for each.
- *      e. Click "Compute Calib".
- *      f. Copy the resulting Bias (B) and Scale Matrix (S) into the 
- *         g_imu1 struct initialization below.
- *         - Bias (B) goes to gyro_offset[0], [1], [2].
- *         - Scale (S) goes to accel_scale[3][3].
- * 
- * 3. MATHEMATICAL MODEL
- *    The calibration applies the following linear correction:
- *    
- *    V_cal = S * (V_raw - B)
- *    
- *    Where:
- *    - V_raw: Raw sensor reading vector [x, y, z]
- *    - B (Bias): Offset vector [bx, by, bz]
- *      Corrects zero-g offset errors so the sphere is centered at (0,0,0).
- *    - S (Scale Matrix): 3x3 Matrix
- *      [ Sxx Sxy Sxz ]
- *      [ Syx Syy Syz ]
- *      [ Szx Szy Szz ]
- *      Corrects for scale factor errors (sensitivity) and axis misalignment 
- *      (non-orthogonality). It transforms the ellipsoid of raw data into 
- *      a perfect sphere of radius 1g.
+/*
+ * --- IMU SENSOR MODULE ---
+ *
+ * Pure sensor driver for ICM-42688P. Reads gyro and accel data,
+ * applies calibration values received from the calibration module,
+ * and publishes calibrated sensor data.
+ *
+ * Calibration values are delivered via PubSub from the calibration module:
+ *   - CALIBRATION_GYRO_READY  → temp polynomial coefficients (3x3 floats)
+ *   - CALIBRATION_ACCEL_READY → accel bias (3 floats) + scale matrix (3x3)
  */
 
-/* Macro to select accel monitor data mode (1=calibrated accel) */
-#define ACCEL_MONITOR_MODE 1
-
-#define CALIBRATION_FREQ (GYRO_FREQ * 2) // 2 seconds
-#define IMU_MOTION 32
 #define SSF_GYRO (16.4)
 
-typedef enum {
-	init = 0,
-	calibrating,
-	ready,
-} imu_state_t;
+/* --- Sensor state --- */
 
-typedef icm42688p_t imu_sensor_t;
+static icm42688p_t g_imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0};
+static float g_imu_data[7] = {0};     /* [0-2]=accel, [3-5]=gyro, [6]=temp (°C) */
 
-typedef struct {
-	imu_sensor_t imu_sensor;
-	float gyro_accel[6];
-	float gyro_offset[6];
-	float accel_scale[3][3];
-	int64_t gyro_calibration[3];
-	float gyro_min[3];
-	float gyro_max[3];
-	int16_t gyro_calibration_counter;
-	imu_state_t state;
-	topic_t topic_gyro_calibration_update;
-	topic_t topic_gyro_update;
-	topic_t topic_accel_update;
-} imu_t;
+static float g_accel_raw[3] = {0};    /* Raw accel before calibration (LSB) */
+static float g_accel_cal[3] = {0};    /* Calibrated accel (LSB, bias+scale corrected) */
+static float g_gyro_raw[3] = {0};     /* Raw gyro before calibration (LSB) */
+static float g_gyro_cal[3] = {0};     /* Calibrated gyro (deg/s) */
 
-static uint8_t g_monitor_msg[12] = {0};
-static uint8_t g_log_active = 0;
+/* --- Calibration state --- */
 
-static imu_t g_imu1 = {
-	.imu_sensor = {{0}, I2C_PORT1, SPI_PORT1, 0},
-	.gyro_accel = {0},
-
-	/* --- ACCELEROMETER CALIBRATION DATA --- */
-	/* 1. Bias Vector (B) */
-	/* Copy Bx, By, Bz into the first 3 slots. Leave the last 3 as 0 (Gyro runtime offsets). */
-	.gyro_offset = {
-		0.0f, 0.0f, 0.0f,  /* Bx, By, Bz */
-		0.0f, 0.0f, 0.0f   /* Gyro Offsets (Do not edit) */
-	},
-
-	/* 2. Scale Matrix (S) */
-	/* Copy the 3x3 Matrix here */
-	.accel_scale = {
-		{1.0f, 0.0f, 0.0f},
-		{0.0f, 1.0f, 0.0f},
-		{0.0f, 0.0f, 1.0f}
-	},
-	/* -------------------------------------- */
-
-	.gyro_calibration = {0},
-	.gyro_min = {0},
-	.gyro_max = {0},
-	.gyro_calibration_counter = 0,
-	.state = init,
-	.topic_gyro_calibration_update = SENSOR_IMU1_GYRO_CALIBRATION_UPDATE,
-	.topic_gyro_update = SENSOR_IMU1_GYRO_UPDATE,
-	.topic_accel_update = SENSOR_IMU1_ACCEL_UPDATE
+static float g_temp_coeff[3][3] = {0};  /* [axis][0]*T² + [axis][1]*T + [axis][2] */
+static float g_accel_bias[3] = {0};
+static float g_accel_scale[3][3] = {
+	{1.0f, 0.0f, 0.0f},
+	{0.0f, 1.0f, 0.0f},
+	{0.0f, 0.0f, 1.0f}
 };
+static uint8_t g_gyro_ready = 0;
+static uint8_t g_accel_ready = 0;
 
-static void save_calibration_data(imu_t *imu) {
-	param_storage_t param;
-	
-	// Save calibration status flag
-	param.id = PARAM_ID_IMU1_GYRO_CALIBRATED;
-	param.value = 1.0f;
-	publish(LOCAL_STORAGE_SAVE, (uint8_t*)&param, sizeof(param_storage_t));
-	
-	// Save gyro bias X
-	param.id = PARAM_ID_IMU1_GYRO_BIAS_X;
-	param.value = imu->gyro_offset[3];
-	publish(LOCAL_STORAGE_SAVE, (uint8_t*)&param, sizeof(param_storage_t));
-	
-	// Save gyro bias Y
-	param.id = PARAM_ID_IMU1_GYRO_BIAS_Y;
-	param.value = imu->gyro_offset[4];
-	publish(LOCAL_STORAGE_SAVE, (uint8_t*)&param, sizeof(param_storage_t));
-	
-	// Save gyro bias Z
-	param.id = PARAM_ID_IMU1_GYRO_BIAS_Z;
-	param.value = imu->gyro_offset[5];
-	publish(LOCAL_STORAGE_SAVE, (uint8_t*)&param, sizeof(param_storage_t));
+/* --- Logging state --- */
+
+static float g_log_msg[4] = {0};      /* 3 data values + temperature */
+static uint8_t g_active_log_class = 0;
+
+/* --- Sensor read & processing (1 kHz gyro, 500 Hz accel) --- */
+
+static void on_scheduler_1khz(uint8_t *data, size_t size) {
+	icm42688p_read(&g_imu_sensor);
 }
 
-static void calibrate(imu_t *imu) {
-	float gx = imu->gyro_accel[3];
-	float gy = imu->gyro_accel[4];
-	float gz = imu->gyro_accel[5];
+static void on_imu_data_ready(void) {
+	/* Save raw gyro before calibration (LSB) */
+	g_gyro_raw[0] = g_imu_data[3];
+	g_gyro_raw[1] = g_imu_data[4];
+	g_gyro_raw[2] = g_imu_data[5];
 
-	imu->gyro_calibration[0] += gx;
-	imu->gyro_calibration[1] += gy;
-	imu->gyro_calibration[2] += gz;
+	if (g_gyro_ready) {
+		/* Compute gyro bias from temperature polynomial */
+		float T = g_imu_data[6];
+		float T2 = T * T;
+		float bias_x = g_temp_coeff[0][0] * T2 + g_temp_coeff[0][1] * T + g_temp_coeff[0][2];
+		float bias_y = g_temp_coeff[1][0] * T2 + g_temp_coeff[1][1] * T + g_temp_coeff[1][2];
+		float bias_z = g_temp_coeff[2][0] * T2 + g_temp_coeff[2][1] * T + g_temp_coeff[2][2];
 
-	// Update Min/Max for stability check
-	if (gx < imu->gyro_min[0]) imu->gyro_min[0] = gx;
-	if (gx > imu->gyro_max[0]) imu->gyro_max[0] = gx;
-	
-	if (gy < imu->gyro_min[1]) imu->gyro_min[1] = gy;
-	if (gy > imu->gyro_max[1]) imu->gyro_max[1] = gy;
-	
-	if (gz < imu->gyro_min[2]) imu->gyro_min[2] = gz;
-	if (gz > imu->gyro_max[2]) imu->gyro_max[2] = gz;
+		/* Apply bias and convert to dps */
+		g_imu_data[3] -= bias_x;
+		g_imu_data[4] -= bias_y;
+		g_imu_data[5] -= bias_z;
 
-	imu->gyro_calibration_counter++;
+		g_imu_data[3] = g_imu_data[3] / SSF_GYRO;
+		g_imu_data[4] = g_imu_data[4] / SSF_GYRO;
+		g_imu_data[5] = g_imu_data[5] / SSF_GYRO;
 
-	if (imu->gyro_calibration_counter >= CALIBRATION_FREQ) {
-		// Check stability (Max - Min < Threshold)
-		// Threshold: 32 LSB (~2 dps) spread allowed over 2 seconds
-		if ((imu->gyro_max[0] - imu->gyro_min[0] > IMU_MOTION) ||
-			(imu->gyro_max[1] - imu->gyro_min[1] > IMU_MOTION) ||
-			(imu->gyro_max[2] - imu->gyro_min[2] > IMU_MOTION)) {
-			
-			// Failed: Reset and retry
-			imu->state = init;
-			uint8_t result = 0;
-			publish(imu->topic_gyro_calibration_update, (uint8_t*)&result, 1);
-			return;
-		}
+		/* Save calibrated gyro for logger */
+		g_gyro_cal[0] = g_imu_data[3];
+		g_gyro_cal[1] = g_imu_data[4];
+		g_gyro_cal[2] = g_imu_data[5];
 
-		imu->gyro_offset[3] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[0];
-		imu->gyro_offset[4] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[1];
-		imu->gyro_offset[5] = (double)(1.0 / CALIBRATION_FREQ) * imu->gyro_calibration[2];
-		imu->state = ready;
-		uint8_t result = 1;
-		publish(imu->topic_gyro_calibration_update, (uint8_t*)&result, 1);
-		
-		// Save calibration status and gyro biases to flash
-		save_calibration_data(imu);
+		publish(SENSOR_IMU1_GYRO_UPDATE, (uint8_t*)&g_imu_data[3], 12);
 	}
+
+	/* Raw gyro for calibration module — lower priority, published after */
+	publish(SENSOR_IMU1_GYRO_RAW, (uint8_t*)g_gyro_raw, 12);
 }
 
-static void imu1_calibrate(uint8_t *data, size_t size) {
-	g_imu1.gyro_calibration_counter = 0;
-	g_imu1.gyro_calibration[0] = 0;
-	g_imu1.gyro_calibration[1] = 0;
-	g_imu1.gyro_calibration[2] = 0;
-	
-	// Initialize Min/Max with current values
-	g_imu1.gyro_min[0] = g_imu1.gyro_max[0] = g_imu1.gyro_accel[3];
-	g_imu1.gyro_min[1] = g_imu1.gyro_max[1] = g_imu1.gyro_accel[4];
-	g_imu1.gyro_min[2] = g_imu1.gyro_max[2] = g_imu1.gyro_accel[5];
-	
-	g_imu1.state = calibrating;
-}
-
-static void imu1_loop(uint8_t *data, size_t size) {
-	icm42688p_read(&g_imu1.imu_sensor);
-}
-
-static void imu1_data_update(void) {	
-	if (g_imu1.state == ready) {
-		g_imu1.gyro_accel[3] -= g_imu1.gyro_offset[3];
-		g_imu1.gyro_accel[4] -= g_imu1.gyro_offset[4];
-		g_imu1.gyro_accel[5] -= g_imu1.gyro_offset[5];
-
-		g_imu1.gyro_accel[3] = g_imu1.gyro_accel[3] / SSF_GYRO;
-		g_imu1.gyro_accel[4] = g_imu1.gyro_accel[4] / SSF_GYRO;
-		g_imu1.gyro_accel[5] = g_imu1.gyro_accel[5] / SSF_GYRO;
-		publish(g_imu1.topic_gyro_update, (uint8_t*)&g_imu1.gyro_accel[3], 12);
-	}
-	else if (g_imu1.state == calibrating) {
-		calibrate(&g_imu1);
-	}
-}
-
-static void imu1_i2c_data_update(uint8_t *data, size_t size) {
+static void on_i2c_callback(uint8_t *data, size_t size) {
 	if (data[0] == I2C_PORT1) {
-		icm42688p_get_i2c(&g_imu1.imu_sensor, g_imu1.gyro_accel);
-		imu1_data_update();
+		icm42688p_get_i2c(&g_imu_sensor, g_imu_data);
+		on_imu_data_ready();
 	}
 }
 
-static void imu1_spi_data_update(uint8_t *data, size_t size) {
+static void on_spi_callback(uint8_t *data, size_t size) {
 	if (data[0] == SPI_PORT1) {
-		icm42688p_get_spi(&g_imu1.imu_sensor, g_imu1.gyro_accel);
-		imu1_data_update();
+		icm42688p_get_spi(&g_imu_sensor, g_imu_data);
+		on_imu_data_ready();
 	}
 }
 
-static void publish_accel_loop(uint8_t *data, size_t size) {
-	if (g_imu1.state == ready) {
-		// Apply Offset
-		float ax = g_imu1.gyro_accel[0] - g_imu1.gyro_offset[0];
-		float ay = g_imu1.gyro_accel[1] - g_imu1.gyro_offset[1];
-		float az = g_imu1.gyro_accel[2] - g_imu1.gyro_offset[2];
+static void on_scheduler_500hz(uint8_t *data, size_t size) {
+	if (g_gyro_ready) {
+		/* Save raw accel before calibration (for LOG_CLASS_IMU_ACCEL_RAW) */
+		g_accel_raw[0] = g_imu_data[0];
+		g_accel_raw[1] = g_imu_data[1];
+		g_accel_raw[2] = g_imu_data[2];
 
-		// Apply Scale Matrix
-		g_imu1.gyro_accel[0] = g_imu1.accel_scale[0][0] * ax + g_imu1.accel_scale[0][1] * ay + g_imu1.accel_scale[0][2] * az;
-		g_imu1.gyro_accel[1] = g_imu1.accel_scale[1][0] * ax + g_imu1.accel_scale[1][1] * ay + g_imu1.accel_scale[1][2] * az;
-		g_imu1.gyro_accel[2] = g_imu1.accel_scale[2][0] * ax + g_imu1.accel_scale[2][1] * ay + g_imu1.accel_scale[2][2] * az;
+		/* Apply accel calibration: V_cal = S * (V_raw - B) */
+		float ax = g_imu_data[0] - g_accel_bias[0];
+		float ay = g_imu_data[1] - g_accel_bias[1];
+		float az = g_imu_data[2] - g_accel_bias[2];
 
-		publish(g_imu1.topic_accel_update, (uint8_t*)g_imu1.gyro_accel, 12);
+		g_imu_data[0] = g_accel_scale[0][0] * ax + g_accel_scale[0][1] * ay + g_accel_scale[0][2] * az;
+		g_imu_data[1] = g_accel_scale[1][0] * ax + g_accel_scale[1][1] * ay + g_accel_scale[1][2] * az;
+		g_imu_data[2] = g_accel_scale[2][0] * ax + g_accel_scale[2][1] * ay + g_accel_scale[2][2] * az;
+
+		/* Save calibrated accel for logger */
+		g_accel_cal[0] = g_imu_data[0];
+		g_accel_cal[1] = g_imu_data[1];
+		g_accel_cal[2] = g_imu_data[2];
+
+		publish(SENSOR_IMU1_ACCEL_UPDATE, (uint8_t*)g_imu_data, 12);
 	}
 }
+
+/* --- Calibration receivers --- */
+
+static void on_gyro_calibration_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(calibration_gyro_t)) return;
+	calibration_gyro_t *cal = (calibration_gyro_t *)data;
+	memcpy(g_temp_coeff, cal->temp_coeff, sizeof(g_temp_coeff));
+	g_gyro_ready = 1;
+}
+
+static void on_accel_calibration_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(calibration_accel_t)) return;
+	calibration_accel_t *cal = (calibration_accel_t *)data;
+	memcpy(g_accel_bias, cal->bias, sizeof(g_accel_bias));
+	memcpy(g_accel_scale, cal->scale, sizeof(g_accel_scale));
+	g_accel_ready = 1;
+}
+
+static void on_scheduler_1hz(uint8_t *data, size_t size) {
+	if (!g_gyro_ready) {
+		publish(CALIBRATION_GYRO_REQUEST, NULL, 0);
+	}
+	if (!g_accel_ready) {
+		publish(CALIBRATION_ACCEL_REQUEST, NULL, 0);
+	}
+}
+
+/* --- Logging (25 Hz) --- */
 
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
-	g_log_active = (data[0] == LOG_CLASS_IMU_ACCEL);
-}
-
-static void loop_logger(uint8_t *data, size_t size) {
-	if (!g_log_active) return;
-
-	/* Pack raw accel into SEND_LOG message
-	   Format: 3 float32 values (ax, ay, az) */
-	
-	float ax = g_imu1.gyro_accel[0];
-	float ay = g_imu1.gyro_accel[1];
-	float az = g_imu1.gyro_accel[2];
-	
-	memcpy(&g_monitor_msg[0], &ax, sizeof(float));
-	memcpy(&g_monitor_msg[4], &ay, sizeof(float));
-	memcpy(&g_monitor_msg[8], &az, sizeof(float));
-	
-	publish(SEND_LOG, g_monitor_msg, sizeof(g_monitor_msg));
-}
-
-static void check_gyro_calibration(uint8_t *data, size_t size) {
-	// Request calibration status from local storage
-	param_id_e param_id = PARAM_ID_IMU1_GYRO_CALIBRATED;
-	publish(LOCAL_STORAGE_LOAD, (uint8_t*)&param_id, sizeof(param_id_e));
-}
-
-static void on_imu_calibration_result(uint8_t *data, size_t size) {
-	if (data[0] == 0) {
-		// Calibration failed, retry
-		imu1_calibrate(NULL, 0);
+	uint8_t cls = data[0];
+	if (cls == LOG_CLASS_IMU_ACCEL_RAW || cls == LOG_CLASS_IMU_ACCEL_CALIB ||
+		cls == LOG_CLASS_IMU_GYRO_RAW || cls == LOG_CLASS_IMU_GYRO_CALIB) {
+		g_active_log_class = cls;
+	} else {
+		g_active_log_class = 0;
 	}
 }
 
-static void handle_storage_result(uint8_t *data, size_t size) {
-	if (size < sizeof(param_storage_t)) {
-		return;
-	}
-	
-	param_storage_t *param = (param_storage_t *)data;
-	
-	switch (param->id) {
-		case PARAM_ID_IMU1_GYRO_CALIBRATED:
-			if (param->value > 0.0f) {
-				// IMU is calibrated, load all 3 bias values from storage
-				param_id_e bias_x = PARAM_ID_IMU1_GYRO_BIAS_X;
-				publish(LOCAL_STORAGE_LOAD, (uint8_t*)&bias_x, sizeof(param_id_e));
-				
-				param_id_e bias_y = PARAM_ID_IMU1_GYRO_BIAS_Y;
-				publish(LOCAL_STORAGE_LOAD, (uint8_t*)&bias_y, sizeof(param_id_e));
-				
-				param_id_e bias_z = PARAM_ID_IMU1_GYRO_BIAS_Z;
-				publish(LOCAL_STORAGE_LOAD, (uint8_t*)&bias_z, sizeof(param_id_e));
-			} else {
-				// IMU not calibrated, start calibration
-				imu1_calibrate(NULL, 0);
-			}
-			break;
-			
-		case PARAM_ID_IMU1_GYRO_BIAS_X:
-			g_imu1.gyro_offset[3] = param->value;
-			break;
-			
-		case PARAM_ID_IMU1_GYRO_BIAS_Y:
-			g_imu1.gyro_offset[4] = param->value;
-			break;
-			
-		case PARAM_ID_IMU1_GYRO_BIAS_Z:
-			g_imu1.gyro_offset[5] = param->value;
-			// All biases loaded, set mode to ready
-			g_imu1.state = ready;
+static void on_scheduler_25hz(uint8_t *data, size_t size) {
+	if (g_active_log_class == 0) return;
 
-			uint8_t result = 1;
-			publish(g_imu1.topic_gyro_calibration_update, (uint8_t*)&result, 1);
-			break;
-			
-		default:
-			break;
+	float *src;
+	switch (g_active_log_class) {
+		case LOG_CLASS_IMU_ACCEL_RAW:   src = g_accel_raw; break;
+		case LOG_CLASS_IMU_ACCEL_CALIB: src = g_accel_cal; break;
+		case LOG_CLASS_IMU_GYRO_RAW:    src = g_gyro_raw; break;
+		case LOG_CLASS_IMU_GYRO_CALIB:  src = g_gyro_cal; break;
+		default: return;
 	}
+
+	g_log_msg[0] = src[0];
+	g_log_msg[1] = src[1];
+	g_log_msg[2] = src[2];
+	g_log_msg[3] = g_imu_data[6]; /* temperature */
+
+	publish(SEND_LOG, (uint8_t*)g_log_msg, sizeof(g_log_msg));
 }
+
+/* --- Setup --- */
 
 void imu_setup(void) {
-	icm42688p_init(&g_imu1.imu_sensor,
+	icm42688p_init(&g_imu_sensor,
 		AFS_2G, GFS_2000DPS, 
 		AODR_500Hz, GODR_4kHz,
 		accel_mode_LN, gyro_mode_LN);
-	subscribe(SCHEDULER_1KHZ, imu1_loop);
-	subscribe(SCHEDULER_500HZ, publish_accel_loop);
-	subscribe(I2C_CALLBACK_UPDATE, imu1_i2c_data_update);
-	subscribe(SPI_CALLBACK_UPDATE, imu1_spi_data_update);
-	subscribe(SENSOR_IMU1_CALIBRATE_GYRO, imu1_calibrate);
-	subscribe(SENSOR_IMU1_GYRO_CALIBRATION_UPDATE, on_imu_calibration_result);
-	subscribe(SENSOR_CHECK_GYRO_CALIBRATION, check_gyro_calibration);
-	subscribe(LOCAL_STORAGE_RESULT, handle_storage_result);
+	subscribe(SCHEDULER_1KHZ, on_scheduler_1khz);
+	subscribe(SCHEDULER_500HZ, on_scheduler_500hz);
+	subscribe(I2C_CALLBACK_UPDATE, on_i2c_callback);
+	subscribe(SPI_CALLBACK_UPDATE, on_spi_callback);
+	subscribe(CALIBRATION_GYRO_READY, on_gyro_calibration_ready);
+	subscribe(CALIBRATION_ACCEL_READY, on_accel_calibration_ready);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
-	subscribe(SCHEDULER_25HZ, loop_logger);
-	
-	// Publish module initialized status
-	module_initialized_t module_initialized = {.id = MODULE_ID_IMU, .initialized = 1};
-	publish(MODULE_INITIALIZED_UPDATE, (uint8_t*)&module_initialized, sizeof(module_initialized_t));
+	subscribe(SCHEDULER_25HZ, on_scheduler_25hz);
+	subscribe(SCHEDULER_1HZ, on_scheduler_1hz);
 }

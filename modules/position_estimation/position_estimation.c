@@ -18,9 +18,10 @@
  * - Latency Compensation: Disabled (Valid for non-racing speeds)
  * 
  * COORDINATE FRAMES:
- * - SENSOR_LINEAR_ACCEL comes in Body-Frame
- * - X/Y axes are swapped and negated to match navigation frame
- * - Z-axis uses Body-Frame (assumes mostly level flight)
+ * - X/Y: Body-frame (X=Forward/Pitch, Y=Right/Roll)
+ *   Matches optical flow sensor which also measures in body frame
+ * - Z: Positive-UP altitude convention (laser/baro)
+ *   Earth-frame Z-accel used (positive-up from fusion library)
  */
 #include "position_estimation.h"
 #include <pubsub.h>
@@ -197,22 +198,21 @@ static void check_altitude_source(uint8_t *data, size_t size) {
  * 
  * Receives linear acceleration from attitude estimation module.
  * 
- * COORDINATE TRANSFORMATION:
- * - X/Y: Use Body-Frame (optical flow fusion requires body relative motion).
- *   Swapped/Negated to match navigation frame:
- *   - nav_x = -body_y
- *   - nav_y = -body_x
- * - Z: Use Earth-Frame (altitude estimation).
+ * COORDINATE FRAMES:
+ * - X/Y: Body-frame linear accel (X=Forward/Pitch, Y=Right/Roll)
+ *   Matches optical flow sensor which also measures in body frame
+ * - Z: Earth-frame linear accel (positive-up from fusion library)
+ *   Used for altitude estimation with barometer/laser
  */
 static void linear_accel_update(uint8_t *data, size_t size) {
 	if (size < sizeof(linear_accel_data_t)) return;
 	linear_accel_data_t la;
 	memcpy(&la, data, sizeof(linear_accel_data_t));
 	
-	// Convert to SI Units (m/s^2)
-	// la.body is normalized (1.0 = 1G)
-	g_linear_accel.x = -la.body.y * GRAVITY_MSS;
-	g_linear_accel.y = -la.body.x * GRAVITY_MSS;
+	// X/Y: Body-frame (matches optical flow sensor frame)
+	g_linear_accel.x = la.body.x * GRAVITY_MSS;
+	g_linear_accel.y = la.body.y * GRAVITY_MSS;
+	// Z: Earth-frame (positive-up from fusion library, for altitude)
 	g_linear_accel.z = la.earth.z * GRAVITY_MSS;
 
     // Predict state based on acceleration (500Hz -> 0.002s)
@@ -220,12 +220,12 @@ static void linear_accel_update(uint8_t *data, size_t size) {
     fusion6_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
     fusion6_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
 
-	g_pos_final.x = -g_fusion_x.pos_final;
-	g_pos_final.y = -g_fusion_y.pos_final;
+	g_pos_final.x = g_fusion_x.pos_final;
+	g_pos_final.y = g_fusion_y.pos_final;
 	g_pos_final.z = g_fusion_z.pos_final;
 
-	g_linear_veloc_final.x = -g_fusion_x.veloc_final;
-	g_linear_veloc_final.y = -g_fusion_y.veloc_final;
+	g_linear_veloc_final.x = g_fusion_x.veloc_final;
+	g_linear_veloc_final.y = g_fusion_y.veloc_final;
 	g_linear_veloc_final.z = g_fusion_z.veloc_final;
 
     // Pack position and velocity into update buffer
@@ -252,12 +252,12 @@ static void loop_logger(uint8_t *data, size_t size) {
 
 	if (g_log_class == LOG_CLASS_POSITION) {
 		// Position & Velocity (6 floats, 24 bytes)
-		val[0] = g_fusion_x.pos_final;
-		val[1] = g_fusion_y.pos_final;
-		val[2] = g_fusion_z.pos_final;
-		val[3] = g_fusion_x.veloc_final;
-		val[4] = g_fusion_y.veloc_final;
-		val[5] = g_fusion_z.veloc_final;
+		val[0] = g_pos_final.x;
+		val[1] = g_pos_final.y;
+		val[2] = g_pos_final.z;
+		val[3] = g_linear_veloc_final.x;
+		val[4] = g_linear_veloc_final.y;
+		val[5] = g_linear_veloc_final.z;
 	} else if (g_log_class == LOG_CLASS_POSITION_OPTFLOW) {
 		// Optical Flow & Altitude (6 floats, 24 bytes)
 		val[0] = g_optflow_down_dx;
@@ -273,8 +273,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 }
 
 void position_estimation_setup(void) {
-    fusion6_init(&g_fusion_x, 1.0, 0.5, 1.0, 20.0, 0.1);
-    fusion6_init(&g_fusion_y, 1.0, 0.5, 1.0, 20.0, 0.1);
+    fusion6_init(&g_fusion_x, 1.0, 1.0, 1.0, 20.0, 0.1);
+    fusion6_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
     fusion6_init(&g_fusion_z, 1.0, 0.5, 1.0, 20.0, 0.1);
 
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);

@@ -74,11 +74,6 @@ void gps_setup(void) {
 	memset(&g_gps_position, 0, sizeof(gps_position_t));
 	memset(&g_gps_velocity, 0, sizeof(gps_velocity_t));
 	
-	// Subscribe to UBX messages from UART
 	subscribe(UBX_MESSAGE_UPDATE, on_ubx_message_received);
-	
-	// Publish module initialized status
-	module_initialized_t initialized = {.id = MODULE_ID_GPS, .initialized = 1};
-	publish(MODULE_INITIALIZED_UPDATE, (uint8_t*)&initialized, sizeof(module_initialized_t));
 }
 

@@ -52,6 +52,20 @@ uint32_t platform_time_ms(void) {
     return SDL_GetTicks();
 }
 
+void platform_reset(void) {
+    printf("[SITL] Reset requested — exiting.\n");
+    exit(0);
+}
+
+void platform_get_chip_id(uint8_t *id_out) {
+    // SITL: synthetic chip ID (fixed value for simulation)
+    static const uint8_t sitl_id[8] = {
+        0x53, 0x49, 0x54, 0x4C,  // "SITL"
+        0x00, 0x00, 0x00, 0x01,
+    };
+    memcpy(id_out, sitl_id, 8);
+}
+
 // Storage (File based)
 // Saved in the Current Working Directory (CWD) of the executable
 static const char *STORAGE_FILE = "sitl_storage.bin";
@@ -186,22 +200,29 @@ void handle_sensor_injection(SensorPacket *sensors) {
     sched_tick++;
 
     // 1. High Rate Sensors (1kHz)
-    float gyro[3] = { (float)sensors->gyro[0], (float)sensors->gyro[1], (float)sensors->gyro[2] };
+    // Gazebo IMU is in ENU body frame (X=fwd, Y=left, Z=up)
+    // FC applies: body = (-raw_gy, -raw_gx, -raw_gz)
+    // NED = (ENU_x, -ENU_y, -ENU_z), so raw_gx=ENU_y, raw_gy=-ENU_x, raw_gz=ENU_z
+    float gyro[3] = { (float)sensors->gyro[1], -(float)sensors->gyro[0], (float)sensors->gyro[2] };
     publish(SENSOR_IMU1_GYRO_UPDATE, (uint8_t*)gyro, sizeof(gyro));
     
     // 2. Medium-High Rate - Accel (500Hz)
     // Run on evens (0, 2, 4...)
     if (sched_tick % 2 == 0) {
-        float accel[3] = { (float)sensors->accel[0], (float)sensors->accel[1], (float)sensors->accel[2] };
+        // Same ENU→sensor frame conversion as gyro
+        float accel[3] = { (float)sensors->accel[1], -(float)sensors->accel[0], (float)sensors->accel[2] };
         publish(SENSOR_IMU1_ACCEL_UPDATE, (uint8_t*)accel, sizeof(accel));
     }
 
     // 3. Medium Rate - Mag (100Hz)
     if (sched_tick % 10 == 0) {
+        // Gazebo mag is in ENU body frame (X=fwd, Y=left, Z=up)
+        // Compass module on real hardware does its own axis mapping.
+        // For SITL, convert ENU→NED body: Y→-Y (left→right), Z→-Z (up→down)
         vector3d_t mag_vec;
         mag_vec.x = sensors->mag[0];
-        mag_vec.y = sensors->mag[1];
-        mag_vec.z = sensors->mag[2];
+        mag_vec.y = -sensors->mag[1];
+        mag_vec.z = -sensors->mag[2];
         publish(SENSOR_COMPASS, (uint8_t*)&mag_vec, sizeof(mag_vec));
     }
 
@@ -407,7 +428,7 @@ int main(int argc, char **argv) {
     
     // Force state to FLYING to enable Control Loop
     state_t initial_state = FLYING;
-    publish(STATE_DETECTION_UPDATE, (uint8_t*)&initial_state, sizeof(state_t));
+    publish(FLIGHT_STATE_UPDATE, (uint8_t*)&initial_state, sizeof(state_t));
 
     SensorPacket sensors;
     struct sockaddr_in recv_addr;

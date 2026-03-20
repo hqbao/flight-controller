@@ -8,16 +8,6 @@
 #include <macro.h>
 #include <messages.h>
 
-#define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
-
-#if MOTOR_TYPE == 1
-#define MIN_SPEED 150
-#define MAX_SPEED 1800
-#elif  MOTOR_TYPE == 2
-#define MIN_SPEED 80
-#define MAX_SPEED 3000
-#endif // MOTOR_TYPE
-
 /* PID Gains */
 // Roll
 #define ATT_ROLL_P 6.0
@@ -43,7 +33,6 @@
 #define ATT_SMOOTH_OUTPUT 1.0
 #define ATT_GAIN_TIME 1.0
 
-static int g_output_speed[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static angle3d_t g_angular_state = {0, 0, 0};
 static angle3d_t g_angular_target = {0, 0, 0};
 static state_t g_state = DISARMED;
@@ -51,8 +40,6 @@ static state_t g_state = DISARMED;
 static pid_control_t g_pid_att_roll;
 static pid_control_t g_pid_att_pitch;
 static pid_control_t g_pid_att_yaw;
-
-static rc_att_ctl_t g_rc_att_ctl;
 
 static double g_take_off_speed = 0;
 static double g_altitude = 0;
@@ -74,11 +61,6 @@ static void altitude_control_update(uint8_t *data, size_t size) {
 	if (size < 16) return;
 	memcpy(&g_altitude, &data[0], sizeof(double));
 	memcpy(&g_take_off_speed, &data[8], sizeof(double));
-}
-
-static void move_in_control_update(uint8_t *data, size_t size) {
-	if (size > sizeof(rc_att_ctl_t)) size = sizeof(rc_att_ctl_t);
-	memcpy(&g_rc_att_ctl, data, size);
 }
 
 static void pid_setup(void) {
@@ -110,66 +92,22 @@ static void pid_loop(void) {
 	pid_control_update(&g_pid_att_pitch,	g_angular_state.pitch, 	g_angular_target.pitch, dt);
 	pid_control_update(&g_pid_att_yaw, 		g_angular_state.yaw, 	g_set_point_yaw, dt);
 
-	double m1 = MIN_SPEED + g_take_off_speed - g_altitude + g_pid_att_roll.output - g_pid_att_pitch.output - g_pid_att_yaw.output;
-	double m2 = MIN_SPEED + g_take_off_speed - g_altitude - g_pid_att_roll.output - g_pid_att_pitch.output + g_pid_att_yaw.output;
-	double m3 = MIN_SPEED + g_take_off_speed - g_altitude - g_pid_att_roll.output + g_pid_att_pitch.output - g_pid_att_yaw.output;
-	double m4 = MIN_SPEED + g_take_off_speed - g_altitude + g_pid_att_roll.output + g_pid_att_pitch.output + g_pid_att_yaw.output;
-
-	double m5 = MIN_SPEED + g_take_off_speed - g_altitude + g_pid_att_roll.output - g_pid_att_pitch.output + g_pid_att_yaw.output;
-	double m6 = MIN_SPEED + g_take_off_speed - g_altitude - g_pid_att_roll.output - g_pid_att_pitch.output - g_pid_att_yaw.output;
-	double m7 = MIN_SPEED + g_take_off_speed - g_altitude - g_pid_att_roll.output + g_pid_att_pitch.output + g_pid_att_yaw.output;
-	double m8 = MIN_SPEED + g_take_off_speed - g_altitude + g_pid_att_roll.output + g_pid_att_pitch.output - g_pid_att_yaw.output;
-
-	g_output_speed[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
-	g_output_speed[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
-	g_output_speed[2] = LIMIT((int)m3, MIN_SPEED, MAX_SPEED);
-	g_output_speed[3] = LIMIT((int)m4, MIN_SPEED, MAX_SPEED);
-
-	g_output_speed[4] = LIMIT((int)m5, MIN_SPEED, MAX_SPEED);
-	g_output_speed[5] = LIMIT((int)m6, MIN_SPEED, MAX_SPEED);
-	g_output_speed[6] = LIMIT((int)m7, MIN_SPEED, MAX_SPEED);
-	g_output_speed[7] = LIMIT((int)m8, MIN_SPEED, MAX_SPEED);
+	mix_control_input_t mix = {
+		.roll     = g_pid_att_roll.output,
+		.pitch    = g_pid_att_pitch.output,
+		.yaw      = g_pid_att_yaw.output,
+		.altitude = g_altitude + g_take_off_speed,
+	};
+	publish(MIX_CONTROL_UPDATE, (uint8_t *)&mix, sizeof(mix));
 }
 
 static void attitude_control_loop(uint8_t *data, size_t size) {
-	if (g_state == DISARMED || g_state == ARMED) {
-		g_output_speed[0] = 0;
-		g_output_speed[1] = 0;
-		g_output_speed[2] = 0;
-		g_output_speed[3] = 0;
-		g_output_speed[4] = 0;
-		g_output_speed[5] = 0;
-		g_output_speed[6] = 0;
-		g_output_speed[7] = 0;
-	}
-	else if (g_state == READY) {
-		g_output_speed[0] = MIN_SPEED;
-		g_output_speed[1] = MIN_SPEED;
-		g_output_speed[2] = MIN_SPEED;
-		g_output_speed[3] = MIN_SPEED;
-		g_output_speed[4] = MIN_SPEED;
-		g_output_speed[5] = MIN_SPEED;
-		g_output_speed[6] = MIN_SPEED;
-		g_output_speed[7] = MIN_SPEED;
-	}
-	else if (g_state == TAKING_OFF || g_state == FLYING || g_state == LANDING) {
+	if (g_state == TAKING_OFF || g_state == FLYING || g_state == LANDING) {
 		pid_loop();
 		if (g_state == TAKING_OFF) {
 			g_set_point_yaw = g_angular_state.yaw;
 		}
 	}
-	else if (g_state == TESTING) {
-		g_output_speed[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[2] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[3] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[4] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[5] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[6] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[7] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 	* (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-	}
-
-	publish(SPEED_CONTROL_UPDATE, (uint8_t*)g_output_speed, sizeof(int) * 8);
 }
 
 static void reset(void) {
@@ -188,12 +126,9 @@ static void state_update(uint8_t *data, size_t size) {
 void attitude_control_setup(void) {
 	pid_setup();
 
-	publish(SPEED_CONTROL_SETUP, NULL, 0);
-
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
 	subscribe(SCHEDULER_1KHZ, attitude_control_loop);
-	subscribe(STATE_DETECTION_UPDATE, state_update);
-	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update); // For motor testing
+	subscribe(FLIGHT_STATE_UPDATE, state_update);
 	subscribe(ANGULAR_TARGET_UPDATE, angular_target_update);
 	subscribe(ALTITUDE_CONTROL_UPDATE, altitude_control_update);
 }

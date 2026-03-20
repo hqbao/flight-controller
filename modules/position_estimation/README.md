@@ -17,6 +17,28 @@ Linear Accel (500 Hz)    Optical Flow (~25 Hz)    Baro / Laser
     └─► POSITION_STATE_UPDATE (position + velocity, vector3d_t each)
 ```
 
+## Coordinate Convention (NED + Positive-Up Z)
+
+The position estimator uses a hybrid NED convention:
+- **X axis**: North — positive = northward
+- **Y axis**: East — positive = eastward
+- **Z axis**: **Positive-up** — altitude increases upward
+
+### Acceleration Input
+Linear acceleration from the fusion library follows the **positive = direction of motion** convention:
+- **Move forward then stop** → accel X goes positive then negative
+- **Move right then stop** → accel Y goes positive then negative
+- **Move up then stop** → accel Z goes positive then negative
+
+The fusion library outputs positive-up Z directly — no manual negation needed in this module.
+
+### Sensor Sources
+| Axis | Predict Source | Update Source |
+|------|----------------|---------------|
+| X (North) | Earth-frame linear accel | Optical flow / GPS velocity |
+| Y (East) | Earth-frame linear accel | Optical flow / GPS velocity |
+| Z (Up) | Earth-frame linear accel | Barometer or laser altitude |
+
 ## Fusion Architecture
 
 Three independent `fusion6_t` instances for X, Y, Z axes:
@@ -25,13 +47,7 @@ Three independent `fusion6_t` instances for X, Y, Z axes:
 |------|---------|---------------|
 | X (North) | Linear accel × g | Optical flow velocity |
 | Y (East) | Linear accel × g | Optical flow velocity |
-| Z (Down) | Linear accel × g | Barometer or laser altitude delta |
-
-Coordinate transform from body frame:
-```c
-nav_x = -body_y * GRAVITY_MSS;
-nav_y = -body_x * GRAVITY_MSS;
-```
+| Z (Up) | Linear accel × g | Barometer or laser altitude delta |
 
 Optical flow velocity: `vel = angular_displacement × 5.0` (empirical gain).
 

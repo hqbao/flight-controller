@@ -1,8 +1,8 @@
-# State Detector Module
+# Flight State Module
 
 ## Overview
 
-Flight state machine. Manages transitions between flight states based on RC input, sensor status, and safety checks. Also drives the status LED indicator and triggers gyro calibration.
+Flight state machine. Manages transitions between flight states based on RC input, sensor status, and safety checks.
 
 ## State Machine
 
@@ -43,7 +43,7 @@ Flight state machine. Manages transitions between flight states based on RC inpu
 
 - **Emergency disarm**: roll or pitch > 60° → immediate DISARMED
 - **Landing confirmation**: range < 10mm for 50 consecutive iterations (500ms at 100 Hz)
-- **Missing module LED**: flash count indicates missing modules (5=IMU, 4=baro, 3=range, 2=optflow, 1=GPS, 0=OK)
+- **Missing module LED**: flash count indicates missing modules (see fault_handler)
 
 ## Configuration
 
@@ -61,19 +61,17 @@ Flight state machine. Manages transitions between flight states based on RC inpu
 ### Subscriptions
 | Topic | Rate | Purpose |
 |-------|------|---------|
-| `MODULE_INITIALIZED_UPDATE` | Event | Track module readiness |
-| `SENSOR_IMU1_GYRO_CALIBRATION_UPDATE` | Event | Gyro calibration result |
+| `CALIBRATION_GYRO_STATUS` | Event | Gyro calibration result |
+| `CALIBRATION_ACCEL_STATUS` | Event | Accel calibration result |
+| `CALIBRATION_MAG_STATUS` | Event | Mag calibration result |
 | `RC_STATE_UPDATE` | Event | Arm/mode commands |
 | `RC_MOVE_IN_UPDATE` | Event | Stick positions |
-| `EXTERNAL_SENSOR_OPTFLOW` | Event | Sensor health |
-| `SENSOR_AIR_PRESSURE` | Event | Sensor health |
-| `ANGULAR_STATE_UPDATE` | Event | Tilt monitoring |
+| `SENSOR_HEALTH_UPDATE` | Event | Sensor health bitmask (from fault_detector) |
+| `EXTERNAL_SENSOR_OPTFLOW` | Event | Optflow data (range + health check) |
+| `ANGULAR_STATE_UPDATE` | Event | Tilt monitoring (emergency disarm) |
 | `SCHEDULER_100HZ` | 100 Hz | State machine loop |
-| `SCHEDULER_50HZ` | 50 Hz | LED status update |
-| `SCHEDULER_1HZ` | 1 Hz | Calibration trigger |
 
 ### Publications
 | Topic | Data | Rate |
 |-------|------|------|
-| `STATE_DETECTION_UPDATE` | `state_t` (uint8_t) | 100 Hz |
-| `SENSOR_CHECK_GYRO_CALIBRATION` | Trigger — start gyro calibration | Once |
+| `FLIGHT_STATE_UPDATE` | `state_t` (uint8_t) | On state change |

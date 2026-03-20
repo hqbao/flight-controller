@@ -22,6 +22,8 @@ static calibration_coefs_t g_coefs;
 static uint8_t g_pressure_rate = DPS310_CFG_RATE_1_MEAS;
 static uint8_t g_temperature_rate = DPS310_CFG_RATE_1_MEAS;
 static float g_last_temp_raw_sc;
+static uint8_t g_pressure_osr = DPS310_PRS_CFG_PM_PRC_SINGLE;
+static uint8_t g_temperature_osr = DPS310_TMP_CFG_TMP_PRC_SINGLE;
 
 static int16_t read_coefs();
 
@@ -43,16 +45,7 @@ static int16_t product_id_check();
 
 static int16_t get_temperature_sensor(uint8_t *p_sensor);
 
-static void flash(uint8_t count) {
-	platform_delay(250);
-
-	for (int i = 0; i < count; i++) {
-		platform_toggle_led(0);
-		platform_delay(250);
-	}
-
-	platform_delay(250);
-}
+static int16_t get_scale_factor_for_osr(uint8_t osr, uint32_t *p_factor);
 
 int16_t dps310_probe() {
     int16_t ret;
@@ -60,25 +53,29 @@ int16_t dps310_probe() {
     dps310_enable();
 
     ret = product_id_check();
-    if (ret != DPS310_OK) while (1) flash(1);
+    if (ret != DPS310_OK) return ret;
 
-    dps310_configure_temperature(DPS310_CFG_RATE_1_MEAS | DPS310_TMP_CFG_TMP_PRC_SINGLE);
-    dps310_configure_pressure(DPS310_CFG_RATE_4_MEAS | DPS310_PRS_CFG_PM_PRC_4_TIMES);
+    // Configure for continuous mode:
+    // Temperature: 4 measurements/sec, single oversampling (3.6ms each)
+    // Pressure:   32 measurements/sec, 4x oversampling (8.4ms each)
+    // Sensor load: 4×3.6 + 32×8.4 = 283ms < 1000ms limit (DPS310 datasheet §4.1)
+    dps310_configure_temperature(DPS310_CFG_RATE_4_MEAS | DPS310_TMP_CFG_TMP_PRC_SINGLE);
+    dps310_configure_pressure(DPS310_CFG_RATE_32_MEAS | DPS310_PRS_CFG_PM_PRC_4_TIMES);
 
     ret = read_coefs();
-    if (ret != DPS310_OK) while (1) flash(2);
+    if (ret != DPS310_OK) return ret;
 
     ret = dps310_sleep();
-    if (ret != DPS310_OK) while (1) flash(3);
+    if (ret != DPS310_OK) return ret;
 
     float trash;
     read_temperature(&trash);
 
     ret = dps310_sleep();
-    if (ret != DPS310_OK) while (1) flash(4);
+    if (ret != DPS310_OK) return ret;
 
     ret = correct_temperature();
-    if (ret != DPS310_OK) while (1) flash(5);
+    if (ret != DPS310_OK) return ret;
 
     return DPS310_OK;
 }
@@ -128,6 +125,7 @@ int16_t dps310_configure_temperature(uint8_t data) {
     if (ret != DPS310_OK) return ret;
 
     g_temperature_rate = DPS310_TMP_CFG_TMP_RATE_MASK & data;
+    g_temperature_osr = data & 0x07u;
     data |= temperature_sensor;
 
     return write_byte_to_reg(DPS310_TMP_CFG_REG, data);
@@ -135,6 +133,7 @@ int16_t dps310_configure_temperature(uint8_t data) {
 
 int16_t dps310_configure_pressure(uint8_t data) {
     g_pressure_rate = DPS310_PRS_CFG_PM_RATE_MASK & data;
+    g_pressure_osr = data & 0x07u;
     return write_byte_to_reg(DPS310_PRS_CFG_REG, data);
 }
 
@@ -155,7 +154,7 @@ int16_t dps310_read(float *p_temperature, float *p_pressure) {
     ret = read_temperature(p_temperature);
     if (ret != DPS310_OK) return ret;
 
-    platform_delay(1);  //50ms
+    platform_delay(1);
 
     ret = read_pressure(p_pressure);
     if (ret != DPS310_OK) return ret;
@@ -184,7 +183,7 @@ static int16_t read_temperature(float *p_temperature) {
             24);
 
     uint32_t factor;
-    ret = get_scale_factor_for(g_temperature_rate, &factor);
+    ret = get_scale_factor_for_osr(g_temperature_osr, &factor);
     if (ret != DPS310_OK) return ret;
 
     g_last_temp_raw_sc = (float) temp_raw / factor;
@@ -212,7 +211,7 @@ int16_t read_pressure(float *p_pressure) {
     int32_t pressure_raw = get_two_complement_of(((uint32_t) buff[0] << 16u) | ((uint32_t) buff[1] << 8u) | (uint32_t) buff[2], 24);
 
     uint32_t factor;
-    ret = get_scale_factor_for(g_pressure_rate, &factor);
+    ret = get_scale_factor_for_osr(g_pressure_osr, &factor);
     if (ret != DPS310_OK) return ret;
 
     float pressure_raw_sc = (float) pressure_raw / factor;
@@ -283,6 +282,23 @@ int16_t get_scale_factor_for(uint8_t rate, uint32_t *p_factor) {
     return ret;
 }
 
+// Scale factor indexed by oversampling register value (0x00..0x07)
+// DPS310 datasheet Table 16 — must match the CONFIGURED oversampling, NOT rate.
+static int16_t get_scale_factor_for_osr(uint8_t osr, uint32_t *p_factor) {
+    switch (osr) {
+        case 0x00: *p_factor = 524288;   break;  // 1x (single)
+        case 0x01: *p_factor = 1572864;  break;  // 2x
+        case 0x02: *p_factor = 3670016;  break;  // 4x
+        case 0x03: *p_factor = 7864320;  break;  // 8x
+        case 0x04: *p_factor = 253952;   break;  // 16x (requires SHIFT_EN)
+        case 0x05: *p_factor = 516096;   break;  // 32x (requires SHIFT_EN)
+        case 0x06: *p_factor = 1040384;  break;  // 64x (requires SHIFT_EN)
+        case 0x07: *p_factor = 2088960;  break;  // 128x (requires SHIFT_EN)
+        default: return DPS310_UNKNOWN_RATE_ERROR;
+    }
+    return DPS310_OK;
+}
+
 int32_t get_two_complement_of(uint32_t value, uint8_t length) {
     int32_t ret = value;
     bool b_is_negative = value & (1u << (length - 1u));
@@ -346,13 +362,86 @@ int16_t get_temperature_sensor(uint8_t *p_sensor) {
     return DPS310_OK;
 }
 
-float get_altitude(void) {
-	float pressure, temperature;
-	dps310_read(&temperature, &pressure);
-	return 44330 * (1 - pow(pressure/101325, 1/5.255));
+// ---------------------------------------------------------------------------
+// Continuous (background) mode
+// ---------------------------------------------------------------------------
+
+int16_t dps310_start_continuous(void) {
+    int16_t ret;
+
+    // Enable result bit-shift for oversampling > 8x (CFG_REG 0x09).
+    // Without this the 24-bit result register is not right-shifted and
+    // the raw value will be wrong for high oversampling rates.
+    uint8_t cfg_reg = 0x00;
+    if (g_pressure_osr > 0x03) {
+        cfg_reg |= DPS310_CFG_RET_PRS_SHIFT_EN;
+    }
+    if (g_temperature_osr > 0x03) {
+        cfg_reg |= DPS310_CFG_RET_TMP_SHIFT_EN;
+    }
+    ret = write_byte_to_reg(DPS310_CFG_REG_REG, cfg_reg);
+    if (ret != DPS310_OK) return ret;
+
+    // Start continuous pressure + temperature measurement (MEAS_CTRL = 0x07).
+    // The sensor now measures autonomously at the rates configured in
+    // PRS_CFG and TMP_CFG, updating the result registers automatically.
+    return write_byte_to_reg(DPS310_MEAS_CFG_REG,
+                             DPS310_MEAS_CFG_MEAS_CTRL_CONTINUOUS_PRS_TMP);
 }
 
+int16_t dps310_read_continuous(float *p_temperature, float *p_pressure) {
+    int16_t ret;
+    uint8_t buff[6];
 
+    // Burst-read pressure (0x00-0x02) and temperature (0x03-0x05) registers.
+    // In continuous mode these are double-buffered by the DPS310 and always
+    // hold the latest completed measurement.
+    //
+    // Called from LOOP (main-thread context) via get_altitude().
+    // Uses HAL_I2C_Mem_Read (polling) which depends on HAL_GetTick() for
+    // timeout — must NOT be called from TIM8 ISR where SysTick is blocked.
+    uint8_t reg = DPS310_PSR_B2_REG;
+    char i2c_ret = platform_i2c_write_read(I2C_PORT3, I2C_DPS310_ADDRESS,
+                                           &reg, 1, buff, 6, 10);
+    if (i2c_ret != 0) return DPS310_I2C_FAIL_ERROR;
 
+    // --- Raw pressure (24-bit two's complement, registers 0x00-0x02) ---
+    int32_t pressure_raw = get_two_complement_of(
+            ((uint32_t)buff[0] << 16u) | ((uint32_t)buff[1] << 8u) |
+            (uint32_t)buff[2], 24);
 
+    // --- Raw temperature (24-bit two's complement, registers 0x03-0x05) ---
+    int32_t temp_raw = get_two_complement_of(
+            ((uint32_t)buff[3] << 16u) | ((uint32_t)buff[4] << 8u) |
+            (uint32_t)buff[5], 24);
+
+    // --- Compensated temperature (deg C) ---
+    uint32_t temp_factor;
+    ret = get_scale_factor_for_osr(g_temperature_osr, &temp_factor);
+    if (ret != DPS310_OK) return ret;
+
+    g_last_temp_raw_sc = (float)temp_raw / temp_factor;
+    *p_temperature = (float)g_coefs.c0 * 0.5f +
+                     (float)g_coefs.c1 * g_last_temp_raw_sc;
+
+    // --- Compensated pressure (Pa) with temperature compensation ---
+    uint32_t pres_factor;
+    ret = get_scale_factor_for_osr(g_pressure_osr, &pres_factor);
+    if (ret != DPS310_OK) return ret;
+
+    float prs = (float)pressure_raw / pres_factor;
+    *p_pressure = g_coefs.c00 +
+                  prs * (g_coefs.c10 + prs * (g_coefs.c20 + prs * g_coefs.c30)) +
+                  g_last_temp_raw_sc *
+                  (g_coefs.c01 + prs * (g_coefs.c11 + prs * g_coefs.c21));
+
+    return DPS310_OK;
+}
+
+// Barometric altitude from latest continuous-mode pressure reading.
+float get_altitude(void) {
+    float pressure, temperature;
+    dps310_read_continuous(&temperature, &pressure);
+    return 44330.0f * (1.0f - powf(pressure / 101325.0f, 1.0f / 5.255f));
+}
 

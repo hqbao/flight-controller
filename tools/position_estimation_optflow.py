@@ -6,97 +6,86 @@ import queue
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from matplotlib.animation import FuncAnimation
 import time
 
 """
-Position Estimation Optical Flow Visualization Tool
+Optical Flow & Altitude Sensor Viewer
 
-Visualizes optical flow data from upward and downward facing cameras in real-time.
+Real-time visualization of optical flow sensor data and altitude readings
+from the position estimation module.
 
-MODE 2 DATA (6 floats, 24 bytes):
-- Optical Flow Downward (dx, dy) - Blue
-- Optical Flow Upward (dx, dy) - Red  
-- Range Finder Altitude (raw sensor)
-- Estimated Altitude (fused)
+DATA FORMAT (LOG_CLASS_POSITION_OPTFLOW = 0x06, 24 bytes):
+  float[0] = Optical Flow Downward dx (rad)
+  float[1] = Optical Flow Downward dy (rad)
+  float[2] = Optical Flow Upward dx (rad)
+  float[3] = Optical Flow Upward dy (rad)
+  float[4] = Range Finder Altitude (m)
+  float[5] = Air Pressure Altitude (m)
 
-NOTE: Values are raw radians (small values).
+Layout (3 vertically stacked time-series):
+  Top:    Optical Flow \u2014 Downward (dx, dy)
+  Middle: Optical Flow \u2014 Upward (dx, dy)
+  Bottom: Altitude Sensors (Range Finder, Air Pressure)
 
-USAGE:
-1. Build and flash the flight controller (SITL or STM32)
-
-2. Run this script:
-   python3 position_estimation_optflow.py
-
-3. Click "Start Log" to activate optical flow streaming
-   (Log class is set automatically via UART command — no recompilation needed)
-
-The script auto-detects the serial port and displays 3 real-time plots:
-- Optical Flow Downward (dx, dy) in radians
-- Optical Flow Upward (dx, dy) in radians
-- Altitude (Range vs Estimated) with Flow Magnitude overlay
-
-Refreshes at ~25Hz. Requires 'SEND_LOG' from the flight controller
-containing 6 floats: optflow_down_dx, optflow_down_dy, optflow_up_dx,
-optflow_up_dy, range_alt, est_alt.
+Usage:
+  python3 position_estimation_optflow.py
 """
 
 # --- Configuration ---
 SERIAL_PORT = None
 BAUD_RATE = 9600
-SEND_LOG_ID = 0x00  # Log data message ID
+SEND_LOG_ID = 0x00
 
-# Log class constants (match messages.h)
-LOG_CLASS_NONE      = 0x00
-LOG_CLASS_IMU_ACCEL = 0x01
-LOG_CLASS_COMPASS   = 0x02
-LOG_CLASS_ATTITUDE  = 0x03
-LOG_CLASS_POSITION  = 0x04
-LOG_CLASS_IMU_GYRO  = 0x05
+LOG_CLASS_NONE             = 0x00
 LOG_CLASS_POSITION_OPTFLOW = 0x06
-LOG_CLASS_ATTITUDE_MAG = 0x07
-DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
+DB_CMD_LOG_CLASS           = 0x03
+DB_CMD_RESET               = 0x07
+DB_CMD_CHIP_ID             = 0x09
 
-# Auto-detect serial port
+OPTFLOW_FRAME_SIZE = 24   # 6 floats
+HISTORY_LEN = 300          # ~30s at 10 Hz
+
+# --- UI Colors ---
+BG_COLOR       = '#1e1e1e'
+PANEL_COLOR    = '#252526'
+TEXT_COLOR     = '#cccccc'
+DIM_TEXT       = '#888888'
+GRID_COLOR     = '#3c3c3c'
+BTN_GREEN      = '#2d5a2d'
+BTN_GREEN_HOV  = '#3d7a3d'
+BTN_RED        = '#5a2d2d'
+BTN_RED_HOV    = '#7a3d3d'
+
+# Signal colors
+COLOR_DOWN_DX  = '#4fc3f7'  # Cyan for downward dx
+COLOR_DOWN_DY  = '#81d4fa'  # Light cyan for downward dy
+COLOR_UP_DX    = '#ef5350'  # Red for upward dx
+COLOR_UP_DY    = '#ef9a9a'  # Light red for upward dy
+COLOR_RANGE    = '#ffa726'  # Orange for range finder
+COLOR_BARO     = '#42a5f5'  # Blue for air pressure
+
+# --- Auto-detect serial port ---
 ports = serial.tools.list_ports.comports()
-found_port = False
-print("Scanning for ports...")
+print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    # Filter for typical STM32/ESP32 USB IDs
     if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
-        found_port = True
-        print(f"Auto-selected Port: {port} ({desc})")
+        print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
     else:
-        print(f"Skipped: {port} ({desc})")
+        print(f"  \u00b7 Skipped: {port} ({desc})")
 
-if not found_port:
-    print('----------------------------------------------------')
-    print('ERROR: No compatible serial port found.')
-    print('Please connect the Flight Controller and try again.')
-    print('----------------------------------------------------')
-
+if not SERIAL_PORT:
+    print("  \u2717 No compatible serial port found.")
 
 # --- Global State ---
 data_queue = queue.Queue()
-running = True
 g_serial = None
-
-# Data buffers for plotting (keep last 200 samples = ~8 seconds at 25Hz)
-MAX_SAMPLES = 200
-timestamps = np.zeros(MAX_SAMPLES)
-optflow_down_dx = np.zeros(MAX_SAMPLES)
-optflow_down_dy = np.zeros(MAX_SAMPLES)
-optflow_up_dx = np.zeros(MAX_SAMPLES)
-optflow_up_dy = np.zeros(MAX_SAMPLES)
-range_alt = np.zeros(MAX_SAMPLES)
-est_alt = np.zeros(MAX_SAMPLES)
-
-current_idx = 0
-start_time = time.time()
+g_logging_active = False
+g_chip_id = None
 
 
-# --- Log Class Command ---
 def send_log_class_command(ser, log_class):
     """Send DB frame to set active log class on the flight controller."""
     msg_id = DB_CMD_LOG_CLASS
@@ -107,211 +96,343 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
+    ser.write(frame)
     ser.flush()
-    print(f"  \u2192 Log class set to 0x{log_class:02X}")
+    names = {0x00: 'NONE', 0x06: 'POSITION_OPTFLOW'}
+    print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
 
 
-# --- Serial Reader Thread ---
-def read_serial():
-    global running
-    ser = None
+def send_reset_command(ser):
+    """Send DB frame to reset the flight controller."""
+    msg_id = DB_CMD_RESET
+    msg_class = 0x00
+    length = 1
+    payload = bytes([0x00])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.write(frame)
+    ser.flush()
+    print("  \u2192 Reset command sent")
+
+
+def send_chip_id_request(ser):
+    """Send DB frame to request the 8-byte unique chip ID."""
+    msg_id = DB_CMD_CHIP_ID
+    msg_class = 0x00
+    length = 1
+    payload = bytes([0x00])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.write(frame)
+    ser.flush()
+    print("  \u2192 Chip ID request sent")
+
+
+def serial_reader():
+    """Background thread: reads DB frames from FC, parses optical flow payloads."""
+    global g_serial, g_chip_id
+    if not SERIAL_PORT:
+        return
     try:
         ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        global g_serial
+        time.sleep(0.2)
+        ser.reset_input_buffer()
+        ser.write(b'\x00' * 32)
+        ser.flush()
         g_serial = ser
-        print(f"Connected to {SERIAL_PORT} at {BAUD_RATE} baud")
-        time.sleep(1)  # Wait for serial to stabilize
+        print(f"  \u2713 Connected to {SERIAL_PORT}")
+        send_chip_id_request(ser)
 
-        buffer = bytearray()
+        while True:
+            b1 = ser.read(1)
+            if not b1:
+                continue
+            if b1[0] != 0x62 and b1[0] != 0x64:
+                continue
 
-        while running:
-            if ser.in_waiting > 0:
-                buffer.extend(ser.read(ser.in_waiting))
+            b2 = ser.read(1)
+            if not b2:
+                continue
+            if not ((b1[0] == 0x64 and b2[0] == 0x62) or
+                    (b1[0] == 0x62 and b2[0] == 0x64)):
+                continue
 
-                # Look for message header: 'db' + ID + Class
-                while len(buffer) >= 6:
-                    # Search for header
-                    if buffer[0] != ord('d') or buffer[1] != ord('b'):
-                        buffer.pop(0)
-                        continue
+            id_byte = ser.read(1)
+            if not id_byte:
+                continue
+            msg_id = id_byte[0]
 
-                    msg_id = buffer[2]
-                    msg_class = buffer[3]
-                    payload_size = struct.unpack('<H', buffer[4:6])[0]
+            class_byte = ser.read(1)
+            if not class_byte:
+                continue
 
-                    # Check if full message is in buffer
-                    if len(buffer) < 6 + payload_size + 2:
-                        break  # Need more data
+            len_bytes = ser.read(2)
+            if len(len_bytes) < 2:
+                continue
+            length = int.from_bytes(len_bytes, 'little')
+            if length > 1024:
+                continue
 
-                    # Extract payload and checksum
-                    payload = buffer[6:6 + payload_size]
-                    checksum_recv = struct.unpack('<H', buffer[6 + payload_size:6 + payload_size + 2])[0]
+            payload = ser.read(length)
+            if len(payload) != length:
+                continue
+            _ = ser.read(2)  # checksum
 
-                    # Verify checksum
-                    checksum_calc = msg_id + msg_class + buffer[4] + buffer[5] + sum(payload)
-                    checksum_calc = checksum_calc & 0xFFFF
-
-                    if checksum_calc == checksum_recv and msg_id == SEND_LOG_ID:
-                        # Parse 6 floats (24 bytes)
-                        if len(payload) >= 24:
-                            data = struct.unpack('<6f', payload[:24])
-                            data_queue.put(data)
-
-                    # Remove processed message from buffer
-                    buffer = buffer[6 + payload_size + 2:]
-
-    except serial.SerialException as e:
-        print(f"Serial error: {e}")
+            if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
+                g_chip_id = payload[:8].hex().upper()
+                print(f"  \u2713 Chip ID: {g_chip_id}")
+            elif msg_id == SEND_LOG_ID and length >= OPTFLOW_FRAME_SIZE:
+                vals = struct.unpack('<6f', payload[:24])
+                data_queue.put(vals)
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"  \u2717 Serial error: {e}")
     finally:
-        if ser and ser.is_open:
-            ser.close()
-        print("Serial connection closed")
-
-
-# --- Data Update Function ---
-def update_data():
-    global current_idx, timestamps
-    global optflow_down_dx, optflow_down_dy
-    global optflow_up_dx, optflow_up_dy
-    global range_alt, est_alt
-
-    try:
-        while not data_queue.empty():
-            data = data_queue.get_nowait()
-
-            # Shift data left
-            timestamps[:-1] = timestamps[1:]
-            optflow_down_dx[:-1] = optflow_down_dx[1:]
-            optflow_down_dy[:-1] = optflow_down_dy[1:]
-            optflow_up_dx[:-1] = optflow_up_dx[1:]
-            optflow_up_dy[:-1] = optflow_up_dy[1:]
-            range_alt[:-1] = range_alt[1:]
-            est_alt[:-1] = est_alt[1:]
-
-            # Add new data
-            timestamps[-1] = time.time() - start_time
-            optflow_down_dx[-1] = data[0]
-            optflow_down_dy[-1] = data[1]
-            optflow_up_dx[-1] = data[2]
-            optflow_up_dy[-1] = data[3]
-            range_alt[-1] = data[4]
-            est_alt[-1] = data[5]
-
-    except queue.Empty:
-        pass
-
-
-# --- Plot Update Function ---
-def update_plot(frame):
-    update_data()
-
-    # Clear all axes
-    for ax in [ax1, ax2, ax3, ax3_twin]:
-        ax.clear()
-
-    # Get valid time range
-    valid_mask = timestamps > 0
-    t = timestamps[valid_mask]
-
-    # Plot Optical Flow Downward
-    ax1.plot(t, optflow_down_dx[valid_mask], 'b-', label='dx', linewidth=2)
-    ax1.plot(t, optflow_down_dy[valid_mask], 'c-', label='dy', linewidth=2)
-    ax1.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-    ax1.set_ylabel('Flow (rad)', fontsize=11)
-    ax1.legend(loc='upper right', fontsize=10)
-    ax1.grid(True, alpha=0.3, linestyle=':')  
-    ax1.set_title('Optical Flow Downward (Blue)', fontsize=12, fontweight='bold')
-    # Plot Optical Flow Upward
-    ax2.plot(t, optflow_up_dx[valid_mask], 'r-', label='dx', linewidth=2)
-    ax2.plot(t, optflow_up_dy[valid_mask], 'm-', label='dy', linewidth=2)
-    ax2.axhline(y=0, color='gray', linestyle='--', linewidth=0.5, alpha=0.5)
-    ax2.set_ylabel('Flow (rad)', fontsize=11)
-    ax2.legend(loc='upper right', fontsize=10)
-    ax2.grid(True, alpha=0.3, linestyle=':')
-    ax2.set_title('Optical Flow Upward (Red)', fontsize=12, fontweight='bold')
-
-    # Plot Altitude and Flow Magnitude
-    ax3.plot(t, range_alt[valid_mask], 'orange', label='Range', linewidth=2, alpha=0.8)
-    ax3.plot(t, est_alt[valid_mask], 'b-', label='Estimated', linewidth=2)
-    
-    # Use existing twin axis
-    down_mag = np.sqrt(optflow_down_dx[valid_mask]**2 + optflow_down_dy[valid_mask]**2)
-    up_mag = np.sqrt(optflow_up_dx[valid_mask]**2 + optflow_up_dy[valid_mask]**2)
-    ax3_twin.plot(t, down_mag, 'b:', label='Down Mag', linewidth=1.5, alpha=0.6)
-    ax3_twin.plot(t, up_mag, 'r:', label='Up Mag', linewidth=1.5, alpha=0.6)
-    
-    ax3.set_ylabel('Altitude (m)', color='b', fontsize=11)
-    ax3_twin.set_ylabel('Flow Mag (rad)', color='gray', fontsize=10)
-    ax3.set_xlabel('Time (s)', fontsize=11)
-
-    ax3.legend(loc='upper left', fontsize=10)
-    ax3_twin.legend(loc='upper right', fontsize=9)
-    ax3.grid(True, alpha=0.3, linestyle=':')
-    ax3.set_title('Altitude & Flow Magnitude', fontsize=12, fontweight='bold')
-    
-    # Set reasonable Y limits if data exists
-    if len(t) > 0:
-        alt_max = max(np.max(range_alt[valid_mask]), np.max(est_alt[valid_mask]))
-        if alt_max > 0.01:
-            ax3.set_ylim([0, min(alt_max * 1.2, 1.0)])  # Cap at 1 meter
-
-
-# --- Exit Handler ---
-def on_close(event):
-    global running
-    running = False
-    print("Closing application...")
-
-
-def on_exit_button(event):
-    global running
-    running = False
-    plt.close('all')
-
-
-# --- Main ---
-if __name__ == '__main__':
-    if not found_port:
-        exit(1)
-
-    # Start serial reader thread
-    reader_thread = threading.Thread(target=read_serial, daemon=True)
-    reader_thread.start()
-
-    # Create figure with 3 subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 9))
-    ax3_twin = ax3.twinx()  # Create twin axis ONCE
-    
-    fig.suptitle('Position Estimation - Optical Flow Viewer (Mode 2)', fontsize=16)
-    fig.canvas.mpl_connect('close_event', on_close)
-
-    # Add exit button
-    ax_button = plt.axes([0.45, 0.02, 0.1, 0.04])
-    btn_exit = Button(ax_button, 'Exit')
-    btn_exit.on_clicked(on_exit_button)
-
-    # Start Log button
-    ax_log = plt.axes([0.57, 0.02, 0.12, 0.04])
-    btn_log = Button(ax_log, 'Start Log', color='#335533', hovercolor='#557755')
-    def start_log(event):
         if g_serial and g_serial.is_open:
-            send_log_class_command(g_serial, LOG_CLASS_POSITION_OPTFLOW)
-        else:
-            print('Serial not connected')
-    btn_log.on_clicked(start_log)
+            g_serial.close()
 
-    # Adjust layout
-    plt.subplots_adjust(left=0.08, right=0.92, top=0.94, bottom=0.08, hspace=0.35)
 
-    # Start animation
-    from matplotlib.animation import FuncAnimation
-    ani = FuncAnimation(fig, update_plot, interval=40, cache_frame_data=False)  # ~25Hz
+# --- GUI ---
+def main():
+    t = threading.Thread(target=serial_reader, daemon=True)
+    t.start()
 
+    plt.style.use('dark_background')
+    plt.rcParams.update({
+        'figure.facecolor': BG_COLOR,
+        'axes.facecolor': BG_COLOR,
+        'axes.edgecolor': GRID_COLOR,
+        'axes.labelcolor': TEXT_COLOR,
+        'text.color': TEXT_COLOR,
+        'xtick.color': DIM_TEXT,
+        'ytick.color': DIM_TEXT,
+        'grid.color': GRID_COLOR,
+    })
+
+    fig, (ax_down, ax_up, ax_alt) = plt.subplots(3, 1, figsize=(14, 9))
+    fig.patch.set_facecolor(BG_COLOR)
+    fig.suptitle('Optical Flow & Altitude Sensors', fontsize=14,
+                 color=TEXT_COLOR, fontweight='bold', y=0.99)
+    fig.subplots_adjust(left=0.08, right=0.95, top=0.93, bottom=0.10,
+                        hspace=0.40)
+
+    # =========================================================================
+    # Optical Flow Downward
+    # =========================================================================
+    ax_down.set_title('Optical Flow \u2014 Downward', color=COLOR_DOWN_DX,
+                      fontsize=10, fontweight='bold', pad=6)
+    ax_down.set_ylabel('Flow (rad)', fontsize=8)
+    ax_down.grid(True, alpha=0.2, linestyle=':')
+    ax_down.tick_params(labelsize=7)
+    ax_down.axhline(0, color=GRID_COLOR, linewidth=0.5, alpha=0.5)
+    line_ddx, = ax_down.plot([], [], '-', color=COLOR_DOWN_DX, linewidth=1.5,
+                             label='dx')
+    line_ddy, = ax_down.plot([], [], '-', color=COLOR_DOWN_DY, linewidth=1.5,
+                             label='dy')
+    ax_down.legend(loc='upper left', fontsize=7, framealpha=0.3)
+    val_text_down = ax_down.text(
+        0.98, 0.92, '', transform=ax_down.transAxes,
+        fontsize=8, ha='right', va='top', fontfamily='monospace',
+        color=TEXT_COLOR)
+
+    # =========================================================================
+    # Optical Flow Upward
+    # =========================================================================
+    ax_up.set_title('Optical Flow \u2014 Upward', color=COLOR_UP_DX,
+                    fontsize=10, fontweight='bold', pad=6)
+    ax_up.set_ylabel('Flow (rad)', fontsize=8)
+    ax_up.grid(True, alpha=0.2, linestyle=':')
+    ax_up.tick_params(labelsize=7)
+    ax_up.axhline(0, color=GRID_COLOR, linewidth=0.5, alpha=0.5)
+    line_udx, = ax_up.plot([], [], '-', color=COLOR_UP_DX, linewidth=1.5,
+                           label='dx')
+    line_udy, = ax_up.plot([], [], '-', color=COLOR_UP_DY, linewidth=1.5,
+                           label='dy')
+    ax_up.legend(loc='upper left', fontsize=7, framealpha=0.3)
+    val_text_up = ax_up.text(
+        0.98, 0.92, '', transform=ax_up.transAxes,
+        fontsize=8, ha='right', va='top', fontfamily='monospace',
+        color=TEXT_COLOR)
+
+    # =========================================================================
+    # Altitude Sensors
+    # =========================================================================
+    ax_alt.set_title('Altitude Sensors', color=TEXT_COLOR,
+                     fontsize=10, fontweight='bold', pad=6)
+    ax_alt.set_ylabel('Altitude (m)', fontsize=8)
+    ax_alt.set_xlabel('Time (s)', fontsize=8)
+    ax_alt.grid(True, alpha=0.2, linestyle=':')
+    ax_alt.tick_params(labelsize=7)
+    ax_alt.axhline(0, color=GRID_COLOR, linewidth=0.5, alpha=0.5)
+    line_range, = ax_alt.plot([], [], '-', color=COLOR_RANGE, linewidth=1.5,
+                              label='Range Finder')
+    line_baro, = ax_alt.plot([], [], '-', color=COLOR_BARO, linewidth=1.5,
+                             label='Air Pressure')
+    ax_alt.legend(loc='upper left', fontsize=7, framealpha=0.3)
+    val_text_alt = ax_alt.text(
+        0.98, 0.92, '', transform=ax_alt.transAxes,
+        fontsize=8, ha='right', va='top', fontfamily='monospace',
+        color=TEXT_COLOR)
+
+    # History buffer
+    hist = {'t': [], 'ddx': [], 'ddy': [], 'udx': [], 'udy': [],
+            'range': [], 'baro': []}
+    t0 = [None]
+
+    # =========================================================================
+    # Status bar
+    # =========================================================================
+    chip_id_text = fig.text(0.96, 0.035, 'Chip ID: ---', fontsize=7,
+                            ha='right', color=DIM_TEXT)
+    fps_text = fig.text(0.96, 0.015, '', fontsize=8, ha='right',
+                        color=DIM_TEXT)
+
+    # =========================================================================
+    # Buttons
+    # =========================================================================
+    ax_toggle = fig.add_axes([0.005, 0.005, 0.08, 0.04])
+    btn_toggle = Button(ax_toggle, 'Start Log',
+                        color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_toggle.label.set_color(TEXT_COLOR)
+    btn_toggle.label.set_fontsize(8)
+
+    def on_toggle(event):
+        global g_logging_active
+        if g_serial and g_serial.is_open:
+            if g_logging_active:
+                send_log_class_command(g_serial, LOG_CLASS_NONE)
+                g_logging_active = False
+                btn_toggle.label.set_text('Start Log')
+                ax_toggle.set_facecolor(BTN_GREEN)
+            else:
+                send_log_class_command(g_serial, LOG_CLASS_POSITION_OPTFLOW)
+                g_logging_active = True
+                btn_toggle.label.set_text('Stop Log')
+                ax_toggle.set_facecolor(BTN_RED)
+
+    btn_toggle.on_clicked(on_toggle)
+
+    ax_reset_btn = fig.add_axes([0.09, 0.005, 0.08, 0.04])
+    btn_reset = Button(ax_reset_btn, 'Reset FC',
+                       color=BTN_RED, hovercolor=BTN_RED_HOV)
+    btn_reset.label.set_color(TEXT_COLOR)
+    btn_reset.label.set_fontsize(8)
+
+    def on_reset(event):
+        global g_logging_active
+        if g_serial and g_serial.is_open:
+            send_reset_command(g_serial)
+            g_logging_active = False
+            btn_toggle.label.set_text('Start Log')
+            ax_toggle.set_facecolor(BTN_GREEN)
+
+    btn_reset.on_clicked(on_reset)
+
+    # =========================================================================
+    # Animation loop
+    # =========================================================================
+    frame_count = [0]
+    last_fps_time = [time.time()]
+
+    def update(frame_num):
+        updated = []
+        latest = None
+
+        while not data_queue.empty():
+            try:
+                latest = data_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        if latest is None:
+            return updated
+
+        ddx, ddy, udx, udy, rng, baro = latest
+
+        now = time.time()
+        if t0[0] is None:
+            t0[0] = now
+        t = now - t0[0]
+
+        hist['t'].append(t)
+        hist['ddx'].append(ddx)
+        hist['ddy'].append(ddy)
+        hist['udx'].append(udx)
+        hist['udy'].append(udy)
+        hist['range'].append(rng)
+        hist['baro'].append(baro)
+        if len(hist['t']) > HISTORY_LEN:
+            for k in hist:
+                hist[k] = hist[k][-HISTORY_LEN:]
+
+        ta = np.array(hist['t'])
+
+        # =================================================================
+        # Optical Flow Downward
+        # =================================================================
+        line_ddx.set_data(ta, hist['ddx'])
+        line_ddy.set_data(ta, hist['ddy'])
+        val_text_down.set_text(f'dx:{ddx:+.4f}  dy:{ddy:+.4f}')
+        if len(ta) > 1:
+            ax_down.set_xlim(ta[0], ta[-1] + 0.1)
+            d = np.array(hist['ddx'] + hist['ddy'])
+            dmin, dmax = d.min(), d.max()
+            m = max(0.01, (dmax - dmin) * 0.2)
+            ax_down.set_ylim(dmin - m, dmax + m)
+        updated.extend([line_ddx, line_ddy])
+
+        # =================================================================
+        # Optical Flow Upward
+        # =================================================================
+        line_udx.set_data(ta, hist['udx'])
+        line_udy.set_data(ta, hist['udy'])
+        val_text_up.set_text(f'dx:{udx:+.4f}  dy:{udy:+.4f}')
+        if len(ta) > 1:
+            ax_up.set_xlim(ta[0], ta[-1] + 0.1)
+            d = np.array(hist['udx'] + hist['udy'])
+            dmin, dmax = d.min(), d.max()
+            m = max(0.01, (dmax - dmin) * 0.2)
+            ax_up.set_ylim(dmin - m, dmax + m)
+        updated.extend([line_udx, line_udy])
+
+        # =================================================================
+        # Altitude Sensors
+        # =================================================================
+        line_range.set_data(ta, hist['range'])
+        line_baro.set_data(ta, hist['baro'])
+        val_text_alt.set_text(f'Range:{rng:+.3f}  Baro:{baro:+.3f}')
+        if len(ta) > 1:
+            ax_alt.set_xlim(ta[0], ta[-1] + 0.1)
+            d = np.array(hist['range'] + hist['baro'])
+            dmin, dmax = d.min(), d.max()
+            m = max(0.1, (dmax - dmin) * 0.2)
+            ax_alt.set_ylim(dmin - m, dmax + m)
+        updated.extend([line_range, line_baro])
+
+        # =================================================================
+        # Chip ID + FPS
+        # =================================================================
+        if g_chip_id is not None:
+            chip_id_text.set_text(f'Chip ID: {g_chip_id}')
+            updated.append(chip_id_text)
+
+        frame_count[0] += 1
+        elapsed = now - last_fps_time[0]
+        if elapsed >= 1.0:
+            fps = frame_count[0] / elapsed
+            fps_text.set_text(f'{fps:.0f} Hz')
+            frame_count[0] = 0
+            last_fps_time[0] = now
+            updated.append(fps_text)
+
+        return updated
+
+    ani = FuncAnimation(fig, update, interval=40, blit=False, cache_frame_data=False)
     plt.show()
 
-    # Cleanup
-    running = False
-    reader_thread.join(timeout=2)
-    print("Application closed")
+
+if __name__ == '__main__':
+    main()

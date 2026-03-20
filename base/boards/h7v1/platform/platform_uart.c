@@ -28,6 +28,7 @@ typedef enum {
 
 typedef struct {
 	uint8_t byte;
+	uint8_t _pad[3]; /* Align buffer[] to 4-byte boundary for safe type access */
 	uint8_t buffer[MAX_UART_BUFFER_SIZE];
 	uint8_t header[2];
 	char stage;
@@ -40,10 +41,10 @@ typedef struct {
 
 static UART_HandleTypeDef *uart_ports[4] = {&huart1, &huart2, &huart3, &huart4};
 
-static uart_rx_t g_uart_rx1 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
-static uart_rx_t g_uart_rx2 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
-static uart_rx_t g_uart_rx3 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
-static uart_rx_t g_uart_rx4 = {0, {0}, {0}, 0, 0, 0, PROTOCOL_NONE};
+static uart_rx_t g_uart_rx1 = {0};
+static uart_rx_t g_uart_rx2 = {0};
+static uart_rx_t g_uart_rx3 = {0};
+static uart_rx_t g_uart_rx4 = {0};
 
 // DMA ring buffers — receive in batches to avoid per-byte ISR overhead.
 // At 38400 baud: 16 bytes/half = ~4.2ms of buffering before data loss.
@@ -115,7 +116,7 @@ static void read_uart_byte(uart_rx_t *g_uart_rx) {
 		g_uart_rx->buffer_idx++;
 		if (g_uart_rx->buffer_idx == 4) {
 			// Both protocols have length at bytes 2-3 (little-endian)
-			g_uart_rx->payload_size = *(uint16_t *)&g_uart_rx->buffer[2];
+			memcpy(&g_uart_rx->payload_size, &g_uart_rx->buffer[2], sizeof(uint16_t));
 			// Reject corrupted length — total frame must fit in buffer
 			if (g_uart_rx->payload_size > MAX_UART_BUFFER_SIZE - 6) {
 				g_uart_rx->stage = 0;

@@ -6,82 +6,82 @@ import queue
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
-from matplotlib import gridspec
+from matplotlib.animation import FuncAnimation
 import time
 
 """
-Position Estimation Visualization Tool (2D + Z)
+Position Estimation Dashboard (2D + Altitude)
 
-Visualizes the drone's estimated position (X, Y, Z) and velocity.
-- Top Plot: 2D Position (Top-Down X/Y view)
-- Bottom Left: Altitude (Z Position)
-- Bottom Right: Vertical Velocity (Z Velocity)
+Real-time visualization of drone position estimation output.
+  Center:       2D Position Map (XY top-down) with trail history
+  Left panel:   Numeric data readout (position, velocity, distance)
+  Right-Top:    Altitude (Z) time series
+  Right-Bottom: Velocity time series (Vx, Vy, Vz)
 
-Refreshes at ~50Hz. Receives 'SEND_LOG' data from the flight controller
-containing local position output (Pos X, Pos Y, Pos Z, Vel X, Vel Y, Vel Z).
-The log class is set automatically via UART command on connect.
+Frame layout (LOG_CLASS_POSITION = 0x04, 24 bytes):
+  float[0] = Pos X (Pitch/Forward, meters)
+  float[1] = Pos Y (Roll/Right, meters)
+  float[2] = Pos Z (Altitude, meters)
+  float[3] = Vel X (Pitch, m/s)
+  float[4] = Vel Y (Roll, m/s)
+  float[5] = Vel Z (Vertical, m/s)
+
+Usage:
+  python3 position_estimation_2d_and_z.py
 """
 
 # --- Configuration ---
-plt.style.use('dark_background')
-
 SERIAL_PORT = None
 BAUD_RATE = 9600
-SEND_LOG_ID = 0x00  # Log data message ID
+SEND_LOG_ID = 0x00
 
-# Log class constants (match messages.h)
-LOG_CLASS_NONE      = 0x00
-LOG_CLASS_IMU_ACCEL = 0x01
-LOG_CLASS_COMPASS   = 0x02
-LOG_CLASS_ATTITUDE  = 0x03
-LOG_CLASS_POSITION  = 0x04
-LOG_CLASS_IMU_GYRO  = 0x05
-LOG_CLASS_POSITION_OPTFLOW = 0x06
-LOG_CLASS_ATTITUDE_MAG = 0x07
-DB_CMD_LOG_CLASS    = 0x03  # Command ID for setting log class
+LOG_CLASS_NONE     = 0x00
+LOG_CLASS_POSITION = 0x04
+DB_CMD_LOG_CLASS   = 0x03
+DB_CMD_RESET       = 0x07
+DB_CMD_CHIP_ID     = 0x09
 
-# Auto-detect serial port
+POSITION_FRAME_SIZE = 24  # 6 floats
+HISTORY_LEN = 300         # ~30s at 10 Hz
+
+# --- UI Colors ---
+BG_COLOR       = '#1e1e1e'
+PANEL_COLOR    = '#252526'
+TEXT_COLOR     = '#cccccc'
+DIM_TEXT       = '#888888'
+GRID_COLOR     = '#3c3c3c'
+ACCENT_BLUE    = '#5599ff'
+ACCENT_GREEN   = '#55cc55'
+ACCENT_RED     = '#ff5555'
+ACCENT_ORANGE  = '#ff9955'
+ACCENT_YELLOW  = '#ffcc55'
+ACCENT_CYAN    = '#55cccc'
+BTN_GREEN      = '#2d5a2d'
+BTN_GREEN_HOV  = '#3d7a3d'
+BTN_RED        = '#5a2d2d'
+BTN_RED_HOV    = '#7a3d3d'
+
+# --- Auto-detect serial port ---
 ports = serial.tools.list_ports.comports()
-found_port = False
-print("Scanning for ports...")
+print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
     if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
         SERIAL_PORT = port
-        found_port = True
-        print(f"Auto-selected Port: {port} ({desc})")
+        print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
     else:
-        print(f"Skipped: {port} ({desc})")
+        print(f"  \u00b7 Skipped: {port} ({desc})")
 
-if not found_port:
-    print('----------------------------------------------------')
-    print('ERROR: No compatible serial port found.')
-    print('Please connect the Flight Controller and try again.')
-    print('----------------------------------------------------')
+if not SERIAL_PORT:
+    print("  \u2717 No compatible serial port found.")
 
 # --- Global State ---
 data_queue = queue.Queue()
-is_collecting = True
 g_serial = None
+g_logging_active = False
+g_chip_id = None
 
-# Data Points
-vec_pos_xy = np.array([0.0, 0.0]) # Pos X, Y
-vec_vel_xy = np.array([0.0, 0.0]) # Vel X, Y
-val_pos_z = 0.0
-val_vel_z = 0.0
 
-xy_limit = 1.0
-z_pos_limit = 2.0 # 0 to 2m default
-z_vel_limit = 1.0 # -1 to 1m/s default
-
-# Visualization Mode
-# 0: Vector (Lines from Origin) - Good for direction
-# 1: Point (Dots only) - Good for position
-vis_mode = 0 
-
-view_btns = [] # Keep references to buttons
-
-# --- Log Class Command ---
 def send_log_class_command(ser, log_class):
     """Send DB frame to set active log class on the flight controller."""
     msg_id = DB_CMD_LOG_CLASS
@@ -92,246 +92,452 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
+    ser.write(frame)
     ser.flush()
-    print(f"  \u2192 Log class set to 0x{log_class:02X}")
+    names = {0x00: 'NONE', 0x04: 'POSITION'}
+    print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
 
-# --- Serial Reader ---
+
+def send_reset_command(ser):
+    """Send DB frame to reset the flight controller."""
+    msg_id = DB_CMD_RESET
+    msg_class = 0x00
+    length = 1
+    payload = bytes([0x00])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.write(frame)
+    ser.flush()
+    print("  \u2192 Reset command sent")
+
+
+def send_chip_id_request(ser):
+    """Send DB frame to request the 8-byte unique chip ID."""
+    msg_id = DB_CMD_CHIP_ID
+    msg_class = 0x00
+    length = 1
+    payload = bytes([0x00])
+    header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
+    checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
+    frame = header + payload + struct.pack('<H', checksum)
+    ser.write(frame)
+    ser.write(frame)
+    ser.flush()
+    print("  \u2192 Chip ID request sent")
+
+
 def serial_reader():
-    global SERIAL_PORT
+    """Background thread: reads DB frames from FC, parses position payloads."""
+    global g_serial, g_chip_id
     if not SERIAL_PORT:
         return
-
     try:
-        with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
-            global g_serial
-            g_serial = ser
-            print(f"Connected to {SERIAL_PORT}")
-            while True:
-                # Header: 'db' or 'bd' (0x64 0x62)
-                b1 = ser.read(1)
-                if not b1: continue
-                if b1[0] != 0x62 and b1[0] != 0x64: continue
-                
-                b2 = ser.read(1)
-                if not b2: continue
-                
-                if not ((b1[0] == 0x64 and b2[0] == 0x62) or (b1[0] == 0x62 and b2[0] == 0x64)):
-                    continue
-                
-                id_byte = ser.read(1)
-                if not id_byte: continue
-                msg_id = id_byte[0]
-                
-                class_byte = ser.read(1)
-                if not class_byte: continue
-                
-                len_bytes = ser.read(2)
-                if len(len_bytes) < 2: continue
-                length = int.from_bytes(len_bytes, 'little')
-                
-                if length > 1024: continue
-                
-                payload = ser.read(length)
-                if len(payload) != length: continue
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        time.sleep(0.2)
+        ser.reset_input_buffer()
+        ser.write(b'\x00' * 32)
+        ser.flush()
+        g_serial = ser
+        print(f"  \u2713 Connected to {SERIAL_PORT}")
+        send_chip_id_request(ser)
 
-                checksum = ser.read(2) # Read checksum to advance stream
-                
-                if msg_id == SEND_LOG_ID:
-                    if length == 24: # 6 floats (Pos XYZ, Vel XYZ)
-                        vals = struct.unpack('<ffffff', payload)
-                        # Extract components:
-                        # Pos: X=0, Y=1, Z=2
-                        # Vel: X=3, Y=4, Z=5
-                        pos_xy_val = (vals[0], vals[1])
-                        pos_z_val = vals[2]
-                        vel_xy_val = (vals[3], vals[4])
-                        vel_z_val = vals[5]
-                        data_queue.put((pos_xy_val, pos_z_val, vel_xy_val, vel_z_val))
-                    
+        while True:
+            b1 = ser.read(1)
+            if not b1:
+                continue
+            if b1[0] != 0x62 and b1[0] != 0x64:
+                continue
+
+            b2 = ser.read(1)
+            if not b2:
+                continue
+            if not ((b1[0] == 0x64 and b2[0] == 0x62) or
+                    (b1[0] == 0x62 and b2[0] == 0x64)):
+                continue
+
+            id_byte = ser.read(1)
+            if not id_byte:
+                continue
+            msg_id = id_byte[0]
+
+            class_byte = ser.read(1)
+            if not class_byte:
+                continue
+
+            len_bytes = ser.read(2)
+            if len(len_bytes) < 2:
+                continue
+            length = int.from_bytes(len_bytes, 'little')
+            if length > 1024:
+                continue
+
+            payload = ser.read(length)
+            if len(payload) != length:
+                continue
+            _ = ser.read(2)  # checksum
+
+            if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
+                g_chip_id = payload[:8].hex().upper()
+                print(f"  \u2713 Chip ID: {g_chip_id}")
+            elif msg_id == SEND_LOG_ID and length == POSITION_FRAME_SIZE:
+                vals = struct.unpack('<6f', payload)
+                data_queue.put(vals)
     except Exception as e:
-        print(f"Serial error: {e}")
+        print(f"  \u2717 Serial error: {e}")
+    finally:
+        if g_serial and g_serial.is_open:
+            g_serial.close()
+
 
 # --- GUI ---
 def main():
-    global is_collecting, vec_pos_xy, vec_vel_xy, val_pos_z, val_vel_z, view_btns, vis_mode
-    
     t = threading.Thread(target=serial_reader, daemon=True)
     t.start()
-    
-    # Setup Figure with GridSpec
-    fig = plt.figure(figsize=(14, 8))
-    gs = gridspec.GridSpec(2, 3, width_ratios=[1, 1, 0.5]) 
-    # Columns 0,1 are for XY Plot (Square aspect)
-    # Column 2 is split into Top (Pos Z) and Bottom (Vel Z)
 
-    # --- XY PLOT (Left) ---
-    ax_xy = fig.add_subplot(gs[:, 0:2])
-    plt.subplots_adjust(bottom=0.15)
-    
-    line_pos, = ax_xy.plot([], [], color='#FF5555', linewidth=3, label='Pos XY')
-    head_pos, = ax_xy.plot([], [], color='#FF5555', marker='o', markersize=8)
-    
-    line_vel, = ax_xy.plot([], [], color='#5555FF', linewidth=3, label='Vel XY')
-    head_vel, = ax_xy.plot([], [], color='#5555FF', marker='o', markersize=8)
-    
-    text_info = ax_xy.text(0.02, 0.98, "", transform=ax_xy.transAxes, fontsize=12, color='white', verticalalignment='top')
-    
+    plt.style.use('dark_background')
+    plt.rcParams.update({
+        'figure.facecolor': BG_COLOR,
+        'axes.facecolor': BG_COLOR,
+        'axes.edgecolor': GRID_COLOR,
+        'axes.labelcolor': TEXT_COLOR,
+        'text.color': TEXT_COLOR,
+        'xtick.color': DIM_TEXT,
+        'ytick.color': DIM_TEXT,
+        'grid.color': GRID_COLOR,
+    })
+
+    fig = plt.figure(figsize=(16, 9))
+    fig.patch.set_facecolor(BG_COLOR)
+    fig.suptitle('Position Estimation \u2014 2D + Altitude', fontsize=14,
+                 color=TEXT_COLOR, fontweight='bold', y=0.99)
+
+    # =========================================================================
+    # 2D Position Map (center)
+    # =========================================================================
+    ax_xy = fig.add_axes([0.12, 0.10, 0.48, 0.84])
+    ax_xy.set_facecolor(BG_COLOR)
     ax_xy.set_aspect('equal')
-    ax_xy.grid(True, color='#333333', linestyle='--')
-    ax_xy.set_xlabel('X (m or m/s)')
-    ax_xy.set_ylabel('Y (m or m/s)')
-    ax_xy.legend(loc='upper right')
-    ax_xy.set_title('2D Position & Velocity')
-    ax_xy.set_xlim(-1, 1)
-    ax_xy.set_ylim(-1, 1)
+    ax_xy.set_xlabel('Y \u2014 Roll / East (m)', fontsize=9)
+    ax_xy.set_ylabel('X \u2014 Pitch / North (m)', fontsize=9)
+    ax_xy.grid(True, alpha=0.2, linestyle=':')
+    ax_xy.set_xlim(-3, 3)
+    ax_xy.set_ylim(-3, 3)
+    ax_xy.tick_params(labelsize=7)
+    for spine in ax_xy.spines.values():
+        spine.set_edgecolor(GRID_COLOR)
 
-    # --- Z POS PLOT (Top Right) ---
-    ax_z_pos = fig.add_subplot(gs[0, 2])
-    bar_z_pos = ax_z_pos.bar([0], [0], color='#55FF55', width=0.5)
-    ax_z_pos.set_xlim(-0.5, 0.5)
-    ax_z_pos.set_ylim(0, 2) # 0 to 2m
-    ax_z_pos.set_title('Altitude (Z)')
-    ax_z_pos.set_xticks([])
-    ax_z_pos.grid(True, axis='y', color='#333333', linestyle='--')
-    text_z_pos = ax_z_pos.text(0, 0.1, "0.00m", ha='center', color='white', fontweight='bold')
+    # Concentric distance rings
+    for r in [1, 2, 3, 5, 10]:
+        circle = plt.Circle((0, 0), r, color=GRID_COLOR, fill=False,
+                             linewidth=0.5, alpha=0.3, linestyle='--')
+        ax_xy.add_patch(circle)
 
-    # --- Z VEL PLOT (Bottom Right) ---
-    ax_z_vel = fig.add_subplot(gs[1, 2])
-    bar_z_vel = ax_z_vel.bar([0], [0], color='#FFFF00', width=0.5)
-    ax_z_vel.axhline(0, color='white', linewidth=1)
-    ax_z_vel.set_xlim(-0.5, 0.5)
-    ax_z_vel.set_ylim(-1, 1) # -1 to 1 m/s
-    ax_z_vel.set_title('Vertical Velocity')
-    ax_z_vel.set_xticks([])
-    ax_z_vel.grid(True, axis='y', color='#333333', linestyle='--')
-    text_z_vel = ax_z_vel.text(0, 0.1, "0.00m/s", ha='center', color='white', fontweight='bold')
+    # Origin crosshair
+    ax_xy.axhline(0, color=GRID_COLOR, linewidth=0.5, alpha=0.4)
+    ax_xy.axvline(0, color=GRID_COLOR, linewidth=0.5, alpha=0.4)
 
+    # North indicator
+    ax_xy.annotate('N', xy=(0, 0), xytext=(0, 2.7),
+                   fontsize=9, color=ACCENT_RED, alpha=0.5,
+                   ha='center', va='center')
 
-    # --- Buttons ---
-    # Mode Toggle
-    ax_mode = plt.axes([0.15, 0.02, 0.15, 0.05])
-    btn_mode = Button(ax_mode, 'Mode: Vector', color='#444444', hovercolor='#666666')
-    view_btns.append(btn_mode)
+    # Position trail + dot
+    pos_trail, = ax_xy.plot([], [], '-', color=ACCENT_CYAN, linewidth=1.2, alpha=0.5)
+    pos_dot, = ax_xy.plot([], [], 'o', color=ACCENT_CYAN, markersize=8, zorder=5)
 
-    def toggle_mode(event):
-        global vis_mode
-        vis_mode = 1 - vis_mode 
-        btn_mode.label.set_text('Mode: Vector' if vis_mode == 0 else 'Mode: Point')
+    # Velocity arrow
+    vel_arrow = ax_xy.quiver(0, 0, 0, 0, color=ACCENT_ORANGE, scale=1,
+                             scale_units='xy', angles='xy', width=0.005,
+                             zorder=4, alpha=0.8)
 
-    btn_mode.on_clicked(toggle_mode)
+    xy_history = {'x': [], 'y': []}
+    xy_zoom = [None]
 
-    # Stream Control
-    ax_pause = plt.axes([0.35, 0.02, 0.15, 0.05])
-    btn_pause = Button(ax_pause, 'Pause/Resume', color='#444444', hovercolor='#666666')
-    view_btns.append(btn_pause)
+    def on_scroll_xy(event):
+        if event.inaxes != ax_xy:
+            return
+        xlim = ax_xy.get_xlim()
+        cur_half = (xlim[1] - xlim[0]) / 2
+        factor = 0.8 if event.button == 'up' else 1.25
+        new_half = max(0.5, min(100.0, cur_half * factor))
+        xy_zoom[0] = new_half
 
-    def toggle_stream(event):
-        global is_collecting
-        is_collecting = not is_collecting
-        btn_pause.label.set_text('Resume' if not is_collecting else 'Pause')
+    fig.canvas.mpl_connect('scroll_event', on_scroll_xy)
 
-    btn_pause.on_clicked(toggle_stream)
-    
-    # Reset Limits
-    ax_reset = plt.axes([0.55, 0.02, 0.15, 0.05])
-    btn_reset = Button(ax_reset, 'Reset Scale', color='#444444', hovercolor='#666666')
-    view_btns.append(btn_reset)
-    
-    def reset_scale(event):
-        global xy_limit, z_pos_limit, z_vel_limit
-        xy_limit = 1.0
-        z_pos_limit = 2.0
-        z_vel_limit = 1.0
-        ax_xy.set_xlim(-xy_limit, xy_limit)
-        ax_xy.set_ylim(-xy_limit, xy_limit)
-        ax_z_pos.set_ylim(0, z_pos_limit)
-        ax_z_vel.set_ylim(-z_vel_limit, z_vel_limit)
-        
-    btn_reset.on_clicked(reset_scale)
+    # =========================================================================
+    # Left data panel
+    # =========================================================================
+    ax_data = fig.add_axes([0.005, 0.10, 0.105, 0.84])
+    ax_data.set_facecolor(BG_COLOR)
+    ax_data.patch.set_alpha(0.6)
+    ax_data.set_xlim(0, 1)
+    ax_data.set_ylim(0, 1)
+    ax_data.set_xticks([])
+    ax_data.set_yticks([])
+    for spine in ax_data.spines.values():
+        spine.set_edgecolor(GRID_COLOR)
+        spine.set_alpha(0.3)
 
-    # Start Log
-    ax_log = plt.axes([0.75, 0.02, 0.15, 0.05])
-    btn_log = Button(ax_log, 'Start Log', color='#335533', hovercolor='#557755')
-    view_btns.append(btn_log)
-    
-    def start_log(event):
+    _mono = dict(fontfamily='monospace', transform=ax_data.transAxes)
+    _hdr  = dict(fontsize=8, color=DIM_TEXT, fontweight='bold', ha='left', **_mono)
+    _val  = dict(fontsize=10, fontweight='bold', ha='left', **_mono)
+
+    # Section: Position
+    ax_data.text(0.08, 0.95, 'POSITION', **_hdr)
+    ax_data.plot([0.05, 0.95], [0.945, 0.945], color=GRID_COLOR, lw=0.5,
+                 alpha=0.4, transform=ax_data.transAxes, clip_on=False)
+    data_px = ax_data.text(0.08, 0.91, 'X:  0.00m', color=ACCENT_CYAN, **_val)
+    data_py = ax_data.text(0.08, 0.87, 'Y:  0.00m', color=ACCENT_CYAN, **_val)
+    data_pz = ax_data.text(0.08, 0.83, 'Z:  0.00m', color=ACCENT_YELLOW, **_val)
+
+    # Section: Velocity
+    ax_data.text(0.08, 0.76, 'VELOCITY', **_hdr)
+    ax_data.plot([0.05, 0.95], [0.755, 0.755], color=GRID_COLOR, lw=0.5,
+                 alpha=0.4, transform=ax_data.transAxes, clip_on=False)
+    data_vx = ax_data.text(0.08, 0.72, 'Vx: 0.00', color=ACCENT_BLUE, **_val)
+    data_vy = ax_data.text(0.08, 0.68, 'Vy: 0.00', color=ACCENT_GREEN, **_val)
+    data_vz = ax_data.text(0.08, 0.64, 'Vz: 0.00', color=ACCENT_ORANGE, **_val)
+
+    # Section: Distance / Speed
+    ax_data.text(0.08, 0.57, 'METRICS', **_hdr)
+    ax_data.plot([0.05, 0.95], [0.565, 0.565], color=GRID_COLOR, lw=0.5,
+                 alpha=0.4, transform=ax_data.transAxes, clip_on=False)
+    data_dist  = ax_data.text(0.08, 0.53, 'D:  0.00m', color=TEXT_COLOR, **_val)
+    data_speed = ax_data.text(0.08, 0.49, 'S:  0.00',  color=TEXT_COLOR, **_val)
+
+    # =========================================================================
+    # Altitude chart (right top)
+    # =========================================================================
+    ax_alt = fig.add_axes([0.67, 0.55, 0.31, 0.38])
+    ax_alt.set_facecolor(BG_COLOR)
+    ax_alt.patch.set_alpha(0.8)
+    ax_alt.set_title('Altitude (Z)', color=DIM_TEXT, fontsize=9, pad=4)
+    ax_alt.set_xlabel('t (s)', fontsize=7)
+    ax_alt.set_ylabel('m', fontsize=7)
+    ax_alt.tick_params(labelsize=7)
+    ax_alt.grid(True, alpha=0.2, linestyle=':')
+    for spine in ax_alt.spines.values():
+        spine.set_edgecolor(GRID_COLOR)
+        spine.set_alpha(0.5)
+    alt_line, = ax_alt.plot([], [], '-', color=ACCENT_YELLOW, linewidth=1.2)
+    alt_val_text = ax_alt.text(0.98, 0.92, '', transform=ax_alt.transAxes,
+                               fontsize=8, ha='right', va='top',
+                               fontfamily='monospace', color=ACCENT_YELLOW)
+    alt_history = {'t': [], 'z': []}
+    alt_t0 = [None]
+
+    # =========================================================================
+    # Velocity chart (right bottom)
+    # =========================================================================
+    ax_vel = fig.add_axes([0.67, 0.10, 0.31, 0.38])
+    ax_vel.set_facecolor(BG_COLOR)
+    ax_vel.patch.set_alpha(0.8)
+    ax_vel.set_title('Velocity', color=DIM_TEXT, fontsize=9, pad=4)
+    ax_vel.set_xlabel('t (s)', fontsize=7)
+    ax_vel.set_ylabel('m/s', fontsize=7)
+    ax_vel.tick_params(labelsize=7)
+    ax_vel.grid(True, alpha=0.2, linestyle=':')
+    for spine in ax_vel.spines.values():
+        spine.set_edgecolor(GRID_COLOR)
+        spine.set_alpha(0.5)
+    vel_labels = ['Vx', 'Vy', 'Vz']
+    vel_colors = [ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE]
+    vel_lines = []
+    for label, color in zip(vel_labels, vel_colors):
+        line, = ax_vel.plot([], [], '-', color=color, linewidth=1.0, label=label)
+        vel_lines.append(line)
+    ax_vel.legend(loc='upper left', fontsize=6, framealpha=0.3)
+    vel_history = {'t': [], 'vx': [], 'vy': [], 'vz': []}
+    vel_t0 = [None]
+
+    # =========================================================================
+    # Status bar
+    # =========================================================================
+    chip_id_text = fig.text(0.96, 0.035, 'Chip ID: ---', fontsize=7,
+                            ha='right', color=DIM_TEXT)
+    fps_text = fig.text(0.96, 0.015, '', fontsize=8, ha='right',
+                        color=DIM_TEXT)
+
+    # =========================================================================
+    # Buttons
+    # =========================================================================
+    ax_toggle = fig.add_axes([0.005, 0.005, 0.08, 0.04])
+    btn_toggle = Button(ax_toggle, 'Start Log',
+                        color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_toggle.label.set_color(TEXT_COLOR)
+    btn_toggle.label.set_fontsize(8)
+
+    def on_toggle(event):
+        global g_logging_active
         if g_serial and g_serial.is_open:
-            send_log_class_command(g_serial, LOG_CLASS_POSITION)
-        else:
-            print('Serial not connected')
-    
-    btn_log.on_clicked(start_log)
+            if g_logging_active:
+                send_log_class_command(g_serial, LOG_CLASS_NONE)
+                g_logging_active = False
+                btn_toggle.label.set_text('Start Log')
+                ax_toggle.set_facecolor(BTN_GREEN)
+            else:
+                send_log_class_command(g_serial, LOG_CLASS_POSITION)
+                g_logging_active = True
+                btn_toggle.label.set_text('Stop Log')
+                ax_toggle.set_facecolor(BTN_RED)
 
-    def update_plot():
-        global vec_pos_xy, vec_vel_xy, val_pos_z, val_vel_z
-        global xy_limit, z_pos_limit, z_vel_limit
-        
-        # Consuming queue
-        try:
-            while not data_queue.empty():
-                vals = data_queue.get_nowait()
-                if is_collecting:
-                    vec_pos_xy = np.array(vals[0])
-                    val_pos_z = vals[1]
-                    vec_vel_xy = np.array(vals[2])
-                    val_vel_z = vals[3]
-        except queue.Empty:
-            pass
-        
-        # --- XY Auto-scaling ---
-        max_xy = max(np.max(np.abs(vec_pos_xy)), np.max(np.abs(vec_vel_xy)))
-        if max_xy > xy_limit * 0.9:
-            xy_limit = max_xy * 1.5
-            ax_xy.set_xlim(-xy_limit, xy_limit)
-            ax_xy.set_ylim(-xy_limit, xy_limit)
-            
-        # --- Visualization XY ---
-        if vis_mode == 0: # Vector
-            line_pos.set_data([0, vec_pos_xy[0]], [0, vec_pos_xy[1]])
-            line_vel.set_data([0, vec_vel_xy[0]], [0, vec_vel_xy[1]])
-        else: # Point
-            line_pos.set_data([], [])
-            line_vel.set_data([], [])
+    btn_toggle.on_clicked(on_toggle)
 
-        head_pos.set_data([vec_pos_xy[0]], [vec_pos_xy[1]])
-        head_vel.set_data([vec_vel_xy[0]], [vec_vel_xy[1]])
-        
-        status_str = (f"POS XY: ({vec_pos_xy[0]:.2f}, {vec_pos_xy[1]:.2f})\n"
-                      f"VEL XY: ({vec_vel_xy[0]:.2f}, {vec_vel_xy[1]:.2f})")
-        text_info.set_text(status_str)
-        
-        # --- Z Visualization ---
-        
-        # Pos Z Bar
-        bar_z_pos[0].set_height(val_pos_z)
-        text_z_pos.set_text(f"{val_pos_z:.2f}m")
-        text_z_pos.set_y(max(0.1, val_pos_z + 0.1))
-        
-        # Pos Z Scaling
-        if val_pos_z > z_pos_limit * 0.9:
-            z_pos_limit = val_pos_z * 1.5
-            ax_z_pos.set_ylim(0, z_pos_limit)
-            
-        # Vel Z Bar
-        bar_z_vel[0].set_height(val_vel_z)
-        text_z_vel.set_text(f"{val_vel_z:.2f}m/s")
-        if val_vel_z >= 0:
-            text_z_vel.set_y(val_vel_z + 0.1)
-        else:
-            text_z_vel.set_y(val_vel_z - 0.2)
-            
-        # Vel Z Scaling
-        if abs(val_vel_z) > z_vel_limit * 0.9:
-            z_vel_limit = abs(val_vel_z) * 1.5
-            ax_z_vel.set_ylim(-z_vel_limit, z_vel_limit)
-        
-        fig.canvas.draw_idle()
-        plt.pause(0.01)
+    ax_reset = fig.add_axes([0.09, 0.005, 0.08, 0.04])
+    btn_reset = Button(ax_reset, 'Reset FC',
+                       color=BTN_RED, hovercolor=BTN_RED_HOV)
+    btn_reset.label.set_color(TEXT_COLOR)
+    btn_reset.label.set_fontsize(8)
 
-    plt.show(block=False)
-    
-    while plt.fignum_exists(fig.number):
-        update_plot()
+    def on_reset(event):
+        global g_logging_active
+        if g_serial and g_serial.is_open:
+            send_reset_command(g_serial)
+            g_logging_active = False
+            btn_toggle.label.set_text('Start Log')
+            ax_toggle.set_facecolor(BTN_GREEN)
+
+    btn_reset.on_clicked(on_reset)
+
+    # =========================================================================
+    # Animation loop
+    # =========================================================================
+    frame_count = [0]
+    last_fps_time = [time.time()]
+
+    def update(frame_num):
+        updated = []
+        latest = None
+
+        while not data_queue.empty():
+            try:
+                latest = data_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        if latest is None:
+            return updated
+
+        px, py, pz, vx, vy, vz = latest
+
+        # =================================================================
+        # Data panel
+        # =================================================================
+        data_px.set_text(f'X:{px:+6.2f}m')
+        data_py.set_text(f'Y:{py:+6.2f}m')
+        data_pz.set_text(f'Z:{pz:+6.2f}m')
+
+        data_vx.set_text(f'Vx:{vx:+5.2f}')
+        data_vy.set_text(f'Vy:{vy:+5.2f}')
+        data_vz.set_text(f'Vz:{vz:+5.2f}')
+
+        dist = np.sqrt(px**2 + py**2)
+        speed = np.sqrt(vx**2 + vy**2 + vz**2)
+        data_dist.set_text(f'D:{dist:6.2f}m')
+        data_speed.set_text(f'S:{speed:5.2f}')
+
+        # =================================================================
+        # 2D Position Map
+        # =================================================================
+        xy_history['x'].append(py)   # Y->East mapped to display X
+        xy_history['y'].append(px)   # X->North mapped to display Y
+        if len(xy_history['x']) > HISTORY_LEN:
+            xy_history['x'] = xy_history['x'][-HISTORY_LEN:]
+            xy_history['y'] = xy_history['y'][-HISTORY_LEN:]
+        pos_trail.set_data(xy_history['x'], xy_history['y'])
+        pos_dot.set_data([py], [px])
+
+        # Update velocity arrow
+        vel_arrow.set_offsets([[py, px]])
+        vel_arrow.set_UVC(vy, vx)
+
+        # Auto-zoom
+        if xy_zoom[0] is not None:
+            half = xy_zoom[0]
+            ax_xy.set_xlim(py - half, py + half)
+            ax_xy.set_ylim(px - half, px + half)
+        elif len(xy_history['x']) > 1:
+            xarr = np.array(xy_history['x'])
+            yarr = np.array(xy_history['y'])
+            xmin, xmax = xarr.min(), xarr.max()
+            ymin, ymax = yarr.min(), yarr.max()
+            span = max(xmax - xmin, ymax - ymin, 2.0)
+            cx = (xmin + xmax) / 2
+            cy = (ymin + ymax) / 2
+            half = span / 2 + 1.0
+            ax_xy.set_xlim(cx - half, cx + half)
+            ax_xy.set_ylim(cy - half, cy + half)
+        updated.extend([pos_trail, pos_dot])
+
+        # =================================================================
+        # Altitude chart
+        # =================================================================
+        now = time.time()
+        if alt_t0[0] is None:
+            alt_t0[0] = now
+        at = now - alt_t0[0]
+        alt_history['t'].append(at)
+        alt_history['z'].append(pz)
+        if len(alt_history['t']) > HISTORY_LEN:
+            alt_history['t'] = alt_history['t'][-HISTORY_LEN:]
+            alt_history['z'] = alt_history['z'][-HISTORY_LEN:]
+        alt_line.set_data(alt_history['t'], alt_history['z'])
+        alt_val_text.set_text(f'Z:{pz:+.3f}m')
+        if len(alt_history['t']) > 1:
+            ax_alt.set_xlim(alt_history['t'][0], alt_history['t'][-1] + 0.1)
+            zarr = np.array(alt_history['z'])
+            zmin, zmax = zarr.min(), zarr.max()
+            margin = max(0.5, (zmax - zmin) * 0.2)
+            ax_alt.set_ylim(zmin - margin, zmax + margin)
+        updated.append(alt_line)
+
+        # =================================================================
+        # Velocity chart
+        # =================================================================
+        if vel_t0[0] is None:
+            vel_t0[0] = now
+        vt = now - vel_t0[0]
+        vel_history['t'].append(vt)
+        vel_history['vx'].append(vx)
+        vel_history['vy'].append(vy)
+        vel_history['vz'].append(vz)
+        if len(vel_history['t']) > HISTORY_LEN:
+            for k in vel_history:
+                vel_history[k] = vel_history[k][-HISTORY_LEN:]
+        vel_lines[0].set_data(vel_history['t'], vel_history['vx'])
+        vel_lines[1].set_data(vel_history['t'], vel_history['vy'])
+        vel_lines[2].set_data(vel_history['t'], vel_history['vz'])
+        if len(vel_history['t']) > 1:
+            ax_vel.set_xlim(vel_history['t'][0], vel_history['t'][-1] + 0.1)
+            all_v = np.array(vel_history['vx'] + vel_history['vy'] + vel_history['vz'])
+            vmin, vmax = all_v.min(), all_v.max()
+            vm = max(0.5, (vmax - vmin) * 0.2)
+            ax_vel.set_ylim(vmin - vm, vmax + vm)
+        updated.extend(vel_lines)
+
+        # =================================================================
+        # Chip ID + FPS
+        # =================================================================
+        if g_chip_id is not None:
+            chip_id_text.set_text(f'Chip ID: {g_chip_id}')
+            updated.append(chip_id_text)
+
+        frame_count[0] += 1
+        elapsed = now - last_fps_time[0]
+        if elapsed >= 1.0:
+            fps = frame_count[0] / elapsed
+            fps_text.set_text(f'{fps:.0f} Hz')
+            frame_count[0] = 0
+            last_fps_time[0] = now
+            updated.append(fps_text)
+
+        return updated
+
+    ani = FuncAnimation(fig, update, interval=50, blit=False, cache_frame_data=False)
+    plt.show()
+
 
 if __name__ == '__main__':
     main()

@@ -41,7 +41,7 @@ Select via `FUSION_ALGO` constant in the source.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `FUSION_ALGO` | `4` | Active algorithm (7-State EKF) |
+| `FUSION_ALGO` | `5` | Active algorithm (Madgwick+Bias) |
 | `DT` | 1/1000.0 | Gyro prediction timestep |
 | `GYRO_NOISE` | 0.0001 | EKF process noise |
 | `ACCEL_NOISE` | 100.0 | EKF measurement noise |
@@ -51,17 +51,27 @@ Select via `FUSION_ALGO` constant in the source.
 
 ## Sensor Frame Convention
 
-Body frame conversion from raw IMU:
+### NED Body Frame
+The system uses the **NED (North-East-Down)** convention:
+- **Navigation frame**: X=North, Y=East, Z=Down
+- **Body frame**: X=Forward, Y=Right, Z=Down
+- **Euler angles**: Roll (right→+), Pitch (nose-up→+), Yaw (clockwise→+)
+- **Gravity vector** at rest: `v_pred = (0, 0, -1)`
+
+### Sensor-to-Body Axis Mapping (ICM-42688P)
+IMU sensor axes (X=right, Y=forward on PCB) differ from body frame:
 ```c
-gx = -raw_gx;  gy = -raw_gy;  gz = raw_gz;
+body_gx = -raw_gy;  body_gy = -raw_gx;  body_gz = -raw_gz;
+body_ax = -raw_ay;  body_ay = -raw_ax;  body_az = -raw_az;
 ```
 
-Euler extraction:
-```c
-roll  = -euler.y * RAD2DEG;
-pitch =  euler.x * RAD2DEG;
-yaw   =  euler.z * RAD2DEG;
-```
+### Linear Acceleration Convention (Positive = Direction of Motion)
+The fusion algorithms output `v_linear_acc` with **positive = direction of motion**:
+- **Move forward then stop** → X goes positive then negative
+- **Move right then stop** → Y goes positive then negative
+- **Move up then stop** → Z goes positive then negative
+
+Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithm — consumers receive it directly via `SENSOR_LINEAR_ACCEL`.
 
 ## PubSub Interface
 

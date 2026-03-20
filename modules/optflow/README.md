@@ -7,9 +7,9 @@ Receives binary optical flow packets from the external **flight-optflow** ESP32 
 ## Data Flow
 
 ```
-flight-optflow ESP32 (UART4, 38400 baud, DB protocol)
+flight-optflow ESP32 (any UART port, 38400 baud)
     │
-    ▼  DMA ring buffer → DB parser
+    ▼  DMA ring buffer → auto-detect DB/UBX parser
   DB_MESSAGE_UPDATE (msg_id = 0x01)
     │
     ▼  Validate checksum → Unpack int32 → Convert to radians

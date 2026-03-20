@@ -4,10 +4,9 @@
 #include <local_storage/local_storage.h>
 #include <logger/logger.h>
 #include <fault_handler/fault_handler.h>
-#include <oscillation_detection/oscillation_detection.h>
-#include <linear_drift_detection/linear_drift_detection.h>
 #include <position_estimation/position_estimation.h>
-#include <state_detector/state_detector.h>
+#include <flight_state/flight_state.h>
+#include <flight_telemetry/flight_telemetry.h>
 
 /**
  * SIMULATION MODULE INITIALIZATION
@@ -33,8 +32,7 @@ void modules_setup(void) {
     attitude_control_setup();
 
     // 4. Safety Logic
-    oscillation_detection_setup();
-    linear_drift_detection_setup();
-    state_detector_setup();
+    flight_state_setup();
+    flight_telemetry_setup();
 }
 

@@ -132,10 +132,10 @@ static void position_update(uint8_t *data, size_t size) {
 	if (g_rc_state_ctl.mode == 2) {
 		reset_pid();
 		vector3d_set(&g_veloc_offset, &g_veloc_final);
-		g_pos_ctl_roll 		= -g_rc_att_ctl.roll * 0.5;
+		g_pos_ctl_roll 		= g_rc_att_ctl.roll * 0.5;
 		g_pos_ctl_pitch 	= -g_rc_att_ctl.pitch * 0.5;
-		g_pos_ctl_yaw 		= g_yaw_veloc;
-		g_pos_ctl_alt 		= -g_rc_att_ctl.alt * 2;
+		g_pos_ctl_yaw 		= -g_yaw_veloc;
+		g_pos_ctl_alt 		= g_rc_att_ctl.alt * 2;
 	} else {
 		if (g_moving_state_roll == 0) g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
 		if (g_moving_state_pitch == 0) g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
@@ -152,10 +152,16 @@ static void position_update(uint8_t *data, size_t size) {
 		g_output_smooth.y += POS_CTL_OUTPUT_LPF_ALPHA_XY * (y_output - g_output_smooth.y);
 		g_output_smooth.z += POS_CTL_OUTPUT_LPF_ALPHA_Z * (z_output - g_output_smooth.z);
 
-		g_pos_ctl_roll 		= LIMIT(g_output_smooth.y + g_veloc_applied.y, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
+		/*
+		 * Body-Frame Position→Angle Mapping:
+		 * - Positive X error (forward of target) → need positive pitch (nose up) to fly back → no negation
+		 * - Positive Y error (right of target) → need negative roll (right wing up) to fly left → negated
+		 * - Positive Z error (above target) → need less throttle to descend → negated
+		 */
+		g_pos_ctl_roll 		= -LIMIT(g_output_smooth.y + g_veloc_applied.y, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
 		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
-		g_pos_ctl_yaw 		= g_yaw_veloc;
-		g_pos_ctl_alt 		= g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE;
+		g_pos_ctl_yaw 		= -g_yaw_veloc;
+		g_pos_ctl_alt 		= -(g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE);
 	}
 	
 	publish_angular_target();
@@ -231,7 +237,7 @@ static void state_control_update(uint8_t *data, size_t size) {
 	memcpy(&rc_state_ctl, data, size);
 	if (rc_state_ctl.mode == 2 && g_rc_state_ctl.mode < 2) {
 		if (g_state == FLYING) {
-			g_take_off_speed -= g_pos_ctl_alt;
+			g_take_off_speed += g_pos_ctl_alt;
 			g_pos_ctl_alt = 0;
 		}
 	}
@@ -242,7 +248,7 @@ static void state_control_update(uint8_t *data, size_t size) {
 void position_control_setup(void) {
 	subscribe(POSITION_STATE_UPDATE, position_update);
 	subscribe(POSITION_TARGET_UPDATE, position_target_update);
-	subscribe(STATE_DETECTION_UPDATE, state_update);
+	subscribe(FLIGHT_STATE_UPDATE, state_update);
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);

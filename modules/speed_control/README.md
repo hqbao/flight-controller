@@ -2,7 +2,7 @@
 
 ## Overview
 
-Motor output driver. Translates motor speed commands from attitude control into hardware signals (DShot or PWM) for up to 8 motors. Pure passthrough — no filtering or processing.
+Motor output driver. Translates motor speed commands from mix control into hardware signals (DShot or PWM) for up to 8 motors. Pure passthrough — no filtering or processing.
 
 ## Data Flow
 
