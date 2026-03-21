@@ -35,8 +35,8 @@ The fusion library outputs positive-up Z directly — no manual negation needed 
 ### Sensor Sources
 | Axis | Predict Source | Update Source |
 |------|----------------|---------------|
-| X (North) | Earth-frame linear accel | Optical flow / GPS velocity |
-| Y (East) | Earth-frame linear accel | Optical flow / GPS velocity |
+| X (Forward) | Body-frame linear accel | Optical flow / GPS velocity |
+| Y (Right) | Body-frame linear accel | Optical flow / GPS velocity |
 | Z (Up) | Earth-frame linear accel | Barometer or laser altitude |
 
 ## Fusion Architecture
@@ -45,9 +45,9 @@ Three independent `fusion6_t` instances for X, Y, Z axes:
 
 | Axis | Predict | Update Source |
 |------|---------|---------------|
-| X (North) | Linear accel × g | Optical flow velocity |
-| Y (East) | Linear accel × g | Optical flow velocity |
-| Z (Up) | Linear accel × g | Barometer or laser altitude delta |
+| X (Forward) | Body-frame linear accel × g | Optical flow velocity |
+| Y (Right) | Body-frame linear accel × g | Optical flow velocity |
+| Z (Up) | Earth-frame linear accel × g | Barometer or laser altitude delta |
 
 Optical flow velocity: `vel = angular_displacement × 5.0` (empirical gain).
 
@@ -72,7 +72,7 @@ Automatic hysteresis-based switching between laser range finder and barometer:
 | `RANGE_SWITCH_TO_LASER_THRESHOLD` | `0.25` | Switch to laser below (m) |
 | `RANGE_SWITCH_TO_BARO_THRESHOLD` | `0.5` | Switch to baro above (m) |
 
-Fusion6 init: `(1.0, 0.5, 1.0, 20.0, 0.1)` for all axes.
+Fusion6 init: X/Y use `(1.0, 1.0, 1.0, 20.0, 0.1)`, Z uses `(1.0, 0.5, 1.0, 20.0, 0.1)`.
 
 ## PubSub Interface
 
@@ -107,7 +107,6 @@ Both are runtime-selectable — no recompilation needed.
 
 | Tool | Purpose |
 |------|---------|
-| `position_estimation_2d_and_z.py` | 2D XY + altitude chart |
-| `position_estimation_chart_xy.py` | XY time-series |
-| `position_estimation_chart_z.py` | Altitude time-series |
-| `position_estimation_optflow.py` | Optical flow position view |
+| `position_estimation_2d_and_z.py` | 2D XY map + altitude chart |
+| `position_estimation_chart.py` | Position/velocity time-series (2×2 grid) |
+| `position_estimation_optflow.py` | Optical flow & altitude sensor viewer |

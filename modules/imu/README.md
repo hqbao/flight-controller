@@ -41,7 +41,7 @@ ICM-42688P (I2C/SPI)
 ## Calibration
 
 All calibration is managed by the `calibration` module and delivered via PubSub:
-- **Gyro bias** → `CALIBRATION_GYRO_READY` (automatic at startup, saved to flash)
+- **Gyro temperature compensation** → `CALIBRATION_GYRO_READY` (polynomial coefficients `a·T² + b·T + c` per axis, uploaded via Python tool, saved to flash)
 - **Accel bias + scale** → `CALIBRATION_ACCEL_READY` (uploaded via Python tool, saved to flash)
 
 ### Accelerometer (Manual)
@@ -73,11 +73,16 @@ Model: `V_cal = S × (V_raw − B)`
 | `SENSOR_IMU1_GYRO_UPDATE` | `float[3]` — gx, gy, gz (deg/s) | 1 kHz |
 | `SENSOR_IMU1_GYRO_RAW` | `float[3]` — raw gyro (LSB) | 1 kHz |
 | `SENSOR_IMU1_ACCEL_UPDATE` | `float[3]` — ax, ay, az (calibrated) | 500 Hz |
-| `SEND_LOG` | `float[3]` — ax, ay, az (12 bytes) | 25 Hz |
+| `SEND_LOG` | `float[4]` — sensor values + temperature (16 bytes) | 25 Hz |
 
-## Log Class
+## Log Classes
 
-`LOG_CLASS_IMU_ACCEL_RAW` (0x01) — streams 3 accelerometer floats at 25 Hz.
+| Log Class | ID | Data |
+|-----------|----|------|
+| `LOG_CLASS_IMU_ACCEL_RAW` | 0x01 | Raw accelerometer + temperature (4 floats) |
+| `LOG_CLASS_IMU_ACCEL_CALIB` | 0x0A | Calibrated accelerometer + temperature (4 floats) |
+| `LOG_CLASS_IMU_GYRO_RAW` | 0x0B | Raw gyroscope + temperature (4 floats, LSB + °C) |
+| `LOG_CLASS_IMU_GYRO_CALIB` | 0x0C | Calibrated gyroscope + temperature (4 floats, °/s + °C) |
 
 ## Files
 

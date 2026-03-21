@@ -18,6 +18,13 @@ Flight state machine. Manages transitions between flight states based on RC inpu
          │                    ▼
          │                 READY (motors idle)
          │                    │
+         │              rc_state != 1
+         │                    │
+         │                    ▼
+         │               TESTING (RC motor passthrough)
+         │                    │
+         │              rc_state == 1
+         │                    │
          │              Throttle > 5°
          │                    │
          │                    ▼
@@ -26,17 +33,17 @@ Flight state machine. Manages transitions between flight states based on RC inpu
          ▲              Range > 100mm
          │                    │
          │                    ▼
-         └─────────────── FLYING
-                              │
-                         RC landing
-                              │
-                              ▼
-                          LANDING
+         └─────────────── FLYING ◄─── cancel landing (rc_state != 2)
+                              │                    ▲
+                         RC landing                │
+                              │                    │
+                              ▼                    │
+                          LANDING ─────────────────┘
                               │
                          Range < 10mm (500ms)
                               │
                               ▼
-                          DISARMED
+                          DISARMED ◄── FLYING (range < 10mm + throttle min)
 ```
 
 ## Safety Features

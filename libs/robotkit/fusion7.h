@@ -61,9 +61,6 @@ void fusion7_update(fusion7_t *f, double vel_measured);
 
 
 /**
- * Get current position estimate
- */
-/**
  * Update Step (Position)
  * Fuses position measurement (e.g. from GPS, Barometer, or Range Finder)
  * 
@@ -73,11 +70,10 @@ void fusion7_update(fusion7_t *f, double vel_measured);
  */
 void fusion7_update_position(fusion7_t *f, double pos_measured, double sigma_pos);
 
+/** Get current position estimate */
 double fusion7_get_position(fusion7_t *f);
 
-/**
- * Get current velocity estimate
- */
+/** Get current velocity estimate */
 double fusion7_get_velocity(fusion7_t *f);
 
 #endif

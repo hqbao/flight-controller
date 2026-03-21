@@ -32,27 +32,27 @@ typedef struct {
     vector3d_t a;                      // Raw accel
     vector3d_t a_smooth;               // Filtered accel
     vector3d_t v_linear_acc;
-    vector3d_t v_linear_acc_smooth;
     vector3d_t v_linear_acc_earth_frame;
     
     // === Parameters ===
     double beta;                       // Algorithm gain
     double zeta;                       // Bias gain
     
-    // === Dynamic Tuning ===
+    // === Configuration ===
     double k0;                         // Low pass filter accel
-    double k2;                         // Low pass filter lin accel
-    double linear_accel;
-    double min_linear_accel;
-    double max_linear_accel;
     double accel_scale;
-    double accel_uncertainty;
     int no_correction;
 
 } fusion5_t;
 
 void fusion5_init(fusion5_t *f, double k0, double beta, double zeta, double accel_scale);
-void fusion5_remove_linear_accel(fusion5_t *f, double k2, double min_linear_accel, double max_linear_accel);
+
+/**
+ * Update Madgwick beta gain at runtime.
+ * Allows caller to dynamically adjust correction strength
+ * (e.g. reduce beta during high linear acceleration).
+ */
+void fusion5_set_beta(fusion5_t *f, double beta);
 void fusion5_predict(fusion5_t *f, double gx, double gy, double gz, double dt);
 void fusion5_update(fusion5_t *f, double ax, double ay, double az, double dt);
 

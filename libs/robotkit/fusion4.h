@@ -92,4 +92,13 @@ void fusion4_predict(fusion4_t *f, double gx, double gy, double gz, double dt);
  */
 void fusion4_update(fusion4_t *f, double ax, double ay, double az, double dt);
 
+/**
+ * Update EKF noise parameters at runtime.
+ * Allows caller to dynamically adjust process/measurement noise
+ * (e.g. increase accel_noise during high linear acceleration).
+ * @param gyro_noise  Process noise for gyroscope (Q diagonal, indices 0-3)
+ * @param accel_noise Measurement noise for accelerometer (R diagonal = accel_noise²)
+ */
+void fusion4_set_noise(fusion4_t *f, double gyro_noise, double accel_noise);
+
 #endif

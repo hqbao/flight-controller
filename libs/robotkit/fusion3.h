@@ -42,21 +42,15 @@ typedef struct {
     vector3d_t a;                      // Raw accelerometer reading
     vector3d_t a_smooth;               // Low-pass filtered accelerometer
     vector3d_t v_linear_acc;           // Linear acceleration (gravity removed)
-    vector3d_t v_linear_acc_smooth;    // Smoothed linear acceleration
     vector3d_t v_linear_acc_earth_frame; // Linear acceleration in earth frame
 
     
     // === Filter Parameters ===
     double k0;                         // Accelerometer smoothing gain (2.0-4.0)
     double beta;                       // Madgwick beta gain (0.01-0.5)
-    double k2;                         // Linear acceleration decay rate
     
-    // === Adaptive Correction ===
+    // === Configuration ===
     double accel_scale;                // Accelerometer scale (1g in raw units)
-    double accel_uncertainty;          // Reduces correction during high linear accel
-    double min_linear_accel;           // Min threshold for accel uncertainty
-    double max_linear_accel;           // Max threshold for accel uncertainty
-    double linear_accel;               // Current linear acceleration magnitude
     
     // === Debug/Testing ===
     char no_correction;                // If 1, disable gradient correction (gyro-only)
@@ -70,7 +64,13 @@ typedef struct {
  * @param beta Madgwick beta gain (0.01-0.5, higher = faster correction but more noise)
  */
 void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale);
-void fusion3_remove_linear_accel(fusion3_t *f, double k2, double min_linear_accel, double max_linear_accel);
+
+/**
+ * Update Madgwick beta gain at runtime.
+ * Allows caller to dynamically adjust correction strength
+ * (e.g. reduce beta during high linear acceleration).
+ */
+void fusion3_set_beta(fusion3_t *f, double beta);
 
 /**
  * PREDICT STEP: Integrate gyroscope to update quaternion

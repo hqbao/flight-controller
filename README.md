@@ -147,9 +147,11 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 | Rate | Usage |
 |------|-------|
 | `SCHEDULER_8KHZ` | *(unused — available for future use)* |
+| `SCHEDULER_4KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_2KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_1KHZ` | IMU gyro readout, attitude PID, motor mixing |
 | `SCHEDULER_500HZ` | IMU accel processing (calibration + publish) |
+| `SCHEDULER_250HZ` | *(unused — available for future use)* |
 | `SCHEDULER_100HZ` | Flight state machine, position control |
 | `SCHEDULER_50HZ` | LED status indicator (fault_handler) |
 | `SCHEDULER_25HZ` | Compass readout, IMU/position/compass logging, fault detection, RC |
