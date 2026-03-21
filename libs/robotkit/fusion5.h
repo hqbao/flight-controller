@@ -36,7 +36,6 @@ typedef struct {
     vector3d_t v_linear_acc_earth_frame;
     
     // === Parameters ===
-    double freq;
     double beta;                       // Algorithm gain
     double zeta;                       // Bias gain
     
@@ -52,9 +51,9 @@ typedef struct {
 
 } fusion5_t;
 
-void fusion5_init(fusion5_t *f, double k0, double beta, double zeta, double accel_scale, double freq);
+void fusion5_init(fusion5_t *f, double k0, double beta, double zeta, double accel_scale);
 void fusion5_remove_linear_accel(fusion5_t *f, double k2, double min_linear_accel, double max_linear_accel);
 void fusion5_predict(fusion5_t *f, double gx, double gy, double gz, double dt);
-void fusion5_update(fusion5_t *f, double ax, double ay, double az);
+void fusion5_update(fusion5_t *f, double ax, double ay, double az, double dt);
 
 #endif

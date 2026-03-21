@@ -78,11 +78,11 @@
 
 #if FUSION_ALGO == 2
 #define GYRO_NOISE 0.0001
-#define ACCEL_NOISE 1000.0
+#define ACCEL_NOISE 100.0
 #endif
 
 #if FUSION_ALGO == 4
-#define GYRO_NOISE 0.0001
+#define GYRO_NOISE 0.001
 #define ACCEL_NOISE 1000.0
 #define BIAS_NOISE 0.00001
 #endif
@@ -100,7 +100,7 @@
 
 // Shared Accelerometer Parameters (Used by all fusion algorithms)
 #if FUSION_ALGO == 1 || FUSION_ALGO == 2 || FUSION_ALGO == 3 || FUSION_ALGO == 4 || FUSION_ALGO == 5
-#define ATT_ACCEL_SMOOTH 4.0      // Accel LPF bandwidth factor (divided by freq for frequency-invariance)
+#define ATT_ACCEL_SMOOTH 4.0      // Accel LPF gain (raw; multiplied by dt internally)
 #define ATT_LIN_ACC_DECAY 0.5     // Linear acceleration decay factor
 #define ATT_LIN_ACCEL_MIN 0.5     // Min accel magnitude for linear accel removal (G)
 #define ATT_LIN_ACCEL_MAX 2.0     // Max accel magnitude for linear accel removal (G)
@@ -223,15 +223,15 @@ static void accel_update(uint8_t *data, size_t size) {
 	g_raw_accel.z = az;
 
 #if FUSION_ALGO == 1
-	fusion1_update(&g_f11, ax, ay, az);
+	fusion1_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 2
-	fusion2_update(&g_f11, ax, ay, az);
+	fusion2_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 3
-	fusion3_update(&g_f11, ax, ay, az);
+	fusion3_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 4
-	fusion4_update(&g_f11, ax, ay, az);
+	fusion4_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 5
-	fusion5_update(&g_f11, ax, ay, az);
+	fusion5_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
 #endif
 
 	memcpy(&g_linear_accel_out.body, &g_f11.v_linear_acc, sizeof(vector3d_t));
@@ -314,28 +314,28 @@ void attitude_estimation_setup(void) {
 	// Initialize Fusion1 (Mahony filter)
 	// Parameters: gain_acc_smooth, kp (Mahony P-gain), Ki, decay, accel_freq
 	// ATT_ACCEL_SMOOTH controls gravity vector smoothing stiffness
-	fusion1_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_MAHONY_KP, ATT_MAHONY_KI, ATT_LIN_ACC_DECAY, MAX_IMU_ACCEL, ACCEL_FREQ);
+	fusion1_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_MAHONY_KP, ATT_MAHONY_KI, ATT_LIN_ACC_DECAY, MAX_IMU_ACCEL);
 	fusion1_remove_linear_accel(&g_f11, ATT_LIN_ACCEL_MIN, ATT_LIN_ACCEL_MAX);
 #elif FUSION_ALGO == 2
 	// Initialize Fusion2 (EKF)
 	// Parameters: gyro_noise, accel_noise, accel_scale, lpf_gain
-	// Passing ATT_ACCEL_SMOOTH converted to per-sample gain (gain / freq)
-	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, 1.0);
+	// lpf_gain is raw bandwidth factor (multiplied by dt inside fusion2_update)
+	fusion2_init(&g_f11, GYRO_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH);
 #elif FUSION_ALGO == 3
 	// Initialize Fusion3 (Madgwick filter)
 	// Parameters: k0 (accel smoothing gain), beta, freq
 	// Uses ATT_ACCEL_SMOOTH for consistent gravity noise rejection
-	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, MAX_IMU_ACCEL, ACCEL_FREQ);
+	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, MAX_IMU_ACCEL);
 	fusion3_remove_linear_accel(&g_f11, ATT_LIN_ACC_DECAY, ATT_LIN_ACCEL_MIN, ATT_LIN_ACCEL_MAX);
 #elif FUSION_ALGO == 4
     // Initialize Fusion4 (7-State EKF)
     // Parameters: gyro_noise, bias_noise, accel_noise, accel_scale, lpf_gain
 	// Bias noise set to 1e-5 to allow slow walk estimation
-    fusion4_init(&g_f11, GYRO_NOISE, BIAS_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, 1.0);
+    fusion4_init(&g_f11, GYRO_NOISE, BIAS_NOISE, ACCEL_NOISE, MAX_IMU_ACCEL, ATT_ACCEL_SMOOTH);
 #elif FUSION_ALGO == 5
 	// Initialize Fusion 5 (Madgwick with Bias)
 	// Parameters: k0 (accel filter), beta (gain), zeta (bias gain), accel_scale, freq
-	fusion5_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F5_BETA, ATT_F5_ZETA, MAX_IMU_ACCEL, ACCEL_FREQ);
+	fusion5_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F5_BETA, ATT_F5_ZETA, MAX_IMU_ACCEL);
     fusion5_remove_linear_accel(&g_f11, ATT_LIN_ACC_DECAY, ATT_LIN_ACCEL_MIN, ATT_LIN_ACCEL_MAX);
 #endif
 

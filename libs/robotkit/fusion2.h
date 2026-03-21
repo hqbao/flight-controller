@@ -73,6 +73,6 @@ typedef struct {
 
 void fusion2_init(fusion2_t *f, double gyro_noise, double accel_noise, double accel_scale, double lpf_gain);
 void fusion2_predict(fusion2_t *f, double gx, double gy, double gz, double dt);
-void fusion2_update(fusion2_t *f, double ax, double ay, double az);
+void fusion2_update(fusion2_t *f, double ax, double ay, double az, double dt);
 
 #endif

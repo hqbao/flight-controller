@@ -32,7 +32,7 @@ Gyro (1 kHz)           Accel (500 Hz)         Compass (25 Hz)
 | 1 | Mahony | Complementary filter with PI correction |
 | 2 | EKF | Extended Kalman Filter (4-state quaternion) |
 | 3 | Madgwick | Gradient descent optimization |
-| 4 | **7-State EKF** | EKF with gyro bias estimation (active) |
+| 4 | **7-State EKF** | **EKF with gyro bias estimation (active)** |
 | 5 | Madgwick+Bias | Madgwick with gyro bias tracking |
 
 Select via `FUSION_ALGO` constant in the source.
@@ -41,12 +41,12 @@ Select via `FUSION_ALGO` constant in the source.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `FUSION_ALGO` | `5` | Active algorithm (Madgwick+Bias) |
+| `FUSION_ALGO` | `4` | Active algorithm (7-State EKF) |
 | `DT` | 1/1000.0 | Gyro prediction timestep |
 | `GYRO_NOISE` | 0.0001 | EKF process noise |
 | `ACCEL_NOISE` | 100.0 | EKF measurement noise |
 | `BIAS_NOISE` | 0.00001 | Gyro bias random walk noise |
-| `ATT_ACCEL_SMOOTH` | 4.0 | Accelerometer LPF bandwidth |
+| `ATT_ACCEL_SMOOTH` | 4.0 | Accelerometer LPF gain (raw; multiplied by `dt` internally) |
 | `ATT_LIN_ACC_DECAY` | 0.5 | Linear acceleration decay factor |
 
 ## Sensor Frame Convention

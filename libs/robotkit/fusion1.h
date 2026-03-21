@@ -32,7 +32,6 @@ typedef struct {
 
     
     // === Filter Parameters ===
-    double freq;                       // Update frequency (Hz)
     double gain_acc_smooth;            // Accelerometer smoothing gain (formerly k0)
     double gain_prop;                  // Mahony Kp - proportional gain (formerly k1)
     double gain_int;                   // Mahony Ki - integral gain (formerly ki)
@@ -49,9 +48,9 @@ typedef struct {
     char no_correction;                // If 1, disable Mahony correction (gyro-only)
 } fusion1_t;
 
-void fusion1_init(fusion1_t *f, double gain_acc_smooth, double gain_prop, double gain_int, double gain_lin_acc_decay, double accel_scale, double freq);
+void fusion1_init(fusion1_t *f, double gain_acc_smooth, double gain_prop, double gain_int, double gain_lin_acc_decay, double accel_scale);
 void fusion1_remove_linear_accel(fusion1_t *f, double min_linear_accel, double max_linear_accel);
 void fusion1_predict(fusion1_t *f, double gx, double gy, double gz, double dt);
-void fusion1_update(fusion1_t *f, double ax, double ay, double az);
+void fusion1_update(fusion1_t *f, double ax, double ay, double az, double dt);
 
 #endif

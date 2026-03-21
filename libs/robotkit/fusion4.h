@@ -90,6 +90,6 @@ void fusion4_predict(fusion4_t *f, double gx, double gy, double gz, double dt);
  * @param ay Accel Y (raw)
  * @param az Accel Z (raw)
  */
-void fusion4_update(fusion4_t *f, double ax, double ay, double az);
+void fusion4_update(fusion4_t *f, double ax, double ay, double az, double dt);
 
 #endif

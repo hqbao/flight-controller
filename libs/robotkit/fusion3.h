@@ -47,7 +47,6 @@ typedef struct {
 
     
     // === Filter Parameters ===
-    double freq;                       // Update frequency (Hz)
     double k0;                         // Accelerometer smoothing gain (2.0-4.0)
     double beta;                       // Madgwick beta gain (0.01-0.5)
     double k2;                         // Linear acceleration decay rate
@@ -69,9 +68,8 @@ typedef struct {
  * @param f    Pointer to fusion3_t struct
  * @param k0   Accelerometer smoothing gain (2.0-4.0, higher = smoother)
  * @param beta Madgwick beta gain (0.01-0.5, higher = faster correction but more noise)
- * @param freq Update frequency in Hz (typically 500Hz for drones)
  */
-void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale, double freq);
+void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale);
 void fusion3_remove_linear_accel(fusion3_t *f, double k2, double min_linear_accel, double max_linear_accel);
 
 /**
@@ -93,6 +91,6 @@ void fusion3_predict(fusion3_t *f, double gx, double gy, double gz, double dt);
  * @param ay Accelerometer Y in raw units
  * @param az Accelerometer Z in raw units
  */
-void fusion3_update(fusion3_t *f, double ax, double ay, double az);
+void fusion3_update(fusion3_t *f, double ax, double ay, double az, double dt);
 
 #endif
