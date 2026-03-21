@@ -58,7 +58,7 @@ Model: `V_cal = S × (V_raw − B)`
 ### Subscriptions
 | Topic | Rate | Purpose |
 |-------|------|---------|
-| `SCHEDULER_1KHZ` | 1 kHz | Trigger sensor read |
+| `SCHEDULER_1KHZ` | 1 kHz | Trigger gyro sensor read |
 | `SCHEDULER_500HZ` | 500 Hz | Publish calibrated accel |
 | `I2C_CALLBACK_UPDATE` | Event | Process I2C DMA completion |
 | `SPI_CALLBACK_UPDATE` | Event | Process SPI DMA completion |

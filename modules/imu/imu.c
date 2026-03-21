@@ -53,7 +53,7 @@ static uint8_t g_active_log_class = 0;
 
 /* --- Sensor read & processing (1 kHz gyro, 500 Hz accel) --- */
 
-static void on_scheduler_1khz(uint8_t *data, size_t size) {
+static void on_sensor_read_tick(uint8_t *data, size_t size) {
 	icm42688p_read(&g_imu_sensor);
 }
 
@@ -197,7 +197,7 @@ void imu_setup(void) {
 		AFS_2G, GFS_2000DPS, 
 		AODR_500Hz, GODR_4kHz,
 		accel_mode_LN, gyro_mode_LN);
-	subscribe(SCHEDULER_1KHZ, on_scheduler_1khz);
+	subscribe(SCHEDULER_1KHZ, on_sensor_read_tick);
 	subscribe(SCHEDULER_500HZ, on_scheduler_500hz);
 	subscribe(I2C_CALLBACK_UPDATE, on_i2c_callback);
 	subscribe(SPI_CALLBACK_UPDATE, on_spi_callback);

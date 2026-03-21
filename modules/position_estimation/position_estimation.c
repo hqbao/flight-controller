@@ -215,7 +215,6 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	// Z: Earth-frame (positive-up from fusion library, for altitude)
 	g_linear_accel.z = la.earth.z * GRAVITY_MSS;
 
-    // Predict state based on acceleration (500Hz -> 0.002s)
 	fusion6_predict(&g_fusion_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
     fusion6_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
     fusion6_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);

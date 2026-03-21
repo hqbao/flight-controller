@@ -31,7 +31,7 @@ ANGULAR_STATE_UPDATE (1 kHz)    ANGULAR_TARGET_UPDATE    ALTITUDE_CONTROL_UPDATE
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `ATT_CTL_FREQ` | 1000 | Control loop frequency (Hz) |
+| `ATT_CTL_FREQ` | 500 | Control loop frequency (Hz) |
 
 ## State Machine Behavior
 
@@ -49,7 +49,7 @@ PID controllers are reset on ARM/READY/TAKING_OFF transitions.
 | Topic | Rate | Purpose |
 |-------|------|---------|
 | `ANGULAR_STATE_UPDATE` | 1 kHz | Current attitude (roll, pitch, yaw) |
-| `SCHEDULER_1KHZ` | 1 kHz | Control loop tick |
+| `SCHEDULER_500HZ` | 500 Hz | Control loop tick |
 | `FLIGHT_STATE_UPDATE` | Event | Flight state changes |
 | `ANGULAR_TARGET_UPDATE` | Event | Target angles from position control |
 | `ALTITUDE_CONTROL_UPDATE` | Event | Altitude + throttle target |
@@ -57,4 +57,4 @@ PID controllers are reset on ARM/READY/TAKING_OFF transitions.
 ### Publications
 | Topic | Data | Rate |
 |-------|------|------|
-| `MIX_CONTROL_UPDATE` | `mix_control_input_t` — PID outputs + altitude | 1 kHz (flight states only) |
+| `MIX_CONTROL_UPDATE` | `mix_control_input_t` — PID outputs + altitude | 500 Hz (flight states only) |

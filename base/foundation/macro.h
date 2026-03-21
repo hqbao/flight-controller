@@ -10,7 +10,7 @@
 // System Frequencies (Hz)
 #define GYRO_FREQ 1000
 #define ACCEL_FREQ 500
-#define ATT_CTL_FREQ 1000
+#define ATT_CTL_FREQ 500
 #define POS_CTL_FREQ 500
 #define CTL_FREQ 100
 

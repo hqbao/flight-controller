@@ -13,7 +13,7 @@
  * Each log class selects a single gyro axis for streaming.
  *
  * Data flow:
- *   SENSOR_IMU1_GYRO_UPDATE (1 kHz, calibrated deg/s)
+ *   SENSOR_IMU1_GYRO_UPDATE (2 kHz, calibrated deg/s)
  *     -> decimate to 250 Hz
  *     -> scale to int16 (x10, 0.1 dps resolution)
  *     -> batch 50 samples
@@ -23,7 +23,8 @@
  */
 
 #define FFT_BATCH_SIZE   50
-#define FFT_DECIMATION   4      /* 1 kHz / 4 = 250 Hz */
+#define FFT_TARGET_HZ    250
+#define FFT_DECIMATION   (GYRO_FREQ / FFT_TARGET_HZ)  /* e.g. 2000 / 250 = 8 */
 #define FFT_SCALE        10.0f  /* deg/s -> int16: 0.1 dps resolution */
 
 static uint8_t g_active_axis = 0;  /* 0=off, 1=X, 2=Y, 3=Z */
@@ -53,7 +54,7 @@ static void on_gyro_update(uint8_t *data, size_t size) {
 	if (!g_active_axis) return;
 	if (size < 12) return;
 
-	/* Decimate 1 kHz -> 250 Hz */
+	/* Decimate 2 kHz -> 250 Hz */
 	g_skip_count++;
 	if (g_skip_count < FFT_DECIMATION) return;
 	g_skip_count = 0;

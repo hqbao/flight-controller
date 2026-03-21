@@ -108,11 +108,11 @@ Modules follow a strict **setup → subscribe → publish** pattern:
 ```c
 // Example: modules/imu/imu.c
 void imu_setup(void) {
-    subscribe(SCHEDULER_1KHZ, on_scheduler_1khz);
+    subscribe(SCHEDULER_1KHZ, on_sensor_read_tick);
     subscribe(SCHEDULER_500HZ, on_scheduler_500hz);
 }
 
-static void on_scheduler_1khz(uint8_t *data, size_t size) {
+static void on_sensor_read_tick(uint8_t *data, size_t size) {
     icm42688p_read(&g_imu_sensor);  // triggers I2C/SPI → callback → publish gyro
 }
 
@@ -149,8 +149,9 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 | `SCHEDULER_8KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_4KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_2KHZ` | *(unused — available for future use)* |
-| `SCHEDULER_1KHZ` | IMU gyro readout, attitude PID, motor mixing |
-| `SCHEDULER_500HZ` | IMU accel processing (calibration + publish) |
+| `SCHEDULER_1KHZ` | IMU gyro readout (1 kHz sensor read) |
+| `SCHEDULER_500HZ` | IMU accel processing, attitude PID, motor mixing |
+| `SCHEDULER_250HZ` | *(unused — available for future use)* |
 | `SCHEDULER_250HZ` | *(unused — available for future use)* |
 | `SCHEDULER_100HZ` | Flight state machine, position control |
 | `SCHEDULER_50HZ` | LED status indicator (fault_handler) |

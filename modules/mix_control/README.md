@@ -75,8 +75,8 @@ python3 tools/mix_control_test.py
 ### Subscriptions
 | Topic | Rate | Purpose |
 |-------|------|---------|
-| `MIX_CONTROL_UPDATE` | 1 kHz | PID outputs + altitude from attitude control |
-| `SCHEDULER_1KHZ` | 1 kHz | Drives non-flight states (off, idle, testing) |
+| `MIX_CONTROL_UPDATE` | 500 Hz | PID outputs + altitude from attitude control |
+| `SCHEDULER_500HZ` | 500 Hz | Drives non-flight states (off, idle, testing) |
 | `FLIGHT_STATE_UPDATE` | Event | Flight state changes |
 | `RC_MOVE_IN_UPDATE` | Event | RC stick inputs (testing mode) |
 | `NOTIFY_LOG_CLASS` | Event | Runtime log class activation |
@@ -85,6 +85,6 @@ python3 tools/mix_control_test.py
 ### Publications
 | Topic | Data | Rate |
 |-------|------|------|
-| `SPEED_CONTROL_UPDATE` | `int[8]` — motor speeds | 1 kHz |
+| `SPEED_CONTROL_UPDATE` | `int[8]` — motor speeds | 500 Hz |
 | `SPEED_CONTROL_SETUP` | Trigger — initialize motor drivers | Once |
 | `SEND_LOG` | `float[8]` — motor speeds for telemetry | 10 Hz (when logging active) |

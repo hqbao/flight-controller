@@ -17,7 +17,7 @@ ICM-42688P (4 kHz ODR)
     │
     ▼  SENSOR_IMU1_GYRO_UPDATE (1 kHz, 3 floats in deg/s)
  fft.c
-    ├─ Decimate 1 kHz → 250 Hz (every 4th sample)
+    ├─ Decimate to 250 Hz
     ├─ Scale float → int16 (×10, 0.1°/s resolution)
     ├─ Batch 50 samples into buffer
     └─ publish(SEND_LOG) when batch full
