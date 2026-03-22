@@ -7,9 +7,10 @@
 /**
  * FUSION3: Madgwick Filter with Gyroscope Bias Estimation
  * 
- * Extends Fusion3 (standard Madgwick) by adding gyroscope bias estimation.
- * This effectively combines the benefits of Madgwick's gradient descent approach
- * with the bias tracking usually found in Mahony or EKF filters.
+ * Madgwick gradient descent filter with online gyroscope bias tracking.
+ * Combines the computational efficiency of Madgwick's gradient descent
+ * with bias estimation similar to Mahony's integral term.
+ * Set zeta=0 to disable bias estimation (standard Madgwick behavior).
  * 
  * State:
  * - Quaternion (orientation)

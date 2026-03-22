@@ -6,10 +6,8 @@
  * 
  * ALGORITHM SELECTION:
  * - FUSION_ALGO = 1: Mahony complementary filter (lightweight, fast)
- * - FUSION_ALGO = 2: Extended Kalman Filter (more sophisticated, heavier)
- * - FUSION_ALGO = 3: Madgwick Filter (Gradient Descent Optimization)
- * - FUSION_ALGO = 4: 7-State EKF (with gyro bias estimation)
- * - FUSION_ALGO = 5: Madgwick Filter with Bias Estimation
+ * - FUSION_ALGO = 2: 7-State EKF with gyro bias estimation
+ * - FUSION_ALGO = 3: Madgwick Filter with Bias Estimation
  * 
  * DATA FLOW:
  * 1. SENSOR_IMU1_GYRO_UPDATE (1000Hz) -> gyro_update()

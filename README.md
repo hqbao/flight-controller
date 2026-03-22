@@ -253,7 +253,7 @@ The robotkit fusion library outputs `v_linear_acc` with **positive = direction o
 - **Move right then stop** → Y goes positive then negative
 - **Move up then stop** → Z goes positive then negative
 
-Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithms (fusion1–5). Consumers receive it directly via `SENSOR_LINEAR_ACCEL` — no manual negation needed.
+Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithms (fusion1–3). Consumers receive it directly via `SENSOR_LINEAR_ACCEL` — no manual negation needed.
 
 ### Position Estimation Frames
 - **X/Y (horizontal)**: Uses **body-frame** linear acceleration (`la.body.x/y`) — matches optical flow sensor which measures in the body frame

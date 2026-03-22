@@ -7,11 +7,11 @@
  * - Barometer/Laser for altitude
  * 
  * ALGORITHM:
- * - Fusion 6 (Scalar Cascaded Complementary Filter) for X/Y/Z axes
+ * - Fusion 5 (Scalar Cascaded Complementary Filter) for X/Y/Z axes
  * 
  * KEY FEATURES:
  * - SI Units used throughout (Critical for filter stability)
- * - 3-State Filter (Pos, Vel, AccelBias) estimates and removes IMU drift
+ * - Cascaded dual-stage filter estimates position and velocity per axis
  * 
  * SIMPLIFICATIONS:
  * - Gyro De-Rotation: Disabled (Valid for stable hover/cruise)
