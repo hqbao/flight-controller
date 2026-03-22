@@ -61,8 +61,8 @@ static float g_optflow_up_dy = 0.0f;
 
 /* Tuning Parameters */
 
-#define BARO_ALPHA_HIGH_ACCEL 0.05
-#define BARO_ALPHA_LOW_ACCEL 0.005
+#define BARO_ALPHA_HIGH_ACCEL 0.1
+#define BARO_ALPHA_LOW_ACCEL 0.01
 
 // Thresholds in SI Units (m/s^2 and Meters)
 #define ACCEL_Z_THRESHOLD 0.2
