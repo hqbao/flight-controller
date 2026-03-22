@@ -26,7 +26,7 @@
 #include "position_estimation.h"
 #include <pubsub.h>
 
-#include <fusion6.h>
+#include <fusion5.h>
 #include <vector3d.h>
 #include <string.h>
 #include <math.h>
@@ -46,9 +46,9 @@ static vector3d_t g_linear_accel = {0, 0, 0};
 static vector3d_t g_linear_veloc_final = {0, 0, 0};
 static vector3d_t g_pos_final = {0, 0, 0};
 
-static fusion6_t g_fusion_x;
-static fusion6_t g_fusion_y;
-static fusion6_t g_fusion_z;
+static fusion5_t g_fusion_x;
+static fusion5_t g_fusion_y;
+static fusion5_t g_fusion_z;
 
 static uint8_t g_monitor_msg[24] = {0};
 static uint8_t g_log_class = LOG_CLASS_NONE;
@@ -135,8 +135,8 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 		g_optflow_up_dy = (float)msg.dy;
 	}
 
-    fusion6_update(&g_fusion_x, flow_vel_x, dt_flow);
-    fusion6_update(&g_fusion_y, flow_vel_y, dt_flow);
+    fusion5_update(&g_fusion_x, flow_vel_x, dt_flow);
+    fusion5_update(&g_fusion_y, flow_vel_y, dt_flow);
 
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
@@ -146,7 +146,7 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
         // when switching sources or large jumps occur
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		fusion6_update(&g_fusion_z, alt_d, 1.0);
+		fusion5_update(&g_fusion_z, alt_d, 1.0);
 	}
 }
 
@@ -169,7 +169,7 @@ static void air_pressure_update(uint8_t *data, size_t size) {
         // Calculate delta (pseudo-velocity over 1 sec) to maintain continuity
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
-		fusion6_update(&g_fusion_z, alt_d, 1.0);
+		fusion5_update(&g_fusion_z, alt_d, 1.0);
 	}
 }
 
@@ -215,9 +215,9 @@ static void linear_accel_update(uint8_t *data, size_t size) {
 	// Z: Earth-frame (positive-up from fusion library, for altitude)
 	g_linear_accel.z = la.earth.z * GRAVITY_MSS;
 
-	fusion6_predict(&g_fusion_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
-    fusion6_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
-    fusion6_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
+	fusion5_predict(&g_fusion_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
+    fusion5_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
+    fusion5_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
 
 	g_pos_final.x = g_fusion_x.pos_final;
 	g_pos_final.y = g_fusion_y.pos_final;
@@ -272,9 +272,9 @@ static void loop_logger(uint8_t *data, size_t size) {
 }
 
 void position_estimation_setup(void) {
-    fusion6_init(&g_fusion_x, 1.0, 1.0, 1.0, 20.0, 0.1);
-    fusion6_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
-    fusion6_init(&g_fusion_z, 1.0, 0.5, 1.0, 20.0, 0.1);
+    fusion5_init(&g_fusion_x, 1.0, 1.0, 1.0, 20.0, 0.1);
+    fusion5_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
+    fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 20.0, 0.1);
 
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);

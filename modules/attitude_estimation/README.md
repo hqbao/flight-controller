@@ -2,7 +2,7 @@
 
 ## Overview
 
-Estimates the drone's 3D orientation (roll, pitch, yaw) by fusing gyroscope and accelerometer data. Supports **5 selectable sensor fusion algorithms**. Also computes tilt-compensated magnetometer heading and body-frame linear acceleration.
+Estimates the drone's 3D orientation (roll, pitch, yaw) by fusing gyroscope and accelerometer data. Supports **3 selectable sensor fusion algorithms**. Also computes tilt-compensated magnetometer heading and body-frame linear acceleration.
 
 ## Data Flow
 
@@ -30,10 +30,8 @@ Gyro (1 kHz)           Accel (500 Hz)         Compass (25 Hz)
 | ID | Algorithm | Description |
 |----|-----------|-------------|
 | 1 | Mahony | Complementary filter with PI correction |
-| 2 | EKF | Extended Kalman Filter (4-state quaternion) |
-| 3 | Madgwick | Gradient descent optimization |
-| 4 | **7-State EKF** | **EKF with gyro bias estimation (active)** |
-| 5 | Madgwick+Bias | Madgwick with gyro bias tracking |
+| 2 | **7-State EKF** | **EKF with gyro bias estimation (active)** |
+| 3 | Madgwick+Bias | Madgwick with gyro bias tracking |
 
 Select via `FUSION_ALGO` constant in the source.
 
@@ -41,16 +39,16 @@ Select via `FUSION_ALGO` constant in the source.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `FUSION_ALGO` | `4` | Active algorithm (7-State EKF) |
+| `FUSION_ALGO` | `2` | Active algorithm (7-State EKF) |
 | `DT` | 1/1000.0 | Gyro prediction timestep |
 | `GYRO_NOISE` | 0.001 | EKF process noise (Q diagonal for quaternion states) |
-| `ACCEL_NOISE` | 100.0 | EKF measurement noise (R diagonal = accel_noise²). Higher = slower correction, more gyro trust. See robotkit/FUSION4_EKF_7STATE.md for tuning guide |
+| `ACCEL_NOISE` | 100.0 | EKF measurement noise (R diagonal = accel_noise²). Higher = slower correction, more gyro trust. See robotkit/FUSION2_EKF_7STATE.md for tuning guide |
 | `BIAS_NOISE` | 0.0001 | Gyro bias random walk noise (Q diagonal for bias states) |
 | `ATT_ACCEL_SMOOTH` | 4.0 | Accelerometer LPF gain (raw; multiplied by `dt` internally) |
 
-### Innovation Clamping (Fusion2 & Fusion4 EKFs)
+### Innovation Clamping (Fusion2 EKF)
 
-Both EKF algorithms use **innovation clamping** to bound the per-step correction magnitude, making them robust to linear acceleration (the same way Madgwick's `beta×dt` naturally bounds corrections). The `max_innovation` parameter (default `0.1` ≈ 6°) caps the innovation vector norm before applying the Kalman gain. See `robotkit/FUSION4_EKF_7STATE.md` for details and tuning rationale.
+The EKF uses **innovation clamping** to bound the per-step correction magnitude, making it robust to linear acceleration (the same way Madgwick's `beta×dt` naturally bounds corrections). The `max_innovation` parameter (default `0.1` ≈ 6°) caps the innovation vector norm before applying the Kalman gain. See `robotkit/FUSION2_EKF_7STATE.md` for details and tuning rationale.
 
 ## Sensor Frame Convention
 

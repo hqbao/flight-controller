@@ -1,59 +1,70 @@
 #ifndef FUSION5_H
 #define FUSION5_H
 
-#include "vector3d.h"
-#include "quat.h"
-
 /**
- * FUSION5: Madgwick Filter with Gyroscope Bias Estimation
+ * Fusion 5: Scalar Cascaded Complementary Filter
  * 
- * Extends Fusion3 (standard Madgwick) by adding gyroscope bias estimation.
- * This effectively combines the benefits of Madgwick's gradient descent approach
- * with the bias tracking usually found in Mahony or EKF filters.
+ * A cascaded complementary filter for 1D position estimation.
+ * Instantiate this struct for each axis (X, Y, Z).
  * 
- * State:
- * - Quaternion (orientation)
- * - Gyro Bias (drift)
- * 
- * Parameters:
- * - Beta: Gain for orientation correction (divergence rate)
- * - Zeta: Gain for bias estimation (drift rate)
+ * Algorithm:
+ * - Stage 0: Interim position/velocity estimation
+ * - Stage 1: Final position/velocity estimation with stronger correction
+ * - Feedback path from Stage 1 velocity to Stage 0
  */
 typedef struct {
-    // === State ===
-    quaternion_t q;                    // Orientation
-    vector3d_t bias;                   // Gyroscope bias (rad/s)
-    
-    // === Vectors ===
-    vector3d_t v_pred;                 // Predicted gravity
-    vector3d_t v_true;                 // Measured gravity
-    
-    // === Accelerometer Processing ===
-    vector3d_t a;                      // Raw accel
-    vector3d_t a_smooth;               // Filtered accel
-    vector3d_t v_linear_acc;
-    vector3d_t v_linear_acc_earth_frame;
-    
-    // === Parameters ===
-    double beta;                       // Algorithm gain
-    double zeta;                       // Bias gain
-    
-    // === Configuration ===
-    double k0;                         // Low pass filter accel
-    double accel_scale;
-    int no_correction;
+    // Stage 0 (Interim)
+    double veloc0;
+    double pos_est0;
+    double pos_est0_prev; // For derivative calculation
 
+    // Outputs (Final Stage)
+    double pos_final;
+    double veloc_final;
+
+    // Internal State
+    double pos_measured_maintained;
+
+    // Parameters
+    struct {
+        double stage1_integ;
+        double stage1_corr;
+        
+        double stage2_integ;
+        double stage2_corr;
+
+        double veloc_feedback;
+    } params;
 } fusion5_t;
 
-void fusion5_init(fusion5_t *f, double k0, double beta, double zeta, double accel_scale);
+/**
+ * Initialize the filter with specific tuning parameters.
+ * 
+ * @param f Pointer to fusion5 object
+ * @param s1_integ Stage 1 integration gain (e.g. 0.05 for XY, 1.0 for Z)
+ * @param s1_corr  Stage 1 correction gain (e.g. 0.5)
+ * @param s2_integ Stage 2 integration gain (e.g. 0.05 for XY, 1.0 for Z)
+ * @param s2_corr  Stage 2 correction gain (e.g. 20.0)
+ * @param v_fb     Velocity feedback gain (e.g. 0.005)
+ */
+void fusion5_init(fusion5_t *f, double s1_integ, double s1_corr, double s2_integ, double s2_corr, double v_fb);
 
 /**
- * Update Madgwick beta gain at runtime.
- * Allows caller to dynamically adjust correction strength
- * (e.g. reduce beta during high linear acceleration).
+ * Predict internal state based on acceleration.
+ * 
+ * @param f Pointer to fusion5 object
+ * @param accel Input acceleration (m/s^2)
+ * @param dt Time delta in seconds
  */
-void fusion5_set_beta(fusion5_t *f, double beta);
-void fusion5_predict(fusion5_t *f, double gx, double gy, double gz, double dt);
-void fusion5_update(fusion5_t *f, double ax, double ay, double az, double dt);
+void fusion5_predict(fusion5_t *f, double accel, double dt);
+
+/**
+ * Update the filter with new velocity measurements.
+ * 
+ * @param f Pointer to fusion5 object
+ * @param veloc_measured Input velocity measurement (m/s) (e.g. from optical flow)
+ * @param dt Time delta in seconds
+ */
+void fusion5_update(fusion5_t *f, double veloc_measured, double dt);
 
 #endif

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Estimates the drone's 3D position and velocity by fusing IMU linear acceleration with optical flow horizontal velocity and barometer/laser altitude. Uses three independent **Fusion6** (Scalar Cascaded Complementary Filter) instances — one per axis.
+Estimates the drone's 3D position and velocity by fusing IMU linear acceleration with optical flow horizontal velocity and barometer/laser altitude. Uses three independent **Fusion5** (Scalar Cascaded Complementary Filter) instances — one per axis.
 
 ## Data Flow
 
@@ -41,7 +41,7 @@ The fusion library outputs positive-up Z directly — no manual negation needed 
 
 ## Fusion Architecture
 
-Three independent `fusion6_t` instances for X, Y, Z axes:
+Three independent `fusion5_t` instances for X, Y, Z axes:
 
 | Axis | Predict | Update Source |
 |------|---------|---------------|
@@ -72,7 +72,7 @@ Automatic hysteresis-based switching between laser range finder and barometer:
 | `RANGE_SWITCH_TO_LASER_THRESHOLD` | `0.25` | Switch to laser below (m) |
 | `RANGE_SWITCH_TO_BARO_THRESHOLD` | `0.5` | Switch to baro above (m) |
 
-Fusion6 init: X/Y use `(1.0, 1.0, 1.0, 20.0, 0.1)`, Z uses `(1.0, 0.5, 1.0, 20.0, 0.1)`.
+Fusion5 init: X/Y use `(1.0, 1.0, 1.0, 20.0, 0.1)`, Z uses `(1.0, 0.5, 1.0, 20.0, 0.1)`.
 
 ## PubSub Interface
 

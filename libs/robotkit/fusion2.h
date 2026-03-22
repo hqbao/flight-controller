@@ -6,91 +6,105 @@
 #include "quat.h"
 
 /**
- * FUSION2: 4-State Extended Kalman Filter for Attitude Estimation
+ * FUSION2: 7-State Extended Kalman Filter (Attitude + Gyro Bias)
+ * 
+ * State Vector (7x1):
+ * [q0, q1, q2, q3, bx, by, bz]
+ * 
+ * q: Quaternion (Body to Earth)
+ * b: Gyroscope Bias (rad/s)
  *
- * Key features:
- * - State: quaternion [qw,qx,qy,qz] (no gyro bias — see fusion4 for bias)
- * - Predict: gyro integration with Q*dt frequency independence
- * - Update: accel gravity reference with innovation clamping
- * - max_innovation: bounds correction per step (linear motion robustness)
- *
- * Vector naming convention (unified across all fusion algorithms):
- * - v_pred: Predicted gravity vector in body frame (from quaternion)
- * - v_true: Measured/true gravity vector (normalized accelerometer)
- * - v_linear_acc: Linear acceleration with gravity removed (body frame)
- * - v_linear_acc_earth_frame: Linear acceleration in earth frame
+ * Key features vs simpler filters:
+ * - Estimates gyro bias alongside orientation (7 states vs 4)
+ * - Innovation clamping for linear motion robustness (see fusion2.c header)
+ * - Q scaled by dt for frequency-independent behavior
  */
 typedef struct {
-    // State vector
+    // State
     quaternion_t q;
+    vector3d_t gyro_bias;
 
-    // State covariance matrix
-    matrix_t P; // 4x4
+    // Covariance Matrix P (7x7)
+    matrix_t P;
 
-    // Process noise covariance
-    matrix_t Q; // 4x4
+    // Process Noise Q (7x7)
+    matrix_t Q;
 
-    // Measurement noise covariance for accelerometer
-    matrix_t R; // 3x3
+    // Measurement Noise R (3x3) - Accelerometer
+    matrix_t R;
 
-    // Rotation matrix transposed
-    matrix_t Rq_T; // 3x3
+    // Jacobians
+    matrix_t F; // 7x7 State Transition
+    matrix_t H; // 3x7 Measurement
 
-    // Jacobian matrices
-    matrix_t F;  // State transition Jacobian 4x4
-    matrix_t H;  // State measurement Jacobian 3x4
+    // Kalman Gain
+    matrix_t K; // 7x3
 
-    // Kalman gain
-    matrix_t K; // 4x3
+    // Intermediate Matrices (pre-allocated to avoid runtime malloc)
+    matrix_t F_T;       // 7x7
+    matrix_t H_T;       // 7x3
+    matrix_t P_new;     // 7x7
+    matrix_t K_temp;    // 7x3
+    matrix_t S;         // 3x3
+    matrix_t S_inv;     // 3x3
+    matrix_t KH;        // 7x7
+    matrix_t I7x7;      // 7x7
+    
+    // Vectors / Outputs
+    vector3d_t v_pred;           // Predicted gravity in body frame
+    vector3d_t v_true;           // Measured gravity (normalized accel)
+    vector3d_t v_linear_acc;     // Linear acceleration (dynamic motion)
+    vector3d_t v_linear_acc_earth_frame;
 
+    vector3d_t accel;
+    vector3d_t accel_lpf;
+    double accel_scale;
+    double lpf_gain;
+    double max_innovation;   // Clamp innovation norm (0 = disabled). Default 0.1 (~6°).
+                             // Bounds EKF correction during linear motion, analogous to
+                             // Madgwick's normalized gradient. See fusion2.c file header.
     char no_correction;
 
-    vector3d_t v_true;
-    vector3d_t v_pred;
-    vector3d_t v_linear_acc;
-    vector3d_t v_linear_acc_earth_frame;
-    vector3d_t accel;
-    double accel_scale;    
+    // Internal scratchpad
+    matrix_t y; // Innovation (3x1)
     
-    // Low pass filter for accelerometer
-    vector3d_t accel_lpf;
-    double lpf_gain;
-
-    // Innovation clamping: max allowed norm of innovation vector y = v_true - v_pred.
-    // Bounds EKF correction per step, analogous to Madgwick's beta*dt.
-    // ||y|| = 2*sin(θ/2) where θ = angle error. 0.1 ≈ 6°. 0 = disabled.
-    double max_innovation;
-
-    matrix_t I4x4;
-    matrix_t omega;
-    matrix_t v001_3x1;
-    matrix_t q4x1;
-    matrix_t q4x1_temp;
-    matrix_t q4x1_temp2;
-    quaternion_t q_temp;
-    quaternion_t q_temp2;
-    matrix_t P4x4_temp;
-    matrix_t P4x4_temp2;
-    matrix_t F_T;
-    matrix_t H_T;
-    matrix_t S;
-    matrix_t S_inv;
-    matrix_t S_temp;
-    matrix_t S_temp2;
-    matrix_t K_temp; // 4x3
-    matrix_t v; // 3x1
-    matrix_t KH; // 4x3
 } fusion2_t;
 
-void fusion2_init(fusion2_t *f, double gyro_noise, double accel_noise, double accel_scale, double lpf_gain);
+/**
+ * Initialize Fusion2 Algorithm
+ * @param f Pointer to fusion2 object
+ * @param gyro_noise Process noise for gyroscope (variance)
+ * @param bias_noise Process noise for bias random walk (variance)
+ * @param accel_noise Measurement noise for accelerometer (variance)
+ * @param accel_scale Scaling factor for accel (usually 1G value in raw units, e.g. 1.0 or 4096.0)
+ * @param lpf_gain Low pass filter gain for accelerometer preprocessing
+ */
+void fusion2_init(fusion2_t *f, double gyro_noise, double bias_noise, double accel_noise, double accel_scale, double lpf_gain);
+
+/**
+ * Predict Step (Gyro Integration)
+ * @param f Pointer to fusion2 object
+ * @param gx Gyro X (deg/s)
+ * @param gy Gyro Y (deg/s)
+ * @param gz Gyro Z (deg/s)
+ * @param dt Time step (seconds)
+ */
 void fusion2_predict(fusion2_t *f, double gx, double gy, double gz, double dt);
+
+/**
+ * Update Step (Accelerometer Correction)
+ * @param f Pointer to fusion2 object
+ * @param ax Accel X (raw)
+ * @param ay Accel Y (raw)
+ * @param az Accel Z (raw)
+ */
 void fusion2_update(fusion2_t *f, double ax, double ay, double az, double dt);
 
 /**
  * Update EKF noise parameters at runtime.
  * Allows caller to dynamically adjust process/measurement noise
  * (e.g. increase accel_noise during high linear acceleration).
- * @param gyro_noise  Process noise for gyroscope (Q diagonal)
+ * @param gyro_noise  Process noise for gyroscope (Q diagonal, indices 0-3)
  * @param accel_noise Measurement noise for accelerometer (R diagonal = accel_noise²)
  */
 void fusion2_set_noise(fusion2_t *f, double gyro_noise, double accel_noise);

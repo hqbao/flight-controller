@@ -1,112 +1,79 @@
 #ifndef FUSION4_H
 #define FUSION4_H
 
-#include "vector3d.h"
-#include "matrix.h"
-#include "quat.h"
-
 /**
- * FUSION4: 7-State Extended Kalman Filter (Attitude + Gyro Bias)
+ * Fusion 4: Linear Kalman Filter for 1D Position/Velocity (Scalar Optimized)
+ * with Accelerometer Bias Estimation (3-state)
  * 
- * State Vector (7x1):
- * [q0, q1, q2, q3, bx, by, bz]
+ * State Vector: x = [position, velocity, accel_bias]^T
  * 
- * q: Quaternion (Body to Earth)
- * b: Gyroscope Bias (rad/s)
- *
- * Key features vs simpler filters:
- * - Estimates gyro bias alongside orientation (7 states vs 4)
- * - Innovation clamping for linear motion robustness (see fusion4.c header)
- * - Q scaled by dt for frequency-independent behavior
+ * Efficient implementation without matrix library dependencies.
+ * Uses < 100 bytes of memory per instance.
  */
 typedef struct {
-    // State
-    quaternion_t q;
-    vector3d_t gyro_bias;
-
-    // Covariance Matrix P (7x7)
-    matrix_t P;
-
-    // Process Noise Q (7x7)
-    matrix_t Q;
-
-    // Measurement Noise R (3x3) - Accelerometer
-    matrix_t R;
-
-    // Jacobians
-    matrix_t F; // 7x7 State Transition
-    matrix_t H; // 3x7 Measurement
-
-    // Kalman Gain
-    matrix_t K; // 7x3
-
-    // Intermediate Matrices (pre-allocated to avoid runtime malloc)
-    matrix_t F_T;       // 7x7
-    matrix_t H_T;       // 7x3
-    matrix_t P_new;     // 7x7
-    matrix_t K_temp;    // 7x3
-    matrix_t S;         // 3x3
-    matrix_t S_inv;     // 3x3
-    matrix_t KH;        // 7x7
-    matrix_t I7x7;      // 7x7
+    // State Vector
+    // x[0] = Position
+    // x[1] = Velocity
+    // x[2] = Accel Bias
+    double x[3];
     
-    // Vectors / Outputs
-    vector3d_t v_pred;           // Predicted gravity in body frame
-    vector3d_t v_true;           // Measured gravity (normalized accel)
-    vector3d_t v_linear_acc;     // Linear acceleration (dynamic motion)
-    vector3d_t v_linear_acc_earth_frame;
+    // Covariance Matrix P (Symmetric)
+    // [ P00  P01  P02 ]
+    // [ P10  P11  P12 ]
+    // [ P20  P21  P22 ]
+    double P[3][3];
 
-    vector3d_t accel;
-    vector3d_t accel_lpf;
-    double accel_scale;
-    double lpf_gain;
-    double max_innovation;   // Clamp innovation norm (0 = disabled). Default 0.1 (~6°).
-                             // Bounds EKF correction during linear motion, analogous to
-                             // Madgwick's normalized gradient. See fusion4.c file header.
-    char no_correction;
+    // Stored parameters
+    double sigma_accel; // Process noise std dev (m/s^2)
+    double sigma_vel;   // Measurement noise std dev (m/s)
+    double sigma_bias;  // Bias random walk std dev
 
-    // Internal scratchpad
-    matrix_t y; // Innovation (3x1)
-    
 } fusion4_t;
 
 /**
- * Initialize Fusion4 Algorithm
- * @param f Pointer to fusion4 object
- * @param gyro_noise Process noise for gyroscope (variance)
- * @param bias_noise Process noise for bias random walk (variance)
- * @param accel_noise Measurement noise for accelerometer (variance)
- * @param accel_scale Scaling factor for accel (usually 1G value in raw units, e.g. 1.0 or 4096.0)
- * @param lpf_gain Low pass filter gain for accelerometer preprocessing
+ * Initialize the Kalman Filter
+ * @param f Pointer to filter
+ * @param sigma_accel Standard deviation of acceleration process noise
+ * @param sigma_vel Standard deviation of velocity measurement noise
+ * @param sigma_bias Standard deviation of bias random walk
  */
-void fusion4_init(fusion4_t *f, double gyro_noise, double bias_noise, double accel_noise, double accel_scale, double lpf_gain);
+void fusion4_init(fusion4_t *f, double sigma_accel, double sigma_vel, double sigma_bias);
 
 /**
- * Predict Step (Gyro Integration)
- * @param f Pointer to fusion4 object
- * @param gx Gyro X (deg/s)
- * @param gy Gyro Y (deg/s)
- * @param gz Gyro Z (deg/s)
- * @param dt Time step (seconds)
+ * Prediction Step (High Frequency - IMU)
+ * Updates state estimate using system model and control input (acceleration)
+ * 
+ * @param f Pointer to filter
+ * @param accel Linear acceleration in m/s^2 (Control Input u)
+ * @param dt Time step in seconds
  */
-void fusion4_predict(fusion4_t *f, double gx, double gy, double gz, double dt);
+void fusion4_predict(fusion4_t *f, double accel, double dt);
 
 /**
- * Update Step (Accelerometer Correction)
- * @param f Pointer to fusion4 object
- * @param ax Accel X (raw)
- * @param ay Accel Y (raw)
- * @param az Accel Z (raw)
+ * Update Step (Low Frequency - Optical Flow)
+ * Fuses velocity measurement
+ * 
+ * @param f Pointer to filter
+ * @param vel_measured Measured velocity (m/s)
  */
-void fusion4_update(fusion4_t *f, double ax, double ay, double az, double dt);
+void fusion4_update(fusion4_t *f, double vel_measured);
+
+
 
 /**
- * Update EKF noise parameters at runtime.
- * Allows caller to dynamically adjust process/measurement noise
- * (e.g. increase accel_noise during high linear acceleration).
- * @param gyro_noise  Process noise for gyroscope (Q diagonal, indices 0-3)
- * @param accel_noise Measurement noise for accelerometer (R diagonal = accel_noise²)
+ * Update Step (Position)
+ * Fuses position measurement (e.g. from GPS, Barometer, or Range Finder)
+ * 
+ * @param f Pointer to filter
+ * @param pos_measured Measured position (m)
+ * @param sigma_pos Measurement noise std dev (m)
  */
-void fusion4_set_noise(fusion4_t *f, double gyro_noise, double accel_noise);
+void fusion4_update_position(fusion4_t *f, double pos_measured, double sigma_pos);
+
+/** Get current position estimate */
+double fusion4_get_position(fusion4_t *f);
+
+/** Get current velocity estimate */
+double fusion4_get_velocity(fusion4_t *f);
 
 #endif

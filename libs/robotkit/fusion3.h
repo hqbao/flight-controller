@@ -5,65 +5,47 @@
 #include "quat.h"
 
 /**
- * FUSION3: Madgwick Filter for Attitude Estimation
+ * FUSION3: Madgwick Filter with Gyroscope Bias Estimation
  * 
- * The Madgwick filter uses gradient descent optimization to find the quaternion
- * that minimizes the error between predicted and measured gravity direction.
+ * Extends Fusion3 (standard Madgwick) by adding gyroscope bias estimation.
+ * This effectively combines the benefits of Madgwick's gradient descent approach
+ * with the bias tracking usually found in Mahony or EKF filters.
  * 
- * Vector naming convention (unified across fusion1, fusion2, fusion3):
- * - v_pred: Predicted gravity vector in body frame (from quaternion)
- * - v_true: Measured/true gravity vector (normalized accelerometer)
- * - v_linear_acc: Linear acceleration with gravity removed (body frame)
- * - v_linear_acc_earth_frame: Linear acceleration in earth frame
+ * State:
+ * - Quaternion (orientation)
+ * - Gyro Bias (drift)
  * 
- * Key Features:
- * 1. Gradient descent for orientation error correction
- * 2. Single beta parameter (gain) controls correction speed
- * 3. Computationally efficient (no matrix inversions)
- * 4. Good performance under dynamic conditions
- * 
- * Algorithm:
- * 1. PREDICT: Integrate gyroscope to update quaternion
- * 2. UPDATE: Compute gradient of error function, apply correction
- * 
- * Mathematical Foundation:
- * - Objective function: f(q) = ||v_pred(q) - v_meas||²
- * - Gradient: ∇f gives direction of steepest increase
- * - Correction: q̇_correction = -β * normalize(∇f)
- * - Total derivative: q̇ = 0.5*q⊗ω - β*normalize(∇f)
+ * Parameters:
+ * - Beta: Gain for orientation correction (divergence rate)
+ * - Zeta: Gain for bias estimation (drift rate)
  */
 typedef struct {
-    // === Orientation State ===
-    quaternion_t q;                    // Current orientation quaternion (unit quaternion)
-    vector3d_t v_pred;                 // Predicted gravity vector in body frame (from q)
-    vector3d_t v_true;                 // Measured gravity vector (normalized accelerometer)
+    // === State ===
+    quaternion_t q;                    // Orientation
+    vector3d_t bias;                   // Gyroscope bias (rad/s)
+    
+    // === Vectors ===
+    vector3d_t v_pred;                 // Predicted gravity
+    vector3d_t v_true;                 // Measured gravity
     
     // === Accelerometer Processing ===
-    vector3d_t a;                      // Raw accelerometer reading
-    vector3d_t a_smooth;               // Low-pass filtered accelerometer
-    vector3d_t v_linear_acc;           // Linear acceleration (gravity removed)
-    vector3d_t v_linear_acc_earth_frame; // Linear acceleration in earth frame
-
+    vector3d_t a;                      // Raw accel
+    vector3d_t a_smooth;               // Filtered accel
+    vector3d_t v_linear_acc;
+    vector3d_t v_linear_acc_earth_frame;
     
-    // === Filter Parameters ===
-    double k0;                         // Accelerometer smoothing gain (2.0-4.0)
-    double beta;                       // Madgwick beta gain (0.01-0.5)
+    // === Parameters ===
+    double beta;                       // Algorithm gain
+    double zeta;                       // Bias gain
     
     // === Configuration ===
-    double accel_scale;                // Accelerometer scale (1g in raw units)
-    
-    // === Debug/Testing ===
-    char no_correction;                // If 1, disable gradient correction (gyro-only)
+    double k0;                         // Low pass filter accel
+    double accel_scale;
+    int no_correction;
+
 } fusion3_t;
 
-/**
- * Initialize Madgwick filter with identity quaternion
- * 
- * @param f    Pointer to fusion3_t struct
- * @param k0   Accelerometer smoothing gain (2.0-4.0, higher = smoother)
- * @param beta Madgwick beta gain (0.01-0.5, higher = faster correction but more noise)
- */
-void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale);
+void fusion3_init(fusion3_t *f, double k0, double beta, double zeta, double accel_scale);
 
 /**
  * Update Madgwick beta gain at runtime.
@@ -71,26 +53,7 @@ void fusion3_init(fusion3_t *f, double k0, double beta, double accel_scale);
  * (e.g. reduce beta during high linear acceleration).
  */
 void fusion3_set_beta(fusion3_t *f, double beta);
-
-/**
- * PREDICT STEP: Integrate gyroscope to update quaternion
- * 
- * @param f  Pointer to fusion3_t struct
- * @param gx Gyroscope X rate in deg/s
- * @param gy Gyroscope Y rate in deg/s  
- * @param gz Gyroscope Z rate in deg/s
- * @param dt Time step in seconds (typically 0.001s for 1kHz gyro)
- */
 void fusion3_predict(fusion3_t *f, double gx, double gy, double gz, double dt);
-
-/**
- * UPDATE STEP: Compute gradient correction from accelerometer
- * 
- * @param f  Pointer to fusion3_t struct
- * @param ax Accelerometer X in raw units
- * @param ay Accelerometer Y in raw units
- * @param az Accelerometer Z in raw units
- */
 void fusion3_update(fusion3_t *f, double ax, double ay, double az, double dt);
 
 #endif

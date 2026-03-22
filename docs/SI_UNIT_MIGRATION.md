@@ -16,7 +16,7 @@ This document details the migration of the Position Estimation and Control syste
   - Velocity: **Meters/second** (m/s)
   - Acceleration: **Meters/second²** (m/s²)
 
-### Fusion Tuning (Fusion7)
+### Fusion Tuning (Fusion4)
 To handle the vibration characteristics of the drone and the new unit scale, the Kalman Filter parameters were updated:
 
 | Parameter | Value | Reason |

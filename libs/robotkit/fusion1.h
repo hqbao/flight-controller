@@ -7,7 +7,7 @@
 /**
  * FUSION1: Mahony Complementary Filter for Attitude Estimation
  * 
- * Vector naming convention (unified across fusion1, fusion2, fusion3):
+ * Vector naming convention (unified across all fusion algorithms):
  * - v_pred: Predicted gravity vector in body frame (from quaternion)
  * - v_true: Measured/true gravity vector (normalized accelerometer)
  * - v_linear_acc: Linear acceleration with gravity removed (body frame)
