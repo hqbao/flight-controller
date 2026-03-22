@@ -54,7 +54,7 @@
 #include <macro.h>
 
 /* Select Fusion Algorithm: 1 = Fusion1 (Mahony), 2 = Fusion2 (EKF), 3 = Fusion3 (Madgwick), 4 = Fusion4 (7-State EKF), 5 = Fusion5 (Madgwick+Bias) */
-#define FUSION_ALGO 4
+#define FUSION_ALGO 2
 
 #if FUSION_ALGO == 1
 #include <fusion1.h>

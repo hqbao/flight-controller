@@ -6,9 +6,15 @@
 #include "quat.h"
 
 /**
- * FUSION2: Extended Kalman Filter for Attitude Estimation
- * 
- * Vector naming convention (unified across fusion1, fusion2, fusion3):
+ * FUSION2: 4-State Extended Kalman Filter for Attitude Estimation
+ *
+ * Key features:
+ * - State: quaternion [qw,qx,qy,qz] (no gyro bias — see fusion4 for bias)
+ * - Predict: gyro integration with Q*dt frequency independence
+ * - Update: accel gravity reference with innovation clamping
+ * - max_innovation: bounds correction per step (linear motion robustness)
+ *
+ * Vector naming convention (unified across all fusion algorithms):
  * - v_pred: Predicted gravity vector in body frame (from quaternion)
  * - v_true: Measured/true gravity vector (normalized accelerometer)
  * - v_linear_acc: Linear acceleration with gravity removed (body frame)
@@ -49,6 +55,11 @@ typedef struct {
     // Low pass filter for accelerometer
     vector3d_t accel_lpf;
     double lpf_gain;
+
+    // Innovation clamping: max allowed norm of innovation vector y = v_true - v_pred.
+    // Bounds EKF correction per step, analogous to Madgwick's beta*dt.
+    // ||y|| = 2*sin(θ/2) where θ = angle error. 0.1 ≈ 6°. 0 = disabled.
+    double max_innovation;
 
     matrix_t I4x4;
     matrix_t omega;

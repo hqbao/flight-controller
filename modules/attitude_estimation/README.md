@@ -48,9 +48,9 @@ Select via `FUSION_ALGO` constant in the source.
 | `BIAS_NOISE` | 0.0001 | Gyro bias random walk noise (Q diagonal for bias states) |
 | `ATT_ACCEL_SMOOTH` | 4.0 | Accelerometer LPF gain (raw; multiplied by `dt` internally) |
 
-### Innovation Clamping (Fusion4)
+### Innovation Clamping (Fusion2 & Fusion4 EKFs)
 
-The 7-State EKF uses **innovation clamping** to bound the per-step correction magnitude, making it robust to linear acceleration (the same way Madgwick's `beta×dt` naturally bounds corrections). The `max_innovation` parameter (default `0.1` ≈ 6°) caps the innovation vector norm before applying the Kalman gain. See `robotkit/FUSION4_EKF_7STATE.md` for details.
+Both EKF algorithms use **innovation clamping** to bound the per-step correction magnitude, making them robust to linear acceleration (the same way Madgwick's `beta×dt` naturally bounds corrections). The `max_innovation` parameter (default `0.1` ≈ 6°) caps the innovation vector norm before applying the Kalman gain. See `robotkit/FUSION4_EKF_7STATE.md` for details and tuning rationale.
 
 ## Sensor Frame Convention
 
