@@ -13,6 +13,11 @@
  * 
  * q: Quaternion (Body to Earth)
  * b: Gyroscope Bias (rad/s)
+ *
+ * Key features vs simpler filters:
+ * - Estimates gyro bias alongside orientation (7 states vs 4)
+ * - Innovation clamping for linear motion robustness (see fusion4.c header)
+ * - Q scaled by dt for frequency-independent behavior
  */
 typedef struct {
     // State
@@ -55,6 +60,9 @@ typedef struct {
     vector3d_t accel_lpf;
     double accel_scale;
     double lpf_gain;
+    double max_innovation;   // Clamp innovation norm (0 = disabled). Default 0.1 (~6°).
+                             // Bounds EKF correction during linear motion, analogous to
+                             // Madgwick's normalized gradient. See fusion4.c file header.
     char no_correction;
 
     // Internal scratchpad

@@ -78,13 +78,14 @@
 
 #if FUSION_ALGO == 2
 #define GYRO_NOISE 0.001
-#define ACCEL_NOISE 1000.0
+#define ACCEL_NOISE 100.0
 #endif
 
 #if FUSION_ALGO == 4
-#define GYRO_NOISE 0.001
-#define ACCEL_NOISE 1000.0
-#define BIAS_NOISE 0.0001
+#define GYRO_NOISE 0.001     // Process noise rate for quaternion (Q[0:3], scaled by dt internally)
+#define ACCEL_NOISE 100.0    // Measurement noise std dev (R = accel_noise² = 10000). On unit vectors,
+                             // higher = more gyro-dominant. See FUSION4_EKF_7STATE.md tuning guide.
+#define BIAS_NOISE 0.0001    // Process noise rate for gyro bias random walk (Q[4:6], scaled by dt)
 #endif
 
 // Fusion 3 (Madgwick) Gains

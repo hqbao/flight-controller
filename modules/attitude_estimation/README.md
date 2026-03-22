@@ -44,9 +44,13 @@ Select via `FUSION_ALGO` constant in the source.
 | `FUSION_ALGO` | `4` | Active algorithm (7-State EKF) |
 | `DT` | 1/1000.0 | Gyro prediction timestep |
 | `GYRO_NOISE` | 0.001 | EKF process noise (Q diagonal for quaternion states) |
-| `ACCEL_NOISE` | 1000.0 | EKF measurement noise (R diagonal = accel_noise²) |
+| `ACCEL_NOISE` | 100.0 | EKF measurement noise (R diagonal = accel_noise²). Higher = slower correction, more gyro trust. See robotkit/FUSION4_EKF_7STATE.md for tuning guide |
 | `BIAS_NOISE` | 0.0001 | Gyro bias random walk noise (Q diagonal for bias states) |
 | `ATT_ACCEL_SMOOTH` | 4.0 | Accelerometer LPF gain (raw; multiplied by `dt` internally) |
+
+### Innovation Clamping (Fusion4)
+
+The 7-State EKF uses **innovation clamping** to bound the per-step correction magnitude, making it robust to linear acceleration (the same way Madgwick's `beta×dt` naturally bounds corrections). The `max_innovation` parameter (default `0.1` ≈ 6°) caps the innovation vector norm before applying the Kalman gain. See `robotkit/FUSION4_EKF_7STATE.md` for details.
 
 ## Sensor Frame Convention
 
