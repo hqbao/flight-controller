@@ -68,6 +68,7 @@ flight-controller/
 │   ├── fault_detector/            #   Sensor health monitoring (stuck detection)
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── fft/                       #   FFT vibration analysis
+│   ├── notch_filter/              #   Gyro notch filter (motor vibration rejection)
 │   ├── logger/                    #   UART telemetry framing
 │   └── local_storage/             #   Persistent configuration storage
 │
@@ -168,6 +169,7 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 
 ### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
+- `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
 - `SENSOR_COMPASS` — Calibrated compass vector
 - `ANGULAR_STATE_UPDATE` — Estimated attitude (roll, pitch, yaw)
 - `POSITION_STATE_UPDATE` — Estimated position and velocity
@@ -377,6 +379,9 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_MIX_CONTROL` | `0x11` | `mix_control.c` | Motor speeds (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
 | `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
+| `LOG_CLASS_FFT_GYRO_FILTERED_X` | `0x14` | `fft.c` | Notch-filtered gyro X batch (50× int16) |
+| `LOG_CLASS_FFT_GYRO_FILTERED_Y` | `0x15` | `fft.c` | Notch-filtered gyro Y batch (50× int16) |
+| `LOG_CLASS_FFT_GYRO_FILTERED_Z` | `0x16` | `fft.c` | Notch-filtered gyro Z batch (50× int16) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 

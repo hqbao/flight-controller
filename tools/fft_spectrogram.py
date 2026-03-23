@@ -42,6 +42,9 @@ LOG_CLASS_POSITION_OPTFLOW = 0x06
 LOG_CLASS_ATTITUDE_MAG = 0x07
 LOG_CLASS_FFT_GYRO_X = 0x0E
 LOG_CLASS_FFT_GYRO_Y = 0x0F
+LOG_CLASS_FFT_GYRO_FILTERED_X = 0x14
+LOG_CLASS_FFT_GYRO_FILTERED_Y = 0x15
+LOG_CLASS_FFT_GYRO_FILTERED_Z = 0x16
 DB_CMD_LOG_CLASS    = 0x03
 DB_CMD_RESET        = 0x07
 
@@ -50,6 +53,9 @@ AXIS_MAP = {
     0: (LOG_CLASS_FFT_GYRO_X, 'X'),
     1: (LOG_CLASS_FFT_GYRO_Y, 'Y'),
     2: (LOG_CLASS_FFT_GYRO_Z, 'Z'),
+    3: (LOG_CLASS_FFT_GYRO_FILTERED_X, 'fX'),
+    4: (LOG_CLASS_FFT_GYRO_FILTERED_Y, 'fY'),
+    5: (LOG_CLASS_FFT_GYRO_FILTERED_Z, 'fZ'),
 }
 
 # FFT Parameters
@@ -224,7 +230,9 @@ def main():
                                       gridspec_kw={'height_ratios': [1, 3]})
     fig.patch.set_facecolor(BG_COLOR)
     g_selected_axis = [2]  # default Z
-    fig.suptitle(f'Gyro {AXIS_MAP[g_selected_axis[0]][1]} Spectrogram  (Fs={SAMPLE_RATE} Hz, FFT={FFT_SIZE}, Hop={FFT_HOP})',
+    label = AXIS_MAP[g_selected_axis[0]][1]
+    filtered_tag = ' (Filtered)' if g_selected_axis[0] >= 3 else ''
+    fig.suptitle(f'Gyro {label} Spectrogram{filtered_tag}  (Fs={SAMPLE_RATE} Hz, FFT={FFT_SIZE}, Hop={FFT_HOP})',
                  fontsize=13, color=TEXT_COLOR)
     plt.subplots_adjust(bottom=0.12)
 
@@ -306,7 +314,7 @@ def main():
     axis_btns = []
     axis_btn_objs = []
     for i, (ax_idx, (_, label)) in enumerate(AXIS_MAP.items()):
-        bx = plt.axes([0.35 + i * 0.07, 0.02, 0.06, 0.04])
+        bx = plt.axes([0.25 + i * 0.06, 0.02, 0.05, 0.04])
         is_sel = (ax_idx == g_selected_axis[0])
         b = Button(bx, label, color=BTN_GREEN if is_sel else BTN_COLOR,
                    hovercolor=BTN_GREEN_HOV if is_sel else BTN_HOVER)
@@ -320,7 +328,8 @@ def main():
             global spectrogram
             g_selected_axis[0] = idx
             label = AXIS_MAP[idx][1]
-            fig.suptitle(f'Gyro {label} Spectrogram  (Fs={SAMPLE_RATE} Hz, FFT={FFT_SIZE}, Hop={FFT_HOP})',
+            filtered_tag = ' (Filtered)' if idx >= 3 else ''
+            fig.suptitle(f'Gyro {label} Spectrogram{filtered_tag}  (Fs={SAMPLE_RATE} Hz, FFT={FFT_SIZE}, Hop={FFT_HOP})',
                          fontsize=13, color=TEXT_COLOR)
             ax_t.set_ylabel(f'Gyro {label} (°/s)', color=TEXT_COLOR)
             # Update button colors
@@ -342,7 +351,7 @@ def main():
     for b, ai in axis_btn_objs:
         b.on_clicked(select_axis(ai))
 
-    btn_clear_ax = plt.axes([0.60, 0.02, 0.12, 0.04])
+    btn_clear_ax = plt.axes([0.63, 0.02, 0.10, 0.04])
     btn_clear = Button(btn_clear_ax, 'Clear', color=BTN_COLOR, hovercolor=BTN_HOVER)
     btn_clear.label.set_color(TEXT_COLOR)
     btn_clear.label.set_fontsize(8)
@@ -360,7 +369,7 @@ def main():
     btn_clear.on_clicked(clear_data)
 
     # Reset FC button
-    btn_reset_ax = plt.axes([0.74, 0.02, 0.10, 0.04])
+    btn_reset_ax = plt.axes([0.75, 0.02, 0.10, 0.04])
     btn_reset = Button(btn_reset_ax, 'Reset FC', color=BTN_RED, hovercolor=BTN_RED_HOV)
     btn_reset.label.set_color(TEXT_COLOR)
     btn_reset.label.set_fontsize(8)

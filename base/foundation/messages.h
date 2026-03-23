@@ -199,6 +199,9 @@ typedef struct {
 #define LOG_CLASS_MIX_CONTROL           0x11
 #define LOG_CLASS_FLIGHT_TELEMETRY     0x12
 #define LOG_CLASS_ATTITUDE_EARTH       0x13  // v_pred, v_true, v_linear_acc (earth)
+#define LOG_CLASS_FFT_GYRO_FILTERED_X  0x14
+#define LOG_CLASS_FFT_GYRO_FILTERED_Y  0x15
+#define LOG_CLASS_FFT_GYRO_FILTERED_Z  0x16
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03

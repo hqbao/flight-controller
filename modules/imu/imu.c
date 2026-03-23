@@ -20,6 +20,7 @@
  * Calibration values are delivered via PubSub from the calibration module:
  *   - CALIBRATION_GYRO_READY  → temp polynomial coefficients (3x3 floats)
  *   - CALIBRATION_ACCEL_READY → accel bias (3 floats) + scale matrix (3x3)
+ *
  */
 
 #define SSF_GYRO (16.4)

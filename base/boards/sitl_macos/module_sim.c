@@ -7,6 +7,7 @@
 #include <position_estimation/position_estimation.h>
 #include <flight_state/flight_state.h>
 #include <flight_telemetry/flight_telemetry.h>
+#include <notch_filter/notch_filter.h>
 
 /**
  * SIMULATION MODULE INITIALIZATION
@@ -25,6 +26,7 @@ void modules_setup(void) {
     rc_receiver_setup();
 
     // 2. State Estimation (Sensor Fusion)
+    notch_filter_setup();
     attitude_estimation_setup();
     position_estimation_setup();
     

@@ -20,6 +20,7 @@
 #include <speed_control/speed_control.h>
 #include <logger/logger.h>
 #include <fft/fft.h>
+#include <notch_filter/notch_filter.h>
 
 void platform_setup(void) {
 	flight_state_setup();
@@ -28,6 +29,7 @@ void platform_setup(void) {
 	fault_handler_setup();
 	speed_control_setup();
 	imu_setup();
+	notch_filter_setup();
 	air_pressure_setup();
 	compass_setup();
 	fault_detector_setup();

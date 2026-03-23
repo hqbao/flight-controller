@@ -147,6 +147,22 @@ if ! grep -q 'modules/flight_telemetry/' "$DEBUG_DIR/objects.list" 2>/dev/null; 
     printf '"./modules/flight_telemetry/flight_telemetry.o"\n' >> "$DEBUG_DIR/objects.list"
 fi
 
+# Add notch_filter module to build (if missing)
+# Clean up old naming (notch_filter_module -> notch_filter)
+sed -i '' '/notch_filter_module/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+if ! grep -q 'modules/notch_filter' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/mix_control/subdir.mk|-include modules/notch_filter/subdir.mk\
+-include modules/mix_control/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/notch_filter' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/mix_control/a\
+modules/notch_filter \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/notch_filter/notch_filter.o' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/notch_filter/notch_filter.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
 # Build
 echo -e "${YELLOW}Building...${NC}"
 cd "$DEBUG_DIR"

@@ -300,7 +300,7 @@ void attitude_estimation_setup(void) {
 	fusion3_init(&g_f11, ATT_ACCEL_SMOOTH, ATT_F3_BETA, ATT_F3_ZETA, MAX_IMU_ACCEL);
 #endif
 
-	subscribe(SENSOR_IMU1_GYRO_UPDATE, gyro_update);
+	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, gyro_update);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, accel_update);
 	subscribe(SENSOR_COMPASS, mag_update);
 

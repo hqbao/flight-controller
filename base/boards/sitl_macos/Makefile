@@ -13,7 +13,8 @@ SRCS = main.c module_sim.c \
        $(FC_ROOT)/modules/fault_detector/fault_detector.c \
        $(FC_ROOT)/modules/flight_state/flight_state.c \
        $(FC_ROOT)/modules/flight_telemetry/flight_telemetry.c \
-       $(FC_ROOT)/modules/position_estimation/position_estimation.c
+       $(FC_ROOT)/modules/position_estimation/position_estimation.c \
+       $(FC_ROOT)/modules/notch_filter/notch_filter.c
 
 BUILD_DIR = build
 OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(SRCS:.c=.o)))
