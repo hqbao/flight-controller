@@ -106,7 +106,6 @@ static sensor_window_3f_t g_compass_window;
 static sensor_window_1d_t g_baro_window;
 static sensor_window_1d_t g_optflow_down_window; /* clarity */
 static sensor_window_1d_t g_optflow_up_window;   /* clarity */
-static sensor_window_1d_t g_downward_range_window; /* range mm */
 static sensor_window_1d_t g_gps_window;            /* num_sv */
 
 /* Latest sensor values (written by callbacks, pushed at 25 Hz) */
@@ -181,7 +180,6 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	window_1d_push(&g_baro_window, g_latest_baro);
 	window_1d_push(&g_optflow_down_window, g_latest_optflow_down_clarity);
 	window_1d_push(&g_optflow_up_window, g_latest_optflow_up_clarity);
-	window_1d_push(&g_downward_range_window, g_latest_downward_range);
 	window_1d_push(&g_gps_window, g_latest_gps_num_sv);
 }
 
@@ -199,7 +197,7 @@ static void loop_1hz(uint8_t *data, size_t size) {
 	h.baro           = !window_1d_is_stuck(&g_baro_window);
 	h.optflow_down   = !window_1d_is_stuck(&g_optflow_down_window);
 	h.optflow_up     = !window_1d_is_stuck(&g_optflow_up_window);
-	h.downward_range = !window_1d_is_stuck(&g_downward_range_window);
+	h.downward_range = g_latest_downward_range > 0;
 	h.gps            = !window_1d_is_stuck(&g_gps_window);
 
 	g_health = h;
@@ -225,7 +223,6 @@ void fault_detector_setup(void) {
 	memset(&g_baro_window, 0, sizeof(g_baro_window));
 	memset(&g_optflow_down_window, 0, sizeof(g_optflow_down_window));
 	memset(&g_optflow_up_window, 0, sizeof(g_optflow_up_window));
-	memset(&g_downward_range_window, 0, sizeof(g_downward_range_window));
 	memset(&g_gps_window, 0, sizeof(g_gps_window));
 
 	/* On-board sensor data */

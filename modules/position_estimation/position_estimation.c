@@ -66,8 +66,8 @@ static float g_optflow_up_dy = 0.0f;
 
 // Thresholds in SI Units (m/s^2 and Meters)
 #define ACCEL_Z_THRESHOLD 0.2
-#define RANGE_SWITCH_TO_LASER_THRESHOLD 0.25
-#define RANGE_SWITCH_TO_BARO_THRESHOLD 0.5
+#define RANGE_SWITCH_TO_LASER_THRESHOLD 1.0
+#define RANGE_SWITCH_TO_BARO_THRESHOLD 1.2
 
 /* GPS Data Storage (Raw) */
 static gps_position_t g_gps_raw_pos = {0};
@@ -274,7 +274,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 void position_estimation_setup(void) {
     fusion5_init(&g_fusion_x, 1.0, 1.0, 1.0, 20.0, 0.1);
     fusion5_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
-    fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 20.0, 0.1);
+    fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 10.0, 0.1);
 
 	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
