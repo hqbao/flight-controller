@@ -29,6 +29,7 @@ void platform_setup(void) {
 	fault_handler_setup();
 	speed_control_setup();
 	imu_setup();
+	fft_setup();
 	notch_filter_setup();
 	air_pressure_setup();
 	compass_setup();
@@ -43,7 +44,6 @@ void platform_setup(void) {
 	//gps_navigation_setup();
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
-	fft_setup();
 	flight_telemetry_setup();
 	logger_setup();
 }

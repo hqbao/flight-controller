@@ -1,114 +1,147 @@
-# FFT Module — Gyro Vibration Analysis
+# FFT Module — On-Board Vibration Analysis & Dynamic Notch Filtering
 
 ## Overview
 
-The FFT module streams gyro data from the flight controller to a host machine
-for real-time frequency spectrum analysis. This helps identify motor vibrations,
-frame resonance, prop imbalance, and PID oscillation — without any on-board FFT
-computation (planned for a future version).
+The FFT module performs **on-board** 256-point FFT vibration analysis on all three
+gyro axes, detects dominant vibration peaks, and feeds them to the dynamic notch
+filter module in real time. This enables adaptive motor vibration rejection without
+ESC RPM telemetry.
+
+An optional spectrum log stream sends compressed frequency data to a Python tool
+for real-time spectrogram visualization.
 
 ## Architecture
 
 ```
-ICM-42688P (4 kHz ODR)
-    │
-    ▼  SCHEDULER_1KHZ
- imu.c (read sensor, calibrate, publish)
+ICM-42688P (1 kHz gyro)
     │
     ▼  SENSOR_IMU1_GYRO_UPDATE (1 kHz, 3 floats in deg/s)
  fft.c
-    ├─ Decimate to 250 Hz
-    ├─ Scale float → int16 (×10, 0.1°/s resolution)
-    ├─ Batch 50 samples into buffer
-    └─ publish(SEND_LOG) when batch full
+    ├─ Collect in 256-sample ring buffer (per axis) [gyro ISR, ~1 µs]
+    ├─ SCHEDULER_10HZ sets g_fft_pending flag [ISR, negligible]
+    ├─ LOOP (main thread) runs 256-point Hanning-windowed FFT
+    │   (cycles X → Y → Z, so ~3.3 Hz per axis)
+    ├─ Normalize: power[i] = (re² + im²) / (N/2)²
+    ├─ Detect top 2 peaks (50-400 Hz, SNR ≥ 8×, min sep 20 Hz)
+    ├─ EMA smooth frequencies (α=0.3, snap if jump > 30 Hz)
+    ├─ Decay peaks toward 0 Hz when not detected (α=0.05)
+    └─ publish(FFT_PEAKS_UPDATE)  →  notch_filter module
          │
-         ▼  SEND_LOG
-      logger.c (wrap in DB frame, send UART)
-         │
-         ▼  UART 9600 baud
-      Python tool (parse, accumulate, FFT, display)
+         ▼  (optional, when Python tool requests)
+      publish(SEND_LOG)  →  logger.c  →  UART  →  Python tool
 ```
 
-### Key Design Decisions
+### ISR Safety
 
-| Decision | Rationale |
-|----------|-----------|
-| **int16 instead of float** | 2 bytes vs 4 bytes per sample — halves bandwidth |
-| **×10 scaling** | 0.1°/s resolution, ±3276°/s range — more than enough |
-| **Batch 50 samples** | Amortizes 8-byte DB frame overhead (94% payload efficiency) |
-| **Decimate to 250 Hz** | 125 Hz Nyquist covers frame resonance and PID oscillation |
-| **Gyro Z axis only** | Most sensitive to prop/motor vibration on flat quad frame |
+All `SCHEDULER_*` callbacks run inside a TIM ISR at priority 0 — they block
+the 1 kHz control loop. A 256-point FFT is too expensive to run there.
+
+The FFT module splits work into two parts:
+- **ISR** (`SCHEDULER_10HZ`): sets a `volatile` flag (~1 instruction, negligible)
+- **Main thread** (`LOOP`): checks the flag, runs the actual FFT computation
+
+The 1 kHz timer ISR can preempt the FFT at any time, so the control loop
+runs uninterrupted regardless of FFT computation time.
+
+### Signal Flow to Dynamic Notch Filter
+
+```
+fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
+                                ├─ Subscribe SENSOR_IMU1_GYRO_UPDATE
+                                ├─ Update notch center frequencies from peaks
+                                ├─ Apply cascaded biquad notch filters (2 per axis)
+                                └─ publish(SENSOR_IMU1_GYRO_FILTERED_UPDATE)
+                                     │
+                                     ▼
+                                attitude_estimation.c (uses filtered gyro)
+```
+
+## FFT Configuration
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| FFT size | 256 samples | Radix-2 Cooley-Tukey DIT |
+| Sample rate | 1000 Hz (GYRO_FREQ) | |
+| Frequency resolution | ~3.91 Hz/bin | 1000/256 |
+| Window | Hanning | Pre-computed at init |
+| Analysis range | 50–400 Hz | Body motion below, Nyquist noise above |
+| Spectrum display range | 0–200 Hz | 52 bins streamed to host |
+| Update rate | 10 Hz total | Cycles X→Y→Z (~3.3 Hz/axis), runs in LOOP (main thread) |
+
+## Peak Detection
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| SNR threshold | 8× mean power | Peak must be 8× above average |
+| Min separation | 20 Hz | Between two peaks on same axis |
+| EMA alpha | 0.3 | Smooths frequency jitter |
+| Snap threshold | 30 Hz | Bypasses EMA if frequency jumps |
+| Decay alpha | 0.05 | Shrinks frequency toward 0 when peak lost |
+| Snap-to-zero | < 50 Hz after decay | Snaps to 0 so notch filter disengages |
+
+The FFT module always runs peak detection (no log class needed). It publishes
+`fft_peaks_t` on `FFT_PEAKS_UPDATE` at ~3.3 Hz per axis. The notch filter module
+subscribes and dynamically adjusts its center frequencies.
+
+## Log Streaming (Optional)
+
+When a Python tool requests a spectrum log class, the FFT module streams
+compressed frequency data for visualization. Two modes:
+
+### Peaks Only (LOG_CLASS_FFT_PEAKS, 0x17)
+
+Streams all smoothed peaks across all 3 axes at 10 Hz:
+
+```
+Payload: 6 × float32 = 24 bytes
+  [X_peak1] [X_peak2] [Y_peak1] [Y_peak2] [Z_peak1] [Z_peak2]
+```
+
+### Spectrum + Peaks (LOG_CLASS_FFT_SPECTRUM_X/Y/Z, 0x18–0x1A)
+
+Streams compressed spectrum bins plus peak frequencies in a **single combined
+frame** for the selected axis, at ~3.3 Hz:
+
+```
+Payload: 1 + 52 + 8 = 61 bytes
+  [axis (1 byte)] [52 × uint8 dB-scaled bins] [peak1 (float)] [peak2 (float)]
+```
+
+- **dB scaling**: Absolute, floor = -30 dB, range = 60 dB. Power is normalized
+  (÷ (N/2)²) before `10·log10`. Mapped to 0–255 uint8.
+- **Combined frame**: Peaks are appended in the same frame (not sent separately)
+  to avoid UART buffer corruption — `HAL_UART_Transmit_IT` is non-blocking and
+  the logger uses a single shared output buffer.
 
 ### Bandwidth Budget (9600 baud = 960 B/s)
 
-| Parameter | Value |
-|-----------|-------|
-| Gyro effective rate | 250 Hz (1 kHz ÷ 4) |
-| Samples per batch | 50 × int16 = 100 bytes |
-| DB frame overhead | 8 bytes (header 6 + checksum 2) |
-| Frame size | 108 bytes |
-| Frame rate | 250 ÷ 50 = **5 fps** |
-| Throughput | 5 × 108 = **540 B/s (56% utilization)** |
+| Stream | Frame size | Rate | Throughput |
+|--------|-----------|------|------------|
+| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (33%) |
+| Spectrum + peaks | 61 + 8 = 69 B | ~3.3 Hz | ~228 B/s (24%) |
 
-## Runtime Activation
+(8-byte DB frame overhead: 2 header + 1 ID + 1 class + 2 length + 2 checksum)
 
-The FFT stream is activated at runtime via the Python tool — **no firmware
-recompilation needed**. The tool sends a `DB_CMD_LOG_CLASS` command with
-`LOG_CLASS_IMU_GYRO` (0x05) over UART. The logger broadcasts this via
-`NOTIFY_LOG_CLASS`, and the FFT module activates its gyro collection.
+## Python Tool
 
-Only one log class is active at a time. Starting FFT streaming automatically
-stops any other active log stream (attitude, compass, position, etc.).
+### fft_spectrum_view.py — Real-Time Spectrogram
 
-## Wire Format
-
-Each DB frame payload contains 50 × int16 (100 bytes, little-endian):
-
-```
-DB Frame:
-  'd' 'b' [0x00] [0x05] [0x64 0x00] [int16 × 50] [checksum LE]
-  ─────── ────── ────── ────────── ─────────────── ─────────────
-  header   ID    class   len=100    payload         checksum
-
-Each int16 = gyro Z in 0.1°/s units.
-To convert: deg_per_sec = int16_value / 10.0
-```
-
-## Python Tools
-
-### fft_view.py — FFT Spectrum Viewer
-
-Real-time dual-panel display:
-- **Top**: Time-domain gyro Z signal (°/s)
-- **Bottom**: Hanning-windowed FFT magnitude spectrum (0–125 Hz)
+Scrolling spectrogram with dynamic notch peak overlay traces:
 
 ```bash
-python3 flight-controller/tools/fft_view.py
+python3 flight-controller/tools/fft_spectrum_view.py
 ```
 
-| Parameter | Value |
-|-----------|-------|
-| FFT size | 512 samples (~2 seconds) |
-| Window | Hanning |
-| Frequency resolution | 250 / 512 ≈ 0.49 Hz |
-| Update rate | ~7 Hz (150ms interval) |
+- Select axis (X/Y/Z button) to begin spectrum streaming
+- Spectrogram shows frequency content over time (color = magnitude)
+- P1/P2 colored traces show detected peak frequencies
+- "Start Peaks" streams peaks-only mode (no spectrogram)
 
-### fft_spectrogram.py — Waterfall Spectrogram
-
-Scrolling spectrogram showing frequency content over time:
-- **Top**: Time-domain signal (latest window)
-- **Bottom**: Color-mapped spectrogram (X=time, Y=frequency, Color=magnitude)
-
-```bash
-python3 flight-controller/tools/fft_spectrogram.py
-```
-
-| Parameter | Value |
-|-----------|-------|
-| FFT size | 256 samples (~1 second) |
-| Hop size | 50 samples (200ms per column) |
-| Display | ~30 seconds of history |
-| Colormap | Inferno |
+| Display Feature | Description |
+|-----------------|-------------|
+| Spectrogram | Scrolling waterfall, ~30s history, inferno colormap |
+| P1/P2 traces | Dynamic notch peak frequencies overlaid on spectrogram |
+| Peak readout | Current P1/P2 frequencies displayed as text |
 
 #### What to Look For
 
@@ -120,42 +153,12 @@ python3 flight-controller/tools/fft_spectrogram.py
 | Broadband vertical stripe | Impulse event (bump, landing, tap) |
 | Diffuse high-frequency glow | Bearing noise or loose hardware |
 
-## Usage
-
-1. **Flash firmware** (FFT module is always compiled in, just inactive):
-   ```bash
-   cd flight-controller/base/boards/h7v1
-   ./build-flash.sh
-   ```
-
-2. **Run a viewer**:
-   ```bash
-   python3 flight-controller/tools/fft_view.py
-   # or
-   python3 flight-controller/tools/fft_spectrogram.py
-   ```
-
-3. **Click "Start Log"** in the GUI to begin streaming.
-
-4. **Spin up motors** and observe the spectrum/spectrogram.
-
-5. **Click "Stop Log"** when done (or close the window).
-
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `modules/fft/fft.h` | Module header — exposes `fft_setup()` |
-| `modules/fft/fft.c` | Gyro collection, decimation, batching, SEND_LOG |
-| `tools/fft_view.py` | FFT spectrum viewer (time + frequency domain) |
-| `tools/fft_spectrogram.py` | Scrolling waterfall spectrogram |
-| `base/foundation/messages.h` | `LOG_CLASS_IMU_GYRO` (0x05) definition |
-
-## Future Enhancements
-
-- **On-board FFT**: Compute FFT on STM32 and send frequency bins instead of
-  raw samples — reduces bandwidth and enables on-board notch filter tuning.
-- **Multi-axis**: Stream all 3 gyro axes (would require higher baud rate or
-  reduced sample rate).
-- **Auto notch filter**: Detect dominant vibration peaks and automatically
-  configure notch filters in the attitude estimation pipeline.
+| `modules/fft/fft.c` | 256-point FFT, peak detection, spectrum streaming |
+| `modules/notch_filter/notch_filter.c` | Dynamic notch filter (subscribes FFT_PEAKS_UPDATE) |
+| `tools/fft_spectrum_view.py` | Real-time spectrogram + peak overlay tool |
+| `base/foundation/messages.h` | `fft_peaks_t`, `LOG_CLASS_FFT_*` definitions |

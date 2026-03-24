@@ -178,13 +178,23 @@ typedef struct {
 } sensor_health_t;
 
 
+// --- FFT Peak Detection (fft module → notch_filter module) ---
+
+#define FFT_NUM_PEAKS  2   /* Top N peaks per axis */
+
+typedef struct {
+	uint8_t axis;                    /* 0=X, 1=Y, 2=Z */
+	float freq[FFT_NUM_PEAKS];       /* Peak frequencies in Hz (0 = no peak) */
+} fft_peaks_t;
+
+
 // --- Log Class IDs (runtime-selectable via NOTIFY_LOG_CLASS) ---
 #define LOG_CLASS_NONE                  0x00
 #define LOG_CLASS_IMU_ACCEL_RAW         0x01
 #define LOG_CLASS_COMPASS               0x02
 #define LOG_CLASS_ATTITUDE              0x03  // v_pred, v_true, v_linear_acc (body)
 #define LOG_CLASS_POSITION              0x04
-#define LOG_CLASS_FFT_GYRO_Z            0x05
+#define LOG_CLASS_FFT_GYRO_Z            0x05  // removed (was host-side FFT)
 #define LOG_CLASS_POSITION_OPTFLOW      0x06
 #define LOG_CLASS_ATTITUDE_MAG          0x07  // raw mag, earth mag, v_pred
 #define LOG_CLASS_GYRO_CAL              0x08
@@ -193,15 +203,20 @@ typedef struct {
 #define LOG_CLASS_IMU_GYRO_RAW          0x0B
 #define LOG_CLASS_IMU_GYRO_CALIB        0x0C
 #define LOG_CLASS_COMPASS_CALIB         0x0D
-#define LOG_CLASS_FFT_GYRO_X            0x0E
-#define LOG_CLASS_FFT_GYRO_Y            0x0F
+#define LOG_CLASS_FFT_GYRO_X            0x0E  // removed (was host-side FFT)
+#define LOG_CLASS_FFT_GYRO_Y            0x0F  // removed (was host-side FFT)
 #define LOG_CLASS_STORAGE               0x10
 #define LOG_CLASS_MIX_CONTROL           0x11
 #define LOG_CLASS_FLIGHT_TELEMETRY     0x12
 #define LOG_CLASS_ATTITUDE_EARTH       0x13  // v_pred, v_true, v_linear_acc (earth)
-#define LOG_CLASS_FFT_GYRO_FILTERED_X  0x14
-#define LOG_CLASS_FFT_GYRO_FILTERED_Y  0x15
-#define LOG_CLASS_FFT_GYRO_FILTERED_Z  0x16
+#define LOG_CLASS_FFT_GYRO_FILTERED_X  0x14  // removed (was host-side FFT)
+#define LOG_CLASS_FFT_GYRO_FILTERED_Y  0x15  // removed (was host-side FFT)
+#define LOG_CLASS_FFT_GYRO_FILTERED_Z  0x16  // removed (was host-side FFT)
+#define LOG_CLASS_FFT_PEAKS            0x17
+#define LOG_CLASS_FFT_SPECTRUM_X       0x18
+#define LOG_CLASS_FFT_SPECTRUM_Y       0x19
+#define LOG_CLASS_FFT_SPECTRUM_Z       0x1A
+#define LOG_CLASS_RC_RECEIVER          0x1B
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03

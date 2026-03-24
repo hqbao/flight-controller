@@ -79,6 +79,10 @@ fi
 # Remove dshot from Core/Src in objects.list (they live in platform/ now)
 sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
 
+# Remove dshot_bidir references (source file doesn't exist yet)
+sed -i '' '/dshot_bidir/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+sed -i '' '/dshot_bidir/d' "$DEBUG_DIR/platform/subdir.mk" 2>/dev/null || true
+
 # Remove deleted modules (oscillation_detection, linear_drift_detection) from CubeIDE build
 sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
 sed -i '' '/linear_drift_detection/d' "$DEBUG_DIR/makefile" 2>/dev/null || true

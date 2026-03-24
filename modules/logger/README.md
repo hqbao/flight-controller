@@ -39,13 +39,17 @@ Only one log class is active at a time. Python tools send `DB_CMD_LOG_CLASS` (0x
 | Log Class | ID | Module |
 |-----------|----|--------|
 | `LOG_CLASS_NONE` | 0x00 | Stop all logging |
-| `LOG_CLASS_IMU_ACCEL_RAW` | 0x01 | imu — 3 accel floats |
+| `LOG_CLASS_IMU_ACCEL_RAW` | 0x01 | imu — 3 accel + temp floats |
 | `LOG_CLASS_COMPASS` | 0x02 | compass — 3 mag floats |
 | `LOG_CLASS_ATTITUDE` | 0x03 | attitude_estimation — 9 floats |
 | `LOG_CLASS_POSITION` | 0x04 | position_estimation — 6 floats (pos + vel) |
-| `LOG_CLASS_IMU_GYRO` | 0x05 | fft — 50× int16 batch |
+| ~~`LOG_CLASS_FFT_GYRO_Z`~~ | 0x05 | *(Removed — was host-side FFT)* |
 | `LOG_CLASS_POSITION_OPTFLOW` | 0x06 | position_estimation — 6 floats (optflow + alt) |
 | `LOG_CLASS_ATTITUDE_MAG` | 0x07 | attitude_estimation — 9 floats (mag debug) |
+| `LOG_CLASS_HEART_BEAT` | 0x09 | logger — heartbeat (1 float, 1 Hz, default on boot) |
+| `LOG_CLASS_FFT_PEAKS` | 0x17 | fft — 6 floats (3 axes × 2 peaks) |
+| `LOG_CLASS_FFT_SPECTRUM_X/Y/Z` | 0x18–0x1A | fft — 61-byte combined spectrum + peaks frame |
+| `LOG_CLASS_RC_RECEIVER` | 0x1B | rc_receiver — 7 floats (roll, pitch, yaw, alt, state, mode, msg_count) |
 
 ## Configuration
 
