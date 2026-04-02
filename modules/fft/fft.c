@@ -15,8 +15,8 @@
  *    Collects gyro samples in a 256-point ring buffer, runs 256-point
  *    Hanning-windowed FFT at 10 Hz (cycling X→Y→Z), detects top 2 vibration
  *    peaks above 50 Hz (SNR threshold 8×, min separation 20 Hz), applies
- *    EMA smoothing (alpha 0.3, snap 30 Hz), and publishes fft_peaks_t on
- *    FFT_PEAKS_UPDATE. Peaks decay toward 0 Hz when not detected (alpha 0.05).
+ *    EMA smoothing (alpha 0.3), and publishes fft_peaks_t on
+ *    FFT_PEAKS_UPDATE. Out-of-range peaks reset to 0; in-range re-initializes.
  *    The notch_filter module subscribes and adapts its center frequencies.
  *
  * 2. LOG STREAMING (when Python tool requests via LOG_CLASS):
@@ -48,13 +48,11 @@ static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z
 #define FFT_SIZE            256      /* Must be power of 2 */
 #define FFT_SAMPLE_HZ      ((float)GYRO_FREQ)
 #define FFT_MIN_HZ          50.0f   /* Ignore below (body motion, not vibration) */
-#define FFT_MAX_HZ         400.0f   /* Ignore near-Nyquist noise */
+#define FFT_MAX_HZ         200.0f   /* Ignore above (motor vibration range) */
 #define FFT_SPECTRUM_HZ    200.0f   /* Spectrum log: send bins up to this freq */
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
 #define FFT_PEAK_SNR         8.0f   /* Peak must be 8× above mean power */
 #define FREQ_EMA_ALPHA       0.3f   /* Frequency smoothing (0=frozen, 1=instant) */
-#define FREQ_DECAY_ALPHA     0.05f  /* Decay rate when peak disappears (→ 0 Hz) */
-#define FREQ_SNAP_HZ        30.0f   /* Snap (skip EMA) if jump exceeds this */
 #define MIN_PEAK_SEP_HZ     20.0f   /* Minimum Hz between two peaks */
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
@@ -274,22 +272,21 @@ static void on_loop(uint8_t *data, size_t size) {
 	float peak_freq[FFT_NUM_PEAKS];
 	find_peaks(peak_freq);
 
-	/* EMA smoothing with snap on large jumps, decay on lost peaks */
+	/* Peak smoothing: only track peaks within valid range [MIN_HZ, MAX_HZ].
+	 * Out-of-range or missing → reset to 0. Back in range → snap (re-init).
+	 * Consecutive in-range → EMA smooth. */
 	for (int i = 0; i < FFT_NUM_PEAKS; i++) {
-		if (peak_freq[i] <= 0.0f) {
-			/* No peak found — decay toward zero */
-			g_smooth_freq[axis][i] *= (1.0f - FREQ_DECAY_ALPHA);
-			if (g_smooth_freq[axis][i] < FFT_MIN_HZ)
-				g_smooth_freq[axis][i] = 0.0f;
+		if (peak_freq[i] < FFT_MIN_HZ || peak_freq[i] > FFT_MAX_HZ) {
+			/* Out of range or not found — reset */
+			g_smooth_freq[axis][i] = 0.0f;
 			continue;
 		}
 
-		float diff = peak_freq[i] - g_smooth_freq[axis][i];
-		if (diff < 0.0f) diff = -diff;
-
-		if (g_smooth_freq[axis][i] <= 0.0f || diff > FREQ_SNAP_HZ) {
+		if (g_smooth_freq[axis][i] <= 0.0f) {
+			/* First valid peak after reset — snap to it */
 			g_smooth_freq[axis][i] = peak_freq[i];
 		} else {
+			/* Consecutive valid peaks — EMA smooth */
 			g_smooth_freq[axis][i] =
 				FREQ_EMA_ALPHA * peak_freq[i] +
 				(1.0f - FREQ_EMA_ALPHA) * g_smooth_freq[axis][i];

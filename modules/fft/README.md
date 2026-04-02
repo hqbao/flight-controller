@@ -22,9 +22,9 @@ ICM-42688P (1 kHz gyro)
     ├─ LOOP (main thread) runs 256-point Hanning-windowed FFT
     │   (cycles X → Y → Z, so ~3.3 Hz per axis)
     ├─ Normalize: power[i] = (re² + im²) / (N/2)²
-    ├─ Detect top 2 peaks (50-400 Hz, SNR ≥ 8×, min sep 20 Hz)
-    ├─ EMA smooth frequencies (α=0.3, snap if jump > 30 Hz)
-    ├─ Decay peaks toward 0 Hz when not detected (α=0.05)
+    ├─ Detect top 2 peaks (50-200 Hz, SNR ≥ 8×, min sep 20 Hz)
+    ├─ EMA smooth frequencies (α=0.3) for consecutive in-range peaks
+    ├─ Reset to 0 when peak is out of range or not detected
     └─ publish(FFT_PEAKS_UPDATE)  →  notch_filter module
          │
          ▼  (optional, when Python tool requests)
@@ -64,7 +64,7 @@ fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
 | Sample rate | 1000 Hz (GYRO_FREQ) | |
 | Frequency resolution | ~3.91 Hz/bin | 1000/256 |
 | Window | Hanning | Pre-computed at init |
-| Analysis range | 50–400 Hz | Body motion below, Nyquist noise above |
+| Analysis range | 50–200 Hz | Body motion below, motor vibration above |
 | Spectrum display range | 0–200 Hz | 52 bins streamed to host |
 | Update rate | 10 Hz total | Cycles X→Y→Z (~3.3 Hz/axis), runs in LOOP (main thread) |
 
@@ -72,12 +72,12 @@ fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
+| Valid range | 50–200 Hz | Peaks outside this range are reset to 0 |
 | SNR threshold | 8× mean power | Peak must be 8× above average |
 | Min separation | 20 Hz | Between two peaks on same axis |
-| EMA alpha | 0.3 | Smooths frequency jitter |
-| Snap threshold | 30 Hz | Bypasses EMA if frequency jumps |
-| Decay alpha | 0.05 | Shrinks frequency toward 0 when peak lost |
-| Snap-to-zero | < 50 Hz after decay | Snaps to 0 so notch filter disengages |
+| EMA alpha | 0.3 | Smooths consecutive in-range peaks |
+| Out-of-range | Reset to 0 | Notch filter disengages immediately |
+| Re-acquisition | Snap to value | First valid peak after reset initializes instantly |
 
 The FFT module always runs peak detection (no log class needed). It publishes
 `fft_peaks_t` on `FFT_PEAKS_UPDATE` at ~3.3 Hz per axis. The notch filter module

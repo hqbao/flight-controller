@@ -284,6 +284,17 @@ def main():
             title_text.set_text(f'Axis: {lbl}')
             if g_logging_active and g_serial and g_serial.is_open:
                 send_log_class_command(g_serial, lc)
+            # Flush stale data from queues
+            while not spectrum_queue.empty():
+                try:
+                    spectrum_queue.get_nowait()
+                except queue.Empty:
+                    break
+            while not peaks_queue.empty():
+                try:
+                    peaks_queue.get_nowait()
+                except queue.Empty:
+                    break
             # Clear spectrogram
             spec_data[:, :] = 0
             col_count[0] = 0
@@ -357,11 +368,14 @@ def main():
     def update(frame_num):
         changed = False
 
-        # Drain spectrum queue
+        # Drain spectrum queue — only keep frames for the selected axis
         latest_spec = None
+        sel = g_selected_axis[0]
         while not spectrum_queue.empty():
             try:
-                latest_spec = spectrum_queue.get_nowait()
+                item = spectrum_queue.get_nowait()
+                if item[0] == sel:
+                    latest_spec = item
             except queue.Empty:
                 break
 
