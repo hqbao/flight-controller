@@ -3,8 +3,9 @@
  * @file           : platform_uart.c
  * @brief          : UART platform driver — STM32H7 HAL implementation
  *
- * Uses 32-byte DMA circular ring buffers with half/complete transfer callbacks.
- * At 38400 baud each 16-byte half provides ~4.2ms of buffering.
+ * Uses 32-byte DMA circular ring buffers with IDLE line detection.
+ * HAL_UARTEx_ReceiveToIdle_DMA fires on UART IDLE (sender stops),
+ * providing exact byte count — no fixed half/complete boundary delays.
  * Protocol parser handles both DB ('d','b') and UBX (0xB5,0x62) framing.
  ******************************************************************************
  */
@@ -46,11 +47,9 @@ static uart_rx_t g_uart_rx2 = {0};
 static uart_rx_t g_uart_rx3 = {0};
 static uart_rx_t g_uart_rx4 = {0};
 
-// DMA ring buffers — receive in batches to avoid per-byte ISR overhead.
-// At 38400 baud: 16 bytes/half = ~4.2ms of buffering before data loss.
-// At 9600 baud:  8 bytes/half = ~8.3ms of buffering.
-// This reduces total UART ISR rate from ~12,500/s to ~720/s.
+// DMA ring buffers — IDLE detection fires when sender stops transmitting.
 static uint8_t g_uart_dma_buf[4][UART_DMA_BUF_SIZE];
+static volatile uint16_t g_last_pos[4] = {0};
 static uart_rx_t *g_uart_rx_map[4] = {&g_uart_rx1, &g_uart_rx2, &g_uart_rx3, &g_uart_rx4};
 
 /* --- Protocol parser ----------------------------------------------------- */
@@ -158,26 +157,28 @@ char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
 }
 
 void platform_hw_uart_start(void) {
-	HAL_UART_Receive_DMA(&huart1, g_uart_dma_buf[0], UART_DMA_BUF_SIZE);
-	HAL_UART_Receive_DMA(&huart2, g_uart_dma_buf[1], UART_DMA_BUF_SIZE);
-	HAL_UART_Receive_DMA(&huart3, g_uart_dma_buf[2], UART_DMA_BUF_SIZE);
-	HAL_UART_Receive_DMA(&huart4, g_uart_dma_buf[3], UART_DMA_BUF_SIZE);
+	for (int i = 0; i < 4; i++) {
+		g_last_pos[i] = 0;
+		HAL_UARTEx_ReceiveToIdle_DMA(uart_ports[i], g_uart_dma_buf[i], UART_DMA_BUF_SIZE);
+		__HAL_DMA_DISABLE_IT(uart_ports[i]->hdmarx, DMA_IT_HT);
+	}
 }
 
 /* --- HAL Callbacks ------------------------------------------------------- */
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 	int idx = uart_instance_to_idx(huart);
-	if (idx >= 0) {
-		process_dma_bytes(idx, UART_DMA_BUF_SIZE / 2, UART_DMA_BUF_SIZE);
-	}
-}
+	if (idx < 0) return;
 
-void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart) {
-	int idx = uart_instance_to_idx(huart);
-	if (idx >= 0) {
-		process_dma_bytes(idx, 0, UART_DMA_BUF_SIZE / 2);
+	uint16_t start = g_last_pos[idx];
+	if (Size > start) {
+		process_dma_bytes(idx, start, Size);
+	} else if (Size < start) {
+		// Wrapped around
+		process_dma_bytes(idx, start, UART_DMA_BUF_SIZE);
+		process_dma_bytes(idx, 0, Size);
 	}
+	g_last_pos[idx] = Size % UART_DMA_BUF_SIZE;
 }
 
 /**
@@ -197,7 +198,9 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 		// Reset parser state so a partial frame doesn't corrupt the next one
 		g_uart_rx_map[idx]->stage = 0;
 		g_uart_rx_map[idx]->protocol = PROTOCOL_NONE;
-		// Restart DMA circular reception
-		HAL_UART_Receive_DMA(huart, g_uart_dma_buf[idx], UART_DMA_BUF_SIZE);
+		// Restart IDLE+DMA reception
+		g_last_pos[idx] = 0;
+		HAL_UARTEx_ReceiveToIdle_DMA(huart, g_uart_dma_buf[idx], UART_DMA_BUF_SIZE);
+		__HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
 	}
 }

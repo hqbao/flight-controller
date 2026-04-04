@@ -181,16 +181,17 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 ### UART Architecture (STM32H7)
 Implemented in `base/boards/h7v1/platform/platform_uart.c`.
 
-All 4 UART ports use **DMA circular ring buffers** (32 bytes each) for reception. The protocol parser auto-detects both **DB** and **UBX** framing on every port — no port is locked to a single protocol.
+All 4 UART ports use **DMA circular ring buffers** (32 bytes each) with **IDLE line detection** for reception. The protocol parser auto-detects both **DB** and **UBX** framing on every port — no port is locked to a single protocol.
 
-**Receive (DMA):**
+**Receive (IDLE+DMA):**
 - DMA hardware fills the buffer continuously with zero CPU cost
-- `HAL_UART_RxHalfCpltCallback` processes bytes 0–15 (first half)
-- `HAL_UART_RxCpltCallback` processes bytes 16–31 (second half)
-- At 38400 baud, each half provides **~4.2ms of buffering** before data loss
-- Reduces total UART ISR rate from ~12,500/s to ~720/s
+- `HAL_UARTEx_ReceiveToIdle_DMA` fires `HAL_UARTEx_RxEventCallback` when the UART line goes idle (sender stops transmitting), providing the exact byte count received
+- `g_last_pos[port]` tracks the last processed position in the circular buffer, handling wraparound correctly
+- Half-transfer interrupt is disabled (`__HAL_DMA_DISABLE_IT(DMA_IT_HT)`) — only IDLE events trigger processing
 - Protocol parser validates `payload_size` against buffer bounds to prevent overflow from corrupted length fields
-- `HAL_UART_ErrorCallback` auto-restarts DMA after any UART error (overrun, framing, noise) — prevents permanent reception loss
+- `HAL_UART_ErrorCallback` resets `g_last_pos`, restarts IDLE+DMA reception after any UART error (overrun, framing, noise) — prevents permanent reception loss
+
+> **Why IDLE detection instead of half/complete callbacks?** Fixed half/complete DMA boundaries (e.g., 16-byte halves) cause bytes to get stuck when frame sizes don't align with boundaries. A 9-byte frame in a 32-byte buffer leaves 7 bytes waiting for more data before the next callback fires. IDLE detection solves this by firing whenever the sender finishes transmitting, regardless of byte count — commands are processed immediately with no boundary-dependent delays.
 
 **Transmit:** USART1 also handles telemetry TX and Python tool commands. USART2–4 are receive-only.
 
