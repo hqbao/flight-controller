@@ -106,7 +106,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
     ser.flush()
     names = {0x00: 'NONE', 0x17: 'FFT_PEAKS',
              0x18: 'SPECTRUM_X', 0x19: 'SPECTRUM_Y', 0x1A: 'SPECTRUM_Z'}
@@ -122,7 +121,7 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
+
     ser.flush()
     print("  \u2192 Reset command sent")
 
@@ -319,12 +318,16 @@ def main():
                 send_log_class_command(g_serial, LOG_CLASS_NONE)
                 g_logging_active = False
                 btn_toggle.label.set_text('Start Log')
+                btn_toggle.color = BTN_GREEN
+                btn_toggle.hovercolor = BTN_GREEN_HOV
                 ax_toggle.set_facecolor(BTN_GREEN)
             else:
                 lc = AXIS_MAP[g_selected_axis[0]][0]
                 send_log_class_command(g_serial, lc)
                 g_logging_active = True
                 btn_toggle.label.set_text('Stop Log')
+                btn_toggle.color = BTN_RED
+                btn_toggle.hovercolor = BTN_RED_HOV
                 ax_toggle.set_facecolor(BTN_RED)
 
     btn_toggle.on_clicked(on_toggle)
@@ -341,6 +344,8 @@ def main():
             send_reset_command(g_serial)
             g_logging_active = False
             btn_toggle.label.set_text('Start Log')
+            btn_toggle.color = BTN_GREEN
+            btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
 
     btn_reset.on_clicked(on_reset)

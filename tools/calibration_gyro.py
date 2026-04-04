@@ -145,9 +145,6 @@ g_cal_plot_dirty = False   # trigger scatter+fit redraw
 
 # --- DB Frame Helpers ---
 
-# FC uses 32-byte DMA circular buffer with 16-byte callbacks.
-# Padding ensures the last command bytes trigger a callback.
-DMA_FLUSH_PAD = b'\x00' * 16
 
 
 def send_log_class_command(ser, log_class):
@@ -160,8 +157,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print(f"  \u2192 Log class set to 0x{log_class:02X}")
 
@@ -176,8 +171,6 @@ def send_chip_id_request(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print("  \u2192 Chip ID requested")
 
@@ -192,8 +185,6 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print("  \u2192 Reset command sent")
 
@@ -214,8 +205,6 @@ def send_temp_calibration_upload(ser, coeffs):
     checksum &= 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print(f"  \u2192 Temp compensation uploaded (9 coefficients)")
 

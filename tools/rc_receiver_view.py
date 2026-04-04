@@ -78,7 +78,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
     ser.flush()
     names = {0x00: 'NONE', 0x1B: 'RC_RECEIVER'}
     print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
@@ -93,7 +92,7 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
+
     ser.flush()
     print("  \u2192 Reset command sent")
 

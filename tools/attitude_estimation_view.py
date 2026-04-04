@@ -107,7 +107,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
     ser.flush()
     names = {0x00: 'NONE', 0x03: 'ATTITUDE', 0x13: 'ATTITUDE_EARTH'}
     print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
@@ -123,7 +122,6 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
     ser.flush()
     print("  \u2192 Reset command sent")
 
@@ -137,7 +135,6 @@ def send_chip_id_request(ser):
     header = struct.pack('<2sBBH', b'db', msg_id, msg_class, length)
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
-    ser.write(frame)
     ser.write(frame)
     ser.flush()
     print("  \u2192 Chip ID request sent")
@@ -383,12 +380,16 @@ def main():
                 send_log_class_command(g_serial, LOG_CLASS_NONE)
                 g_logging_active = False
                 btn_toggle.label.set_text('Start Log')
+                btn_toggle.color = BTN_GREEN
+                btn_toggle.hovercolor = BTN_GREEN_HOV
                 ax_toggle.set_facecolor(BTN_GREEN)
             else:
                 lc = LOG_CLASS_ATTITUDE_EARTH if g_earth_view else LOG_CLASS_ATTITUDE
                 send_log_class_command(g_serial, lc)
                 g_logging_active = True
                 btn_toggle.label.set_text('Stop Log')
+                btn_toggle.color = BTN_RED
+                btn_toggle.hovercolor = BTN_RED_HOV
                 ax_toggle.set_facecolor(BTN_RED)
 
     btn_toggle.on_clicked(on_toggle)
@@ -405,6 +406,8 @@ def main():
             send_reset_command(g_serial)
             g_logging_active = False
             btn_toggle.label.set_text('Start Log')
+            btn_toggle.color = BTN_GREEN
+            btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
 
     btn_reset.on_clicked(on_reset)
@@ -421,11 +424,15 @@ def main():
         g_earth_view = not g_earth_view
         if g_earth_view:
             btn_frame.label.set_text('Body Frame')
+            btn_frame.color = ACCENT_BLUE
+            btn_frame.hovercolor = ACCENT_BLUE
             ax_frame.set_facecolor(ACCENT_BLUE)
             frame_label.set_text('Earth Frame')
             frame_label.set_color(ACCENT_BLUE)
         else:
             btn_frame.label.set_text('Earth Frame')
+            btn_frame.color = BTN_COLOR
+            btn_frame.hovercolor = BTN_HOVER
             ax_frame.set_facecolor(BTN_COLOR)
             frame_label.set_text('Body Frame')
             frame_label.set_color(ACCENT_ORANGE)

@@ -57,8 +57,6 @@ DB_CMD_CHIP_ID            = 0x09
 PLOT_LIMIT = 20000  # Initial axis limit (scroll to zoom)
 SAMPLES_PER_POSITION = 100  # Samples averaged per captured position
 
-# DMA flush padding -- ensures FC DMA half-transfer triggers
-DMA_FLUSH_PAD = b'\x00' * 16
 
 # Auto-detect serial port
 ports = serial.tools.list_ports.comports()
@@ -138,8 +136,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print(f"  \u2192 Log class set to 0x{log_class:02X}")
 
@@ -154,8 +150,6 @@ def send_chip_id_request(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print("  \u2192 Chip ID requested")
 
@@ -170,8 +164,6 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print("  \u2192 Reset command sent")
 
@@ -199,8 +191,6 @@ def send_calibration_upload(ser, bias, scale):
     frame = header + payload + struct.pack('<H', checksum)
 
     ser.write(frame)
-    ser.write(frame)
-    ser.write(DMA_FLUSH_PAD)
     ser.flush()
     print(f"  \u2192 Accel calibration uploaded ({len(values)} floats, {len(frame)} bytes)")
 

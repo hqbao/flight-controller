@@ -94,7 +94,6 @@ def send_log_class_command(ser, log_class):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + log_class) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
     ser.flush()
     names = {0x00: 'NONE', 0x04: 'POSITION'}
     print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
@@ -110,7 +109,7 @@ def send_reset_command(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
+
     ser.flush()
     print("  \u2192 Reset command sent")
 
@@ -125,7 +124,7 @@ def send_chip_id_request(ser):
     checksum = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF) + 0x00) & 0xFFFF
     frame = header + payload + struct.pack('<H', checksum)
     ser.write(frame)
-    ser.write(frame)
+
     ser.flush()
     print("  \u2192 Chip ID request sent")
 
@@ -312,11 +311,15 @@ def main():
                 send_log_class_command(g_serial, LOG_CLASS_NONE)
                 g_logging_active = False
                 btn_toggle.label.set_text('Start Log')
+                btn_toggle.color = BTN_GREEN
+                btn_toggle.hovercolor = BTN_GREEN_HOV
                 ax_toggle.set_facecolor(BTN_GREEN)
             else:
                 send_log_class_command(g_serial, LOG_CLASS_POSITION)
                 g_logging_active = True
                 btn_toggle.label.set_text('Stop Log')
+                btn_toggle.color = BTN_RED
+                btn_toggle.hovercolor = BTN_RED_HOV
                 ax_toggle.set_facecolor(BTN_RED)
 
     btn_toggle.on_clicked(on_toggle)
@@ -333,6 +336,8 @@ def main():
             send_reset_command(g_serial)
             g_logging_active = False
             btn_toggle.label.set_text('Start Log')
+            btn_toggle.color = BTN_GREEN
+            btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
 
     btn_reset.on_clicked(on_reset)

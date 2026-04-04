@@ -409,6 +409,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `mix_control_test.py` | Real-time motor speed visualizer (8 motors) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
+| `test_log_classes.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
 
 > **Common controls:** All tools include **Start/Stop Log** (toggles data streaming), **Chip ID** (displays the FC's unique hardware identifier), and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools additionally include **Test Storage** — uploads known test values to flash and reads them back to verify the serial + storage round-trip before real calibration.
 
