@@ -6,139 +6,38 @@
  * Uses 32-byte DMA circular ring buffers with IDLE line detection.
  * HAL_UARTEx_ReceiveToIdle_DMA fires on UART IDLE (sender stops),
  * providing exact byte count — no fixed half/complete boundary delays.
- * Protocol parser handles both DB ('d','b') and UBX (0xB5,0x62) framing.
+ * Raw bytes are published via UART_RAW_RECEIVED for protocol-agnostic
+ * consumption. Protocol parsing is handled by the db_reader module.
  ******************************************************************************
  */
 
 #include "platform_hw.h"
 #include <platform.h>
+#include <pubsub.h>
+#include <messages.h>
 #include <string.h>
 
 /* --- Constants ----------------------------------------------------------- */
 
-#define MAX_UART_BUFFER_SIZE 128
 #define UART_DMA_BUF_SIZE    32
-
-/* --- Types --------------------------------------------------------------- */
-
-typedef enum {
-	PROTOCOL_NONE = 0,
-	PROTOCOL_DB   = 1,
-	PROTOCOL_UBX  = 2
-} protocol_type_t;
-
-typedef struct {
-	uint8_t byte;
-	uint8_t _pad[3]; /* Align buffer[] to 4-byte boundary for safe type access */
-	uint8_t buffer[MAX_UART_BUFFER_SIZE];
-	uint8_t header[2];
-	char stage;
-	uint16_t payload_size;
-	int buffer_idx;
-	protocol_type_t protocol;
-} uart_rx_t;
+#define NUM_PORTS            4
 
 /* --- Static state -------------------------------------------------------- */
 
-static UART_HandleTypeDef *uart_ports[4] = {&huart1, &huart2, &huart3, &huart4};
-
-static uart_rx_t g_uart_rx1 = {0};
-static uart_rx_t g_uart_rx2 = {0};
-static uart_rx_t g_uart_rx3 = {0};
-static uart_rx_t g_uart_rx4 = {0};
+static UART_HandleTypeDef *uart_ports[NUM_PORTS] = {&huart1, &huart2, &huart3, &huart4};
 
 // DMA ring buffers — IDLE detection fires when sender stops transmitting.
-static uint8_t g_uart_dma_buf[4][UART_DMA_BUF_SIZE];
-static volatile uint16_t g_last_pos[4] = {0};
-static uart_rx_t *g_uart_rx_map[4] = {&g_uart_rx1, &g_uart_rx2, &g_uart_rx3, &g_uart_rx4};
+static uint8_t g_uart_dma_buf[NUM_PORTS][UART_DMA_BUF_SIZE];
+static volatile uint16_t g_last_pos[NUM_PORTS] = {0};
 
-/* --- Protocol parser ----------------------------------------------------- */
+/* --- Raw byte publishing ------------------------------------------------- */
 
-static void handle_protocol_msg(uart_rx_t *msg) {
-	if (msg->protocol == PROTOCOL_DB) {
-		// DB protocol message: pass total buffer size (class + id + length + payload + checksum)
-		platform_receive_db_message(msg->buffer, msg->payload_size + 6);
-	} else if (msg->protocol == PROTOCOL_UBX) {
-		// UBX protocol message: pass total buffer size (class + id + length + payload + checksum)
-		platform_receive_ubx_message(msg->buffer, msg->payload_size + 6);
-	}
-}
-
-static void read_uart_byte(uart_rx_t *g_uart_rx) {
-	if (g_uart_rx->stage == 5) {
-		// Guard against buffer overflow from corrupted payload_size
-		if (g_uart_rx->buffer_idx >= MAX_UART_BUFFER_SIZE) {
-			g_uart_rx->stage = 0;
-			g_uart_rx->protocol = PROTOCOL_NONE;
-			return;
-		}
-		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
-		g_uart_rx->buffer_idx++;
-		// Plus 2-byte class-id, 2-byte length and 2-byte checksum
-		if (g_uart_rx->buffer_idx == (int) g_uart_rx->payload_size + 6) {
-			g_uart_rx->stage = 0;
-			handle_protocol_msg(g_uart_rx);
-			g_uart_rx->protocol = PROTOCOL_NONE;
-		}
-	} else if (g_uart_rx->stage == 0) {
-		// Detect protocol: 'd' for DB or 0xB5 for UBX
-		if (g_uart_rx->byte == 'd') {
-			g_uart_rx->header[0] = g_uart_rx->byte;
-			g_uart_rx->protocol = PROTOCOL_DB;
-			g_uart_rx->stage = 1;
-		} else if (g_uart_rx->byte == 0xB5) {
-			g_uart_rx->header[0] = g_uart_rx->byte;
-			g_uart_rx->protocol = PROTOCOL_UBX;
-			g_uart_rx->stage = 1;
-		}
-	} else if (g_uart_rx->stage == 1) {
-		// Verify second header byte based on protocol
-		if ((g_uart_rx->protocol == PROTOCOL_DB && g_uart_rx->byte == 'b') ||
-		    (g_uart_rx->protocol == PROTOCOL_UBX && g_uart_rx->byte == 0x62)) {
-			g_uart_rx->header[1] = g_uart_rx->byte;
-			g_uart_rx->buffer_idx = 0;
-			g_uart_rx->stage = 2;
-		} else {
-			g_uart_rx->stage = 0;
-			g_uart_rx->protocol = PROTOCOL_NONE;
-		}
-	} else if (g_uart_rx->stage == 2) {
-		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
-		g_uart_rx->buffer_idx = 1;
-		g_uart_rx->stage = 3;
-	} else if (g_uart_rx->stage == 3) {
-		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
-		g_uart_rx->buffer_idx = 2;
-		g_uart_rx->stage = 4;
-	} else if (g_uart_rx->stage == 4) {
-		g_uart_rx->buffer[g_uart_rx->buffer_idx] = g_uart_rx->byte;
-		g_uart_rx->buffer_idx++;
-		if (g_uart_rx->buffer_idx == 4) {
-			// Both protocols have length at bytes 2-3 (little-endian)
-			memcpy(&g_uart_rx->payload_size, &g_uart_rx->buffer[2], sizeof(uint16_t));
-			// Reject corrupted length — total frame must fit in buffer
-			if (g_uart_rx->payload_size > MAX_UART_BUFFER_SIZE - 6) {
-				g_uart_rx->stage = 0;
-				g_uart_rx->protocol = PROTOCOL_NONE;
-			} else {
-				g_uart_rx->stage = 5;
-			}
-		}
-	} else {
-		g_uart_rx->stage = 0;
-		g_uart_rx->protocol = PROTOCOL_NONE;
-	}
-}
-
-/* --- DMA ring buffer processing ------------------------------------------ */
-
-// Process a range of bytes from a DMA ring buffer through the parser
-static void process_dma_bytes(int uart_idx, int start, int end) {
-	uart_rx_t *rx = g_uart_rx_map[uart_idx];
-	for (int i = start; i < end; i++) {
-		rx->byte = g_uart_dma_buf[uart_idx][i];
-		read_uart_byte(rx);
-	}
+static void publish_raw_bytes(int port_idx, int start, int count) {
+	uart_raw_t raw;
+	raw.port = (uint8_t)port_idx;
+	raw.size = (uint16_t)count;
+	memcpy(raw.data, &g_uart_dma_buf[port_idx][start], count);
+	publish(UART_RAW_RECEIVED, (uint8_t *)&raw, sizeof(uart_raw_t));
 }
 
 static int uart_instance_to_idx(UART_HandleTypeDef *huart) {
@@ -157,7 +56,7 @@ char platform_uart_send(uart_port_t port, uint8_t *data, uint16_t data_size) {
 }
 
 void platform_hw_uart_start(void) {
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < NUM_PORTS; i++) {
 		g_last_pos[i] = 0;
 		HAL_UARTEx_ReceiveToIdle_DMA(uart_ports[i], g_uart_dma_buf[i], UART_DMA_BUF_SIZE);
 		__HAL_DMA_DISABLE_IT(uart_ports[i]->hdmarx, DMA_IT_HT);
@@ -172,11 +71,13 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
 	uint16_t start = g_last_pos[idx];
 	if (Size > start) {
-		process_dma_bytes(idx, start, Size);
+		publish_raw_bytes(idx, start, Size - start);
 	} else if (Size < start) {
 		// Wrapped around
-		process_dma_bytes(idx, start, UART_DMA_BUF_SIZE);
-		process_dma_bytes(idx, 0, Size);
+		publish_raw_bytes(idx, start, UART_DMA_BUF_SIZE - start);
+		if (Size > 0) {
+			publish_raw_bytes(idx, 0, Size);
+		}
 	}
 	g_last_pos[idx] = Size % UART_DMA_BUF_SIZE;
 }
@@ -195,12 +96,20 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
 		// Clear all error flags
 		__HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF |
 		                             UART_CLEAR_FEF  | UART_CLEAR_PEF);
-		// Reset parser state so a partial frame doesn't corrupt the next one
-		g_uart_rx_map[idx]->stage = 0;
-		g_uart_rx_map[idx]->protocol = PROTOCOL_NONE;
 		// Restart IDLE+DMA reception
 		g_last_pos[idx] = 0;
 		HAL_UARTEx_ReceiveToIdle_DMA(huart, g_uart_dma_buf[idx], UART_DMA_BUF_SIZE);
 		__HAL_DMA_DISABLE_IT(huart->hdmarx, DMA_IT_HT);
+	}
+}
+
+/**
+ * UART TX complete callback — notifies db_sender module to dequeue next frame.
+ */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+	int idx = uart_instance_to_idx(huart);
+	if (idx >= 0) {
+		uint8_t port = (uint8_t)idx;
+		publish(UART_TX_COMPLETE, &port, sizeof(port));
 	}
 }

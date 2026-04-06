@@ -121,7 +121,6 @@ void platform_loop(void);
 
 void platform_i2c_data_dma_callback(i2c_port__t port);
 void platform_spi_data_dma_callback(spi_port_t port);
-void platform_uart_data_dma_callback(uart_port_t port);
 
 #define print platform_console
 

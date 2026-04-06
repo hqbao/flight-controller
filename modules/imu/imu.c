@@ -89,8 +89,7 @@ static void on_imu_data_ready(void) {
 		publish(SENSOR_IMU1_GYRO_UPDATE, (uint8_t*)&g_imu_data[3], 12);
 	}
 
-	/* Raw gyro for calibration module — lower priority, published after */
-	publish(SENSOR_IMU1_GYRO_RAW, (uint8_t*)g_gyro_raw, 12);
+
 }
 
 static void on_i2c_callback(uint8_t *data, size_t size) {

@@ -247,40 +247,40 @@ int16_t wait_for_reg_value(uint8_t reg_addr, uint8_t reg_value, uint8_t mask) {
     return DPS310_OK;
 }
 
-int16_t get_scale_factor_for(uint8_t rate, uint32_t *p_factor) {
-    uint32_t ret = DPS310_OK;
-
-    switch (rate) {
-        case DPS310_CFG_RATE_1_MEAS:
-            *p_factor = 524288;
-            break;
-        case DPS310_CFG_RATE_2_MEAS:
-            *p_factor = 1572864;
-            break;
-        case DPS310_CFG_RATE_4_MEAS:
-            *p_factor = 3670016;
-            break;
-        case DPS310_CFG_RATE_8_MEAS:
-            *p_factor = 7864320;
-            break;
-        case DPS310_CFG_RATE_16_MEAS:
-            *p_factor = 253952;
-            break;
-        case DPS310_CFG_RATE_32_MEAS:
-            *p_factor = 516096;
-            break;
-        case DPS310_CFG_RATE_64_MEAS:
-            *p_factor = 1040384;
-            break;
-        case DPS310_CFG_RATE_128_MEAS:
-            *p_factor = 2088960;
-            break;
-        default:
-            ret = DPS310_UNKNOWN_RATE_ERROR;
-    }
-
-    return ret;
-}
+//int16_t get_scale_factor_for(uint8_t rate, uint32_t *p_factor) {
+//    uint32_t ret = DPS310_OK;
+//
+//    switch (rate) {
+//        case DPS310_CFG_RATE_1_MEAS:
+//            *p_factor = 524288;
+//            break;
+//        case DPS310_CFG_RATE_2_MEAS:
+//            *p_factor = 1572864;
+//            break;
+//        case DPS310_CFG_RATE_4_MEAS:
+//            *p_factor = 3670016;
+//            break;
+//        case DPS310_CFG_RATE_8_MEAS:
+//            *p_factor = 7864320;
+//            break;
+//        case DPS310_CFG_RATE_16_MEAS:
+//            *p_factor = 253952;
+//            break;
+//        case DPS310_CFG_RATE_32_MEAS:
+//            *p_factor = 516096;
+//            break;
+//        case DPS310_CFG_RATE_64_MEAS:
+//            *p_factor = 1040384;
+//            break;
+//        case DPS310_CFG_RATE_128_MEAS:
+//            *p_factor = 2088960;
+//            break;
+//        default:
+//            ret = DPS310_UNKNOWN_RATE_ERROR;
+//    }
+//
+//    return ret;
+//}
 
 // Scale factor indexed by oversampling register value (0x00..0x07)
 // DPS310 datasheet Table 16 — must match the CONFIGURED oversampling, NOT rate.

@@ -18,12 +18,15 @@
 #include <flight_state/flight_state.h>
 #include <flight_telemetry/flight_telemetry.h>
 #include <speed_control/speed_control.h>
-#include <logger/logger.h>
 #include <config/config.h>
 #include <fft/fft.h>
 #include <notch_filter/notch_filter.h>
+#include <db_reader/db_reader.h>
+#include <db_sender/db_sender.h>
 
 void platform_setup(void) {
+	db_sender_setup();
+	db_reader_setup();
 	flight_state_setup();
 	local_storage_setup();
 	calibration_setup();
@@ -47,5 +50,4 @@ void platform_setup(void) {
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
 	flight_telemetry_setup();
-	logger_setup();
 }

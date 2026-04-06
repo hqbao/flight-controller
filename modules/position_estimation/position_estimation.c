@@ -276,7 +276,7 @@ void position_estimation_setup(void) {
     fusion5_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
     fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 10.0, 0.1);
 
-	subscribe(SENSOR_LINEAR_ACCEL, linear_accel_update);
+	subscribe(LINEAR_ACCEL_UPDATE, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);
 	subscribe(EXTERNAL_SENSOR_GPS, gps_position_update);
     subscribe(EXTERNAL_SENSOR_GPS_VELOC, gps_velocity_update);

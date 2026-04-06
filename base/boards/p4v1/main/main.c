@@ -382,7 +382,7 @@ void core0() {
     platform_setup();
 
     subscribe(CALIBRATION_GYRO_STATUS, on_imu_calibration_result);
-    subscribe(SENSOR_ATTITUDE_VECTOR, state_vector_update);
+    subscribe(ATTITUDE_VECTOR_UPDATE, state_vector_update);
 
     while (1) {
         platform_loop();

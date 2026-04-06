@@ -73,6 +73,4 @@ void platform_spi_data_dma_callback(spi_port_t port) {
 	publish(SPI_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 }
 
-void platform_uart_data_dma_callback(uart_port_t port) {
-	publish(UART_CALLBACK_UPDATE, (uint8_t*)&port, 1);
-}
+

@@ -79,7 +79,7 @@ Fusion5 init: X/Y use `(1.0, 1.0, 1.0, 20.0, 0.1)`, Z uses `(1.0, 0.5, 1.0, 20.0
 ### Subscriptions
 | Topic | Rate | Purpose |
 |-------|------|---------|
-| `SENSOR_LINEAR_ACCEL` | 500 Hz | Predict (acceleration input) |
+| `LINEAR_ACCEL_UPDATE` | 500 Hz | Predict (acceleration input) |
 | `SENSOR_AIR_PRESSURE` | Event | Z altitude reference |
 | `EXTERNAL_SENSOR_GPS` | Event | GPS position (outdoor) |
 | `EXTERNAL_SENSOR_GPS_VELOC` | Event | GPS velocity (outdoor) |

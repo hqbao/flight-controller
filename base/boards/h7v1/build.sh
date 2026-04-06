@@ -92,6 +92,11 @@ sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/objects.list" 2>/dev/null || tr
 sed -i '' '/linear_drift_detection/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
 rm -rf "$DEBUG_DIR/modules/oscillation_detection" "$DEBUG_DIR/modules/linear_drift_detection" 2>/dev/null || true
 
+# Remove logger module (merged into db_sender)
+sed -i '' '/modules\/logger/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
+sed -i '' '/modules\/logger/d' "$DEBUG_DIR/sources.mk" 2>/dev/null || true
+sed -i '' '/modules\/logger/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+
 # Add fft module to build (if missing — CubeIDE doesn't know about it)
 if ! grep -q 'modules/fft' "$DEBUG_DIR/makefile" 2>/dev/null; then
     sed -i '' 's|-include modules/fault_handler/subdir.mk|-include modules/fft/subdir.mk\
@@ -205,6 +210,94 @@ modules/notch_filter \\
 fi
 if ! grep -q 'modules/notch_filter/notch_filter.o' "$DEBUG_DIR/objects.list" 2>/dev/null; then
     printf '"./modules/notch_filter/notch_filter.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+
+# Clean up renamed modules (db_parser → db_reader, uart_tx → db_sender)
+sed -i '' '/modules\/db_parser/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
+sed -i '' '/modules\/db_parser/d' "$DEBUG_DIR/sources.mk" 2>/dev/null || true
+sed -i '' '/modules\/db_parser/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+sed -i '' '/modules\/uart_tx/d' "$DEBUG_DIR/makefile" 2>/dev/null || true
+sed -i '' '/modules\/uart_tx/d' "$DEBUG_DIR/sources.mk" 2>/dev/null || true
+sed -i '' '/modules\/uart_tx/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+
+# Add db_reader module to build (if missing)
+if ! grep -q 'modules/db_reader' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/config/subdir.mk|-include modules/db_reader/subdir.mk\
+-include modules/config/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/db_reader' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/config/a\
+modules/db_reader \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/db_reader/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/db_reader/db_reader.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+# Create db_reader subdir.mk
+DB_READER_DIR="$DEBUG_DIR/modules/db_reader"
+mkdir -p "$DB_READER_DIR"
+if [[ ! -f "$DB_READER_DIR/subdir.mk" ]]; then
+    MODULES_ABS="$(cd "$PROJECT_DIR/../../../modules" && pwd)"
+    cat > "$DB_READER_DIR/subdir.mk" << SUBMK
+C_SRCS += \\
+$MODULES_ABS/db_reader/db_reader.c
+
+OBJS += \\
+./modules/db_reader/db_reader.o
+
+C_DEPS += \\
+./modules/db_reader/db_reader.d
+
+modules/db_reader/db_reader.o: $MODULES_ABS/db_reader/db_reader.c modules/db_reader/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+clean: clean-modules-2f-db_reader
+
+clean-modules-2f-db_reader:
+	-\$(RM) ./modules/db_reader/db_reader.cyclo ./modules/db_reader/db_reader.d ./modules/db_reader/db_reader.o ./modules/db_reader/db_reader.su
+
+.PHONY: clean-modules-2f-db_reader
+SUBMK
+fi
+
+# Add db_sender module to build (if missing)
+if ! grep -q 'modules/db_sender' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/db_reader/subdir.mk|-include modules/db_sender/subdir.mk\
+-include modules/db_reader/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/db_sender' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/db_reader/a\
+modules/db_sender \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/db_sender/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/db_sender/db_sender.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+# Create db_sender subdir.mk
+DB_SENDER_DIR="$DEBUG_DIR/modules/db_sender"
+mkdir -p "$DB_SENDER_DIR"
+if [[ ! -f "$DB_SENDER_DIR/subdir.mk" ]]; then
+    MODULES_ABS="$(cd "$PROJECT_DIR/../../../modules" && pwd)"
+    cat > "$DB_SENDER_DIR/subdir.mk" << SUBMK
+C_SRCS += \\
+$MODULES_ABS/db_sender/db_sender.c
+
+OBJS += \\
+./modules/db_sender/db_sender.o
+
+C_DEPS += \\
+./modules/db_sender/db_sender.d
+
+modules/db_sender/db_sender.o: $MODULES_ABS/db_sender/db_sender.c modules/db_sender/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+clean: clean-modules-2f-db_sender
+
+clean-modules-2f-db_sender:
+	-\$(RM) ./modules/db_sender/db_sender.cyclo ./modules/db_sender/db_sender.d ./modules/db_sender/db_sender.o ./modules/db_sender/db_sender.su
+
+.PHONY: clean-modules-2f-db_sender
+SUBMK
 fi
 
 # Build

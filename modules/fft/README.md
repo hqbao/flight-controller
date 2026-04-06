@@ -28,7 +28,7 @@ ICM-42688P (1 kHz gyro)
     └─ publish(FFT_PEAKS_UPDATE)  →  notch_filter module
          │
          ▼  (optional, when Python tool requests)
-      publish(SEND_LOG)  →  logger.c  →  UART  →  Python tool
+      publish(SEND_LOG)  →  db_sender.c  →  UART  →  Python tool
 ```
 
 ### ISR Safety
@@ -111,7 +111,7 @@ Payload: 1 + 52 + 8 = 61 bytes
   (÷ (N/2)²) before `10·log10`. Mapped to 0–255 uint8.
 - **Combined frame**: Peaks are appended in the same frame (not sent separately)
   to avoid UART buffer corruption — `HAL_UART_Transmit_IT` is non-blocking and
-  the logger uses a single shared output buffer.
+  db_sender uses a single shared output buffer.
 
 ### Bandwidth Budget (9600 baud = 960 B/s)
 

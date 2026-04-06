@@ -226,4 +226,14 @@ typedef struct {
 #define DB_CMD_CALIBRATE_GYRO_TEMP      0x08
 #define DB_CMD_CHIP_ID                  0x09
 
+// UART frame constants
+#define UART_FRAME_MAX_SIZE 128
+
+// Raw UART data (protocol-agnostic)
+typedef struct {
+	uint8_t port;                       // UART port index (0-3)
+	uint16_t size;                      // Byte count
+	uint8_t data[UART_FRAME_MAX_SIZE];  // Raw bytes
+} uart_raw_t;
+
 #endif // MESSAGES_H

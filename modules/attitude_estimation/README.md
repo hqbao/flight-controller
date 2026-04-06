@@ -14,15 +14,15 @@ Gyro (1 kHz)           Accel (500 Hz)         Compass (25 Hz)
   (gyro integration)   (gravity reference)    heading via quaternion
     │                      │                       │
     ├─► ANGULAR_STATE_UPDATE (roll, pitch, yaw)    │
-    ├─► SENSOR_ATTITUDE_VECTOR (predicted gravity)  │
+    ├─► ATTITUDE_VECTOR_UPDATE (predicted gravity)  │
     │                      │                       │
     │                 Linear accel extraction       │
     │                      │                       │
-    │                 ► SENSOR_LINEAR_ACCEL         │
+    │                 ► LINEAR_ACCEL_UPDATE         │
     │                                              │
     └──────────────────────────────────────────────┘
                                                    │
-                                    ► SENSOR_MAG_HEADING_UPDATE
+                                        g_mag_earth (used for logging)
 ```
 
 ## Fusion Algorithms
@@ -72,7 +72,7 @@ The fusion algorithms output `v_linear_acc` with **positive = direction of motio
 - **Move right then stop** → Y goes positive then negative
 - **Move up then stop** → Z goes positive then negative
 
-Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithm — consumers receive it directly via `SENSOR_LINEAR_ACCEL`.
+Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithm — consumers receive it directly via `LINEAR_ACCEL_UPDATE`.
 
 ## PubSub Interface
 
@@ -89,9 +89,8 @@ Z is positive-up (opposite to NED Z-down). This convention is applied inside the
 | Topic | Data | Rate |
 |-------|------|------|
 | `ANGULAR_STATE_UPDATE` | `angle3d_t` — roll, pitch, yaw (degrees) | 1 kHz |
-| `SENSOR_ATTITUDE_VECTOR` | `vector3d_t` — predicted gravity vector | 1 kHz |
-| `SENSOR_LINEAR_ACCEL` | `linear_accel_data_t` — body + earth frame | 500 Hz |
-| `SENSOR_MAG_HEADING_UPDATE` | `double` — heading (degrees) | 25 Hz |
+| `ATTITUDE_VECTOR_UPDATE` | `vector3d_t` — predicted gravity vector | 1 kHz |
+| `LINEAR_ACCEL_UPDATE` | `linear_accel_data_t` — body + earth frame | 500 Hz |
 | `SEND_LOG` | 9 floats: v_pred, v_true, v_linear_acc | 10 Hz |
 
 ## Log Classes

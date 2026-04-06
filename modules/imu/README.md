@@ -71,7 +71,6 @@ Model: `V_cal = S × (V_raw − B)`
 | Topic | Data | Rate |
 |-------|------|------|
 | `SENSOR_IMU1_GYRO_UPDATE` | `float[3]` — gx, gy, gz (deg/s) | 1 kHz |
-| `SENSOR_IMU1_GYRO_RAW` | `float[3]` — raw gyro (LSB) | 1 kHz |
 | `SENSOR_IMU1_ACCEL_UPDATE` | `float[3]` — ax, ay, az (calibrated) | 500 Hz |
 | `SEND_LOG` | `float[4]` — sensor values + temperature (16 bytes) | 25 Hz |
 
