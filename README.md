@@ -73,9 +73,6 @@ flight-controller/
 │   └── local_storage/             #   Persistent configuration storage
 │
 ├── tools/                         # Python host tools
-│   ├── gps_config_f9p.py          #   ZED-F9P GPS configuration (UBX-CFG-VALSET)
-│   ├── gps_read_ubx.py            #   GPS real-time monitor & visualizer
-│   ├── gps_sim_ubx.py             #   GPS simulator (UBX NAV-PVT)
 │   ├── calibration_gyro.py         #   Gyro temperature compensation tool
 │   ├── calibration_accel.py        #   Accelerometer calibration (6-position ellipsoid fit)
 │   ├── calibration_compass.py      #   Compass calibration (ellipsoid fit)
