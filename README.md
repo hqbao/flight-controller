@@ -21,7 +21,7 @@ The Flight Controller is the core autopilot that:
 | **Barometer** | DPS310 | I2C |
 | **GPS** | u-blox ZED-F9P (UBX) | UART |
 | **Optical Flow** | External module (flight-optflow) | UART |
-| **MCU** | STM32H7 / ESP32-S3 / ESP32-P4 / macOS (SITL) | — |
+| **MCU** | STM32H7 / ESP32-S3 / ESP32-P4 | — |
 
 ## Demo Videos
 
@@ -87,14 +87,6 @@ flight-controller/
 │   ├── position_estimation_chart.py    # Position/velocity time-series (2×2 grid)
 │   ├── position_estimation_optflow.py  # Optical flow & altitude sensor viewer
 │   └── flight_telemetry_view.py   #   Flight telemetry HUD
-│
-└── simulation/                    # Software-in-the-loop (SITL)
-    ├── install.sh                 #   Install SITL dependencies
-    ├── uninstall.sh               #   Remove SITL environment
-    ├── run_sitl_macos.sh          #   Launch SITL on macOS
-    ├── sitl_bridge.py             #   Sensor bridge for SITL
-    ├── test_fly.py                #   Automated flight test
-    └── models/                    #   Physics models
 ```
 
 ## Architecture
@@ -219,13 +211,6 @@ cd flight-controller/base/boards/h7v1
 cd base/boards/s3v1   # or p4v1
 idf.py build
 idf.py -p /dev/cu.usbmodem* flash monitor
-```
-
-### SITL (macOS)
-```bash
-cd simulation
-./install.sh
-./run_sitl_macos.sh
 ```
 
 ## Coding Conventions
@@ -356,7 +341,7 @@ Fits a quadratic polynomial `bias(T) = a·T² + b·T + c` per axis, allowing the
 - ID `0x09`: `DB_CMD_CHIP_ID` — request 8-byte unique chip ID (response sent via `SEND_LOG`)
 
 ### Runtime Log Class Selection
-Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. Each tool has a **"Start Log"** button that sends the appropriate class and a **"Reset FC"** button that sends `DB_CMD_RESET` to perform a hardware reset (STM32: `NVIC_SystemReset()`, SITL: `exit(0)`).
+Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. Each tool has a **"Start Log"** button that sends the appropriate class and a **"Reset FC"** button that sends `DB_CMD_RESET` to perform a hardware reset (`NVIC_SystemReset()`).
 
 | Log Class | Value | Module | Data |
 |-----------|-------|--------|------|
