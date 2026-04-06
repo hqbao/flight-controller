@@ -87,6 +87,15 @@ sed -i '' '/dshot_bidir/d' "$DEBUG_DIR/platform/subdir.mk" 2>/dev/null || true
 # CubeIDE may regenerate it under foundation/ — always fix it
 sed -i '' '/foundation\/module/d' "$DEBUG_DIR/foundation/subdir.mk" 2>/dev/null || true
 sed -i '' '/foundation\/module/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+
+# Remove platform.c from foundation/ (wrappers eliminated — boards call publish() directly)
+sed -i '' '/foundation\/platform[^_]/d' "$DEBUG_DIR/foundation/subdir.mk" 2>/dev/null || true
+sed -i '' '/foundation\/platform[^_]/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+# After deleting platform.o target line, its recipe (tab-indented gcc) becomes orphaned.
+# Delete only the first orphaned tab-gcc line (one-shot, preserves pubsub.o recipe).
+awk '!deleted && /^\t.*arm-none-eabi-gcc/ && !prev_is_target {deleted=1; next} {prev_is_target = /^[a-z].*:/; print}' \
+    "$DEBUG_DIR/foundation/subdir.mk" > "$DEBUG_DIR/foundation/subdir.mk.tmp" && \
+    mv "$DEBUG_DIR/foundation/subdir.mk.tmp" "$DEBUG_DIR/foundation/subdir.mk"
 if ! grep -q 'platform/module' "$DEBUG_DIR/platform/subdir.mk" 2>/dev/null; then
     sed -i '' 's|../platform/dshot_ex.c \\|../platform/dshot_ex.c \\\
 ../platform/module.c \\|' "$DEBUG_DIR/platform/subdir.mk"

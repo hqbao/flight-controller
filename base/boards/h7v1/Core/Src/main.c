@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <platform.h>
+#include <pubsub.h>
 #include "platform_storage.h"
 #include "platform_hw.h"
 
@@ -191,7 +192,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  platform_loop();
+	  publish(LOOP, NULL, 0);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

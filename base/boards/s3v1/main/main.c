@@ -2,6 +2,7 @@
 #include <freertos/task.h>
 #include <esp_timer.h>
 #include <platform.h>
+#include <pubsub.h>
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_master.h>
@@ -13,6 +14,18 @@
 #define TAG "main.c"
 
 typedef void (*timer_callback_t)(void*);
+
+static void sched_4khz(void*)  { publish(SCHEDULER_4KHZ, NULL, 0); }
+static void sched_2khz(void*)  { publish(SCHEDULER_2KHZ, NULL, 0); }
+static void sched_1khz(void*)  { publish(SCHEDULER_1KHZ, NULL, 0); }
+static void sched_500hz(void*) { publish(SCHEDULER_500HZ, NULL, 0); }
+static void sched_250hz(void*) { publish(SCHEDULER_250HZ, NULL, 0); }
+static void sched_100hz(void*) { publish(SCHEDULER_100HZ, NULL, 0); }
+static void sched_50hz(void*)  { publish(SCHEDULER_50HZ, NULL, 0); }
+static void sched_25hz(void*)  { publish(SCHEDULER_25HZ, NULL, 0); }
+static void sched_10hz(void*)  { publish(SCHEDULER_10HZ, NULL, 0); }
+static void sched_5hz(void*)   { publish(SCHEDULER_5HZ, NULL, 0); }
+static void sched_1hz(void*)   { publish(SCHEDULER_1HZ, NULL, 0); }
 
 #define PWDN_GPIO_NUM     -1
 #define RESET_GPIO_NUM    -1
@@ -146,7 +159,10 @@ char platform_i2c_write_read_dma(i2c_port__t port, uint8_t address, uint8_t *inp
   uint8_t *output, uint16_t output_size) {
   esp_err_t ret = i2c_master_transmit_receive(*i2c_master_dev_handlers[port], 
     input, input_size, output, output_size, -1);
-  if (ret == ESP_OK) platform_i2c_data_dma_callback(port);
+  if (ret == ESP_OK) {
+    i2c_port__t p = port;
+    publish(I2C_CALLBACK_UPDATE, (uint8_t*)&p, 1);
+  }
   return ret == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
@@ -187,7 +203,8 @@ char platform_spi_write_read(spi_port_t spi_port,
   };
   
   esp_err_t status = spi_device_polling_transmit(*spi_device_handlers[spi_port], &t);
-  platform_spi_data_dma_callback(spi_port);
+  spi_port_t p = spi_port;
+  publish(SPI_CALLBACK_UPDATE, (uint8_t*)&p, 1);
   return status == ESP_OK ? PLATFORM_OK : PLATFORM_ERROR;
 }
 
@@ -371,23 +388,23 @@ void core0() {
   // Setup DSHOT
 
   // Setup timers
-  create_timer(platform_scheduler_4khz, 4000);
-  create_timer(platform_scheduler_2khz, 2000);
-  create_timer(platform_scheduler_1khz, 1000);
-  create_timer(platform_scheduler_500hz, 500);
-  create_timer(platform_scheduler_250hz, 250);
-  create_timer(platform_scheduler_100hz, 100);
-  create_timer(platform_scheduler_50hz, 50);
-  create_timer(platform_scheduler_25hz, 25);
-  create_timer(platform_scheduler_10hz, 10);
-  create_timer(platform_scheduler_5hz, 5);
-  create_timer(platform_scheduler_1hz, 1);
+  create_timer(sched_4khz, 4000);
+  create_timer(sched_2khz, 2000);
+  create_timer(sched_1khz, 1000);
+  create_timer(sched_500hz, 500);
+  create_timer(sched_250hz, 250);
+  create_timer(sched_100hz, 100);
+  create_timer(sched_50hz, 50);
+  create_timer(sched_25hz, 25);
+  create_timer(sched_10hz, 10);
+  create_timer(sched_5hz, 5);
+  create_timer(sched_1hz, 1);
 
   // Setup platform modules
   platform_setup();
 
   while (1) {
-    platform_loop();
+    publish(LOOP, NULL, 0);
     platform_delay(10);
   }
 }

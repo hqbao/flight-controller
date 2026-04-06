@@ -98,29 +98,7 @@ char platform_storage_write(uint16_t start, uint16_t size, uint8_t *data);
 
 void platform_console(const char *format, ...);
 
-// Incoming functions
-void platform_scheduler_1hz(void*);
-void platform_scheduler_5hz(void*);
-void platform_scheduler_10hz(void*);
-void platform_scheduler_25hz(void*);
-void platform_scheduler_50hz(void*);
-void platform_scheduler_100hz(void*);
-void platform_scheduler_250hz(void*);
-void platform_scheduler_500hz(void*);
-void platform_scheduler_1khz(void*);
-void platform_scheduler_2khz(void*);
-void platform_scheduler_4khz(void*);
-void platform_scheduler_8khz(void*);
-
-void platform_receive_db_message(uint8_t *data, uint16_t size);
-void platform_receive_ubx_message(uint8_t *data, uint16_t size);
-void platform_on_fault_detected(uint8_t *data, uint16_t size);
-
 void platform_setup(void);
-void platform_loop(void);
-
-void platform_i2c_data_dma_callback(i2c_port__t port);
-void platform_spi_data_dma_callback(spi_port_t port);
 
 #define print platform_console
 

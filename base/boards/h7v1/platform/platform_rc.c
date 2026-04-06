@@ -5,12 +5,13 @@
  *
  * Decodes PPM pulse train from TIM16 input capture. Outputs a DB-protocol
  * style message with roll/pitch/yaw/throttle/state/mode via
- * platform_receive_db_message().
+ * publish(DB_MESSAGE_UPDATE).
  ******************************************************************************
  */
 
 #include "platform_hw.h"
 #include <platform.h>
+#include <pubsub.h>
 #include <string.h>
 
 /* --- Constants ----------------------------------------------------------- */
@@ -81,7 +82,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
 				memcpy(&g_rc_db_msg_payload[16], (uint8_t *)&alt,   sizeof(int));
 				g_rc_db_msg_payload[20] = state;
 				g_rc_db_msg_payload[21] = mode;
-				platform_receive_db_message(g_rc_db_msg_payload, 22);
+				publish(DB_MESSAGE_UPDATE, g_rc_db_msg_payload, 22);
 			}
 			break;
 		}

@@ -7,6 +7,7 @@
 
 #include "platform_hw.h"
 #include <platform.h>
+#include <pubsub.h>
 
 /* --- Platform API -------------------------------------------------------- */
 
@@ -24,10 +25,13 @@ char platform_spi_write_read(spi_port_t spi_port,
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
 	if (hspi->Instance == SPI1) {
-		platform_spi_data_dma_callback(SPI_PORT1);
+		spi_port_t port = SPI_PORT1;
+		publish(SPI_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	} else if (hspi->Instance == SPI2) {
-		platform_spi_data_dma_callback(SPI_PORT2);
+		spi_port_t port = SPI_PORT2;
+		publish(SPI_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	} else if (hspi->Instance == SPI3) {
-		platform_spi_data_dma_callback(SPI_PORT3);
+		spi_port_t port = SPI_PORT3;
+		publish(SPI_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	}
 }

@@ -7,6 +7,7 @@
 
 #include "platform_hw.h"
 #include <platform.h>
+#include <pubsub.h>
 
 /* Port mapping: I2C_PORT1→I2C1, I2C_PORT2→I2C3, I2C_PORT3→I2C4 */
 static I2C_HandleTypeDef *i2c_ports[3] = {&hi2c1, &hi2c3, &hi2c4};
@@ -47,10 +48,13 @@ char platform_i2c_write(i2c_port__t port, uint8_t address,
 
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 	if (hi2c->Instance == I2C1) {
-		platform_i2c_data_dma_callback(I2C_PORT1);
+		i2c_port__t port = I2C_PORT1;
+		publish(I2C_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	} else if (hi2c->Instance == I2C3) {
-		platform_i2c_data_dma_callback(I2C_PORT2);
+		i2c_port__t port = I2C_PORT2;
+		publish(I2C_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	} else if (hi2c->Instance == I2C4) {
-		platform_i2c_data_dma_callback(I2C_PORT3);
+		i2c_port__t port = I2C_PORT3;
+		publish(I2C_CALLBACK_UPDATE, (uint8_t*)&port, 1);
 	}
 }
