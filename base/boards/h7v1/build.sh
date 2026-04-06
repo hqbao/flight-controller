@@ -123,6 +123,46 @@ if ! grep -q 'modules/calibration/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
     printf '"./modules/calibration/calibration_mag.o"\n' >> "$DEBUG_DIR/objects.list"
 fi
 
+# Add config module to build (if missing — CubeIDE doesn't know about it)
+if ! grep -q 'modules/config' "$DEBUG_DIR/makefile" 2>/dev/null; then
+    sed -i '' 's|-include modules/calibration/subdir.mk|-include modules/config/subdir.mk\
+-include modules/calibration/subdir.mk|' "$DEBUG_DIR/makefile"
+fi
+if ! grep -q 'modules/config' "$DEBUG_DIR/sources.mk" 2>/dev/null; then
+    sed -i '' '/^modules\/calibration/a\
+modules/config \\
+' "$DEBUG_DIR/sources.mk"
+fi
+if ! grep -q 'modules/config/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./modules/config/config.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
+# Create config subdir.mk (build rules for config module)
+CONFIG_DIR="$DEBUG_DIR/modules/config"
+mkdir -p "$CONFIG_DIR"
+if [[ ! -f "$CONFIG_DIR/subdir.mk" ]]; then
+    MODULES_ABS="$(cd "$PROJECT_DIR/../../../modules" && pwd)"
+    cat > "$CONFIG_DIR/subdir.mk" << SUBMK
+C_SRCS += \\
+$MODULES_ABS/config/config.c
+
+OBJS += \\
+./modules/config/config.o
+
+C_DEPS += \\
+./modules/config/config.d
+
+modules/config/config.o: $MODULES_ABS/config/config.c modules/config/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+clean: clean-modules-2f-config
+
+clean-modules-2f-config:
+	-\$(RM) ./modules/config/config.cyclo ./modules/config/config.d ./modules/config/config.o ./modules/config/config.su
+
+.PHONY: clean-modules-2f-config
+SUBMK
+fi
+
 # Add mix_control module to build (if missing — CubeIDE doesn't know about it)
 if ! grep -q 'modules/mix_control' "$DEBUG_DIR/makefile" 2>/dev/null; then
     sed -i '' 's|-include modules/attitude_control/subdir.mk|-include modules/mix_control/subdir.mk\

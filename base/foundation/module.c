@@ -19,6 +19,7 @@
 #include <flight_telemetry/flight_telemetry.h>
 #include <speed_control/speed_control.h>
 #include <logger/logger.h>
+#include <config/config.h>
 #include <fft/fft.h>
 #include <notch_filter/notch_filter.h>
 
@@ -26,6 +27,7 @@ void platform_setup(void) {
 	flight_state_setup();
 	local_storage_setup();
 	calibration_setup();
+	config_setup();
 	fault_handler_setup();
 	speed_control_setup();
 	imu_setup();
