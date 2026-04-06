@@ -91,7 +91,7 @@ flight-controller/
 
 ### Module System
 Modules follow a strict **setup → subscribe → publish** pattern:
-- Each module exports `<module>_setup(void)`, called from `base/foundation/module.c`
+- Each module exports `<module>_setup(void)`, called from the board-specific `module.c` (e.g. `base/boards/h7v1/platform/module.c`)
 - Modules subscribe to topics (sensor data, scheduler ticks) and publish results
 - **No direct calls between modules** — all communication via pub/sub
 

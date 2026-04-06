@@ -73,7 +73,7 @@ fi
 
 # Add platform .o files to objects.list (if missing)
 if ! grep -q 'platform/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
-    printf '"./platform/dshot.o"\n"./platform/dshot_ex.o"\n"./platform/platform_common.o"\n"./platform/platform_i2c.o"\n"./platform/platform_pwm.o"\n"./platform/platform_rc.o"\n"./platform/platform_spi.o"\n"./platform/platform_uart.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./platform/dshot.o"\n"./platform/dshot_ex.o"\n"./platform/module.o"\n"./platform/platform_common.o"\n"./platform/platform_i2c.o"\n"./platform/platform_pwm.o"\n"./platform/platform_rc.o"\n"./platform/platform_spi.o"\n"./platform/platform_uart.o"\n' >> "$DEBUG_DIR/objects.list"
 fi
 
 # Remove dshot from Core/Src in objects.list (they live in platform/ now)
@@ -82,6 +82,22 @@ sed -i '' '/\.\/Core\/Src\/dshot\.o/d;/\.\/Core\/Src\/dshot_ex\.o/d' "$DEBUG_DIR
 # Remove dshot_bidir references (source file doesn't exist yet)
 sed -i '' '/dshot_bidir/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
 sed -i '' '/dshot_bidir/d' "$DEBUG_DIR/platform/subdir.mk" 2>/dev/null || true
+
+# Move module.c from foundation/ to platform/ (module.c is board-specific, not shared)
+# CubeIDE may regenerate it under foundation/ — always fix it
+sed -i '' '/foundation\/module/d' "$DEBUG_DIR/foundation/subdir.mk" 2>/dev/null || true
+sed -i '' '/foundation\/module/d' "$DEBUG_DIR/objects.list" 2>/dev/null || true
+if ! grep -q 'platform/module' "$DEBUG_DIR/platform/subdir.mk" 2>/dev/null; then
+    sed -i '' 's|../platform/dshot_ex.c \\|../platform/dshot_ex.c \\\
+../platform/module.c \\|' "$DEBUG_DIR/platform/subdir.mk"
+    sed -i '' 's|./platform/dshot_ex.o \\|./platform/dshot_ex.o \\\
+./platform/module.o \\|' "$DEBUG_DIR/platform/subdir.mk"
+    sed -i '' 's|./platform/dshot_ex.d \\|./platform/dshot_ex.d \\\
+./platform/module.d \\|' "$DEBUG_DIR/platform/subdir.mk"
+fi
+if ! grep -q 'platform/module' "$DEBUG_DIR/objects.list" 2>/dev/null; then
+    printf '"./platform/module.o"\n' >> "$DEBUG_DIR/objects.list"
+fi
 
 # Remove deleted modules (oscillation_detection, linear_drift_detection) from CubeIDE build
 sed -i '' '/oscillation_detection/d' "$DEBUG_DIR/makefile" 2>/dev/null || true

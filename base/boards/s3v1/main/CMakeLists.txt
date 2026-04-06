@@ -14,7 +14,7 @@ file(GLOB_RECURSE MODULE_C_SOURCES
 
 idf_component_register(
   SRCS 
-  "main.c" "image_util.c"
+  "main.c" "image_util.c" "module.c"
   ${FOUNDATION_C_SOURCES}
   ${MODULE_C_SOURCES}
   INCLUDE_DIRS "." ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR} ${OPTFLOW_DIR}

@@ -30,7 +30,7 @@ set(APP_ALL_SOURCES
 )
 
 idf_component_register(
-    SRCS "main.c" ${APP_ALL_SOURCES}
+    SRCS "main.c" "module.c" ${APP_ALL_SOURCES}
     INCLUDE_DIRS "." ${VIDEO_DIR} ${OPTFLOW_DIR} ${DISPLAY_DIR} ${FOUNDATION_DIR} ${MODULE_DIR} ${ROBOTKIT_DIR}
 )
 
