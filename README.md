@@ -69,8 +69,7 @@ flight-controller/
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── fft/                       #   FFT vibration analysis
 │   ├── notch_filter/              #   Gyro notch filter (motor vibration rejection)
-│   ├── db_reader/                 #   UART protocol parser (DB/UBX frame detection)
-│   ├── db_sender/                 #   UART TX queue + telemetry framing
+│   ├── dblink/                    #   UART protocol parser + TX queue (DB/UBX framing)
 │   └── local_storage/             #   Persistent configuration storage
 │
 ├── tools/                         # Python host tools
@@ -166,30 +165,30 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 - `LINEAR_ACCEL_UPDATE` — Gravity-removed acceleration, body + earth frame (from fusion)
 - `POSITION_STATE_UPDATE` — Estimated position and velocity
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
-- `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → db_reader)
-- `UART_RAW_RECEIVED` — Raw UART DMA bytes (from platform_uart → db_reader)
-- `UART_RAW_SEND` / `UART_TX_COMPLETE` — UART TX queue management (db_sender)
-- `SEND_LOG` — Immediate telemetry output (module publishes data → db_sender sends UART frame)
-- `NOTIFY_LOG_CLASS` — Runtime log class selection (from Python tool → UART → db_sender → all modules)
+- `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → dblink)
+- `UART_RAW_RECEIVED` — Raw UART DMA bytes (from platform_uart → dblink)
+- `UART_RAW_SEND` / `UART_TX_COMPLETE` — UART TX queue management (dblink)
+- `SEND_LOG` — Immediate telemetry output (module publishes data → dblink sends UART frame)
+- `NOTIFY_LOG_CLASS` — Runtime log class selection (from Python tool → UART → dblink → all modules)
 
 ### UART Architecture (STM32H7)
 Implemented in `base/boards/h7v1/platform/platform_uart.c`.
 
-All 4 UART ports use **DMA circular ring buffers** (32 bytes each) with **IDLE line detection** for reception. Raw bytes are published via `UART_RAW_RECEIVED`, and the `db_reader` module performs protocol auto-detection (both **DB** and **UBX** framing) on every port — no port is locked to a single protocol.
+All 4 UART ports use **DMA circular ring buffers** (32 bytes each) with **IDLE line detection** for reception. Raw bytes are published via `UART_RAW_RECEIVED`, and the `dblink` module performs protocol auto-detection (both **DB** and **UBX** framing) on every port — no port is locked to a single protocol.
 
 **Receive (IDLE+DMA):**
 - DMA hardware fills the buffer continuously with zero CPU cost
 - `HAL_UARTEx_ReceiveToIdle_DMA` fires `HAL_UARTEx_RxEventCallback` when the UART line goes idle (sender stops transmitting), providing the exact byte count received
 - `g_last_pos[port]` tracks the last processed position in the circular buffer, handling wraparound correctly
 - Half-transfer interrupt is disabled (`__HAL_DMA_DISABLE_IT(DMA_IT_HT)`) — only IDLE events trigger processing
-- `db_reader` validates `payload_size` against buffer bounds to prevent overflow from corrupted length fields
+- `dblink` validates `payload_size` against buffer bounds to prevent overflow from corrupted length fields
 - `HAL_UART_ErrorCallback` resets `g_last_pos`, restarts IDLE+DMA reception after any UART error (overrun, framing, noise) — prevents permanent reception loss
 
 > **Why IDLE detection instead of half/complete callbacks?** Fixed half/complete DMA boundaries (e.g., 16-byte halves) cause bytes to get stuck when frame sizes don't align with boundaries. A 9-byte frame in a 32-byte buffer leaves 7 bytes waiting for more data before the next callback fires. IDLE detection solves this by firing whenever the sender finishes transmitting, regardless of byte count — commands are processed immediately with no boundary-dependent delays.
 
 **Transmit:** USART1 also handles telemetry TX and Python tool commands. USART2–4 are receive-only.
 
-All ports route raw bytes to `db_reader`, which auto-detects both **DB** and **UBX** framing — any device (GPS, optical flow, external sensor) can be connected to any port.
+All ports route raw bytes to `dblink`, which auto-detects both **DB** and **UBX** framing — any device (GPS, optical flow, external sensor) can be connected to any port.
 
 | UART | Baud | Direction | Notes |
 |------|------|-----------|-------|
@@ -356,7 +355,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | `position_estimation.c` | Optical flow & altitude (6 floats) |
 | `LOG_CLASS_ATTITUDE_MAG` | `0x07` | `attitude_estimation.c` | Mag debug: raw, earth, attitude (9 floats) |
 | `LOG_CLASS_GYRO_CAL` | `0x08` | — | *(Reserved — gyro calibration moved to Python tool)* |
-| `LOG_CLASS_HEART_BEAT` | `0x09` | `db_sender.c` | Heartbeat counter (1 float, 1 Hz) — active by default on power-up |
+| `LOG_CLASS_HEART_BEAT` | `0x09` | `dblink` | Heartbeat counter (1 float, 1 Hz) — active by default on power-up |
 | `LOG_CLASS_IMU_ACCEL_CALIB` | `0x0A` | `imu.c` | Calibrated accelerometer + temperature (4 floats) |
 | `LOG_CLASS_IMU_GYRO_RAW` | `0x0B` | `imu.c` | Raw gyroscope + temperature (4 floats, LSB + °C) |
 | `LOG_CLASS_IMU_GYRO_CALIB` | `0x0C` | `imu.c` | Calibrated gyroscope + temperature (4 floats, °/s + °C) |
@@ -396,7 +395,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `mix_control_test.py` | Real-time motor speed visualizer (8 motors) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
-| `test_log_classes.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
+| `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
 
 > **Common controls:** All tools include **Start/Stop Log** (toggles data streaming), **Chip ID** (displays the FC's unique hardware identifier), and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools additionally include **Test Storage** — uploads known test values to flash and reads them back to verify the serial + storage round-trip before real calibration.
 

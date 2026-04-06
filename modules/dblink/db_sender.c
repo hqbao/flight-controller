@@ -1,4 +1,3 @@
-#include "db_sender.h"
 #include <pubsub.h>
 #include <platform.h>
 #include <macro.h>

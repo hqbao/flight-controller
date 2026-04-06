@@ -9,7 +9,7 @@ Parses incoming **UBX NAV-PVT** messages from a u-blox GPS receiver and publishe
 ```
 u-blox ZED-F9P (UART 38400 baud)
     │
-    ▼  DMA ring buffer → UART_RAW_RECEIVED → db_reader (UBX auto-detect)
+    ▼  DMA ring buffer → UART_RAW_RECEIVED → dblink (UBX auto-detect)
   UBX_MESSAGE_UPDATE
     │
     ▼  Validate: NAV class (0x01), PVT message (0x07)

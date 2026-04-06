@@ -21,12 +21,10 @@
 #include <config/config.h>
 #include <fft/fft.h>
 #include <notch_filter/notch_filter.h>
-#include <db_reader/db_reader.h>
-#include <db_sender/db_sender.h>
+#include <dblink/dblink.h>
 
 void platform_setup(void) {
-	db_sender_setup();
-	db_reader_setup();
+	dblink_setup();
 	flight_state_setup();
 	local_storage_setup();
 	calibration_setup();

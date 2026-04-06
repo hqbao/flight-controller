@@ -33,7 +33,7 @@ static int16_t write_byte_to_reg(uint8_t reg_addr, uint8_t data);
 
 static int16_t wait_for_reg_value(uint8_t reg_addr, uint8_t reg_value, uint8_t mask);
 
-static int16_t get_scale_factor_for(uint8_t rate, uint32_t *p_factor);
+//static int16_t get_scale_factor_for(uint8_t rate, uint32_t *p_factor);
 
 static int16_t read_temperature(float *p_temperature);
 

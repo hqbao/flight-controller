@@ -13,7 +13,7 @@ For each log class, tests:
   - Print sample values for tracing
   - Stop logging before moving to next test
 
-Usage: python3 test_log_classes.py [serial_port]
+Usage: python3 test_dblink.py [serial_port]
 """
 
 import sys

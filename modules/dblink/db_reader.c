@@ -1,4 +1,3 @@
-#include "db_reader.h"
 #include <pubsub.h>
 #include <messages.h>
 #include <string.h>
