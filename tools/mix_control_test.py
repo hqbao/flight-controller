@@ -32,7 +32,7 @@ Usage:
 
 # --- Configuration ---
 SERIAL_PORT = None
-BAUD_RATE = 9600
+BAUD_RATE = 19200
 SEND_LOG_ID = 0x00
 
 # Log class constants (match messages.h)

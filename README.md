@@ -281,45 +281,44 @@ Temperature compensation is **not needed** — ICM-42688P accel thermal drift (~
 
 1. Build & flash firmware, connect via USB
 2. Run `python3 tools/calibration_accel.py`
-3. Click **"Test Stor"** to verify FC serial + flash round-trip works
-4. Click **"Start Log"** — yellow arrow shows live accelerometer reading
-5. Place drone in 6 orientations, click **"Capture"** for each:
+3. Click **"Start Log"** — yellow arrow shows live accelerometer reading
+4. Place drone in 6 orientations, click **"Capture"** for each:
    Flat (Z up), Inverted (Z down), Left (Y up), Right (Y down), Nose up (X up), Nose down (X down)
-6. Click **"Compute"** — red dots = raw, green dots = corrected
-7. Click **"Upload"** — sends bias + scale (12 floats) to FC flash
-8. Click **"Verify"** — reads back flash to confirm persistence
-9. Click **"View Cal"** — switches to calibrated stream; magnitude should read ~16384 in all orientations
-- **"Save CSV"** / **"Load CSV"** persist captured positions to `tools/data/` with chip ID in filename
+5. Click **"Compute"** — red dots = raw, green dots = corrected
+6. Click **"Upload"** — sends bias + scale (12 floats) to FC flash
+7. Click **"Query FC"** — reads back flash to confirm persistence
+8. Click **"View Cal"** — switches to calibrated stream; magnitude should read ~16384 in all orientations
+- **"Default"** uploads identity calibration (zero bias, identity scale) to reset
+- **"Save CSV"** / **"Load CSV"** persist captured positions to `tools/.calibration_data/` with chip ID in filename
 
 ### Compass (Ellipsoid Fit)
 Fits a full ellipsoid `V_cal = S × (V_raw − B)` with cross-coupling terms for soft iron correction.
 
 1. Build & flash firmware, connect via USB
 2. Run `python3 tools/calibration_compass.py`
-3. Click **"Test Stor"** to verify FC serial + flash round-trip works
-4. Click **"Start Log"** — yellow arrow shows live magnetometer reading
-5. Click **"Stream"**, then rotate drone in all directions (figure-8 motion)
-6. Watch green dots form a sphere — auto-fit runs every 1 second with ≥20 points
+3. Click **"Start Log"** — yellow arrow shows live magnetometer reading
+4. Click **"Stream"**, then rotate drone in all directions (figure-8 motion)
+5. Watch red dots fill the sphere and green dots converge — auto-fit runs every 1 second with ≥20 points
+6. Click **"Stream"** again to stop when coverage is complete
 7. Click **"Upload"** — sends bias + scale matrix (12 floats) to FC flash
-8. Click **"Verify"** — reads back flash to confirm persistence
+8. Click **"Query FC"** — reads back flash to confirm persistence
 9. Click **"View Cal"** — switches to calibrated stream; magnitude should stay ~1.0 in all orientations
-- **"Save CSV"** / **"Load CSV"** persist collected raw points to `tools/data/` with chip ID in filename
-- **"Chip ID"** displays the FC's unique hardware identifier
+- **"Default"** uploads identity calibration (zero bias, identity scale) to reset
+- **"Save CSV"** / **"Load CSV"** persist collected raw points to `tools/.calibration_data/` with chip ID in filename
 
 ### Gyroscope (Temperature Compensation)
 Fits a quadratic polynomial `bias(T) = a·T² + b·T + c` per axis, allowing the FC to compensate gyro drift across the operating temperature range.
 
 1. Build & flash firmware, connect via USB
 2. Run `python3 tools/calibration_gyro.py`
-3. Click **"Test Stor"** to verify FC serial + flash round-trip works
-4. Click **"Start Log"** — raw gyro + temperature data streams at 25 Hz
-5. Click **"Record"** — begins recording gyro/temperature samples
-6. Wait for temperature to vary (cold start → warm-up gives best spread)
-7. Click **"Record"** again to stop, or let it auto-stop; data is saved as CSV in `tools/data/`
-8. Click **"Load CSV"** to load a saved recording, then review the polynomial fit
-9. Click **"Upload to FC"** — sends 9 float coefficients (3 axes × a,b,c) to flash
-10. Click **"Verify"** to read back stored coefficients, **"View Cal"** to see compensated output
-- Recordings include chip ID in the filename for multi-board tracking
+3. Click **"Start Log"** — raw gyro + temperature data streams at 25 Hz
+4. Click **"Record"** — begins recording gyro/temperature samples
+5. Wait for temperature to vary (cold start → warm-up gives best spread)
+6. Click **"Record"** again to stop
+7. Click **"Compute"** — fits polynomial, shows curves on chart
+8. Click **"Upload"** — sends 9 float coefficients (3 axes × a,b,c) to flash
+9. Click **"Query FC"** to read back stored coefficients, **"View Cal"** to see compensated output
+- **"Save CSV"** / **"Load CSV"** persist recordings to `tools/.calibration_data/` with chip ID in filename
 - Subsequent boots load coefficients from flash and apply temperature compensation automatically
 
 ### GPS (ZED-F9P)
@@ -389,15 +388,15 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_optflow.py` | Optical flow (downward/upward) & altitude sensors (range finder/barometer) time-series |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
-| `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, test storage, upload) |
-| `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (test storage, chip ID, CSV save/load) |
-| `calibration_compass.py` | Compass ellipsoid fit calibration (test storage, chip ID, CSV save/load) |
+| `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
+| `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
+| `calibration_compass.py` | Compass ellipsoid fit calibration (upload, query, default, CSV) |
 | `mix_control_test.py` | Real-time motor speed visualizer (8 motors) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
 
-> **Common controls:** All tools include **Start/Stop Log** (toggles data streaming), **Chip ID** (displays the FC's unique hardware identifier), and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools additionally include **Test Storage** — uploads known test values to flash and reads them back to verify the serial + storage round-trip before real calibration.
+> **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect.
 
 ## Related Projects
 

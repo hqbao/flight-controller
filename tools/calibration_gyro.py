@@ -29,7 +29,7 @@ Workflow:
   3. Click "Record" to start capturing temperature sweep data
   4. Wait for ≥3°C temperature range, click "Stop Rec"
   5. Click "Compute" — fits degree-2 polynomial per axis
-  6. Click "Upload to FC" — sends 9 coefficients to flash
+  6. Click "Upload" — sends 9 coefficients to flash
   7. Click "Query FC" to verify stored coefficients
 
   Alternatively: save CSV, collect data over time, load CSV later.
@@ -40,7 +40,7 @@ Usage:
 
 # --- Configuration ---
 SERIAL_PORT = None
-BAUD_RATE = 9600
+BAUD_RATE = 19200
 SEND_LOG_ID = 0x00
 HISTORY_LEN = 200
 WINDOW_SIZE = 50           # Samples per averaging window
@@ -262,7 +262,7 @@ def main():
     fig = plt.figure(figsize=(15, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('Gyroscope Temperature Calibration', fontsize=14, color=TEXT_COLOR)
-    plt.subplots_adjust(left=0.07, right=0.70, bottom=0.14, top=0.92, hspace=0.35)
+    plt.subplots_adjust(left=0.07, right=0.70, bottom=0.22, top=0.92, hspace=0.35)
 
     # --- Gyro history chart ---
     ax_gyro = fig.add_subplot(2, 1, 1)
@@ -284,7 +284,7 @@ def main():
     ax_temp.grid(True, alpha=0.3)
 
     # --- Right-side status panel ---
-    ax_info = fig.add_axes([0.72, 0.14, 0.26, 0.78])
+    ax_info = fig.add_axes([0.72, 0.22, 0.26, 0.70])
     ax_info.set_facecolor(PANEL_COLOR)
     ax_info.set_xlim(0, 1)
     ax_info.set_ylim(0, 1)
@@ -338,10 +338,10 @@ def main():
     # --- Button row ---
     btn_h = 0.04
     btn_w = 0.07
-    row1_y = 0.065
-    row2_y = 0.015
+    row1_y = 0.12
+    row2_y = 0.065
 
-    # Row 1: Start Log | Record | Compute | Upload to FC | Query FC | Save CSV | Load CSV | Reset FC
+    # Row 1: Start Log | Record | Compute | Upload | Query FC | Save CSV | Load CSV | Reset FC
     ax_toggle = fig.add_axes([0.04, row1_y, btn_w, btn_h])
     btn_toggle = Button(ax_toggle, 'Start Log', color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
     btn_toggle.label.set_color(TEXT_COLOR)
@@ -355,7 +355,7 @@ def main():
     btn_compute.label.set_color(TEXT_COLOR)
 
     ax_upload = fig.add_axes([0.28, row1_y, 0.09, btn_h])
-    btn_upload = Button(ax_upload, 'Upload to FC', color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_upload = Button(ax_upload, 'Upload', color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
     btn_upload.label.set_color(TEXT_COLOR)
     btn_upload.label.set_fontweight('bold')
 

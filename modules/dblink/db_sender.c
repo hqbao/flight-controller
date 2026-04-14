@@ -76,7 +76,7 @@ static void on_tx_complete(uint8_t *data, size_t size) {
 
 /* --- Logger (DB frame encoding) ------------------------------------------ */
 
-// Baud rate budget (UART_PORT1 = 9600 baud, 8N1 = 960 bytes/sec):
+// Baud rate budget (UART_PORT1 = 19200 baud, 8N1 = 1920 bytes/sec):
 //   Frame = header(6) + payload(N) + checksum(2) = N + 8 bytes
 //   At 25 Hz: max frame = 960/25 = 38 bytes -> max payload = 30 bytes (7 floats)
 //   At 10 Hz: max frame = 960/10 = 96 bytes -> max payload = 88 bytes (22 floats)

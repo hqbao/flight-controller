@@ -86,6 +86,7 @@ Release/
 # Python (Tools / Scripts)
 # ----------------------------------------------------------------------
 tools/data/
+tools/.calibration_data/
 __pycache__/
 *.pyc
 *.pyo

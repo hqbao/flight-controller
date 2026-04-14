@@ -295,7 +295,7 @@ void attitude_estimation_setup(void) {
 	subscribe(SENSOR_COMPASS, mag_update);
 
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
-	// 10 Hz: 36-byte payload (9 floats) exceeds 30-byte max at 25 Hz (9600 baud)
+	// 10 Hz: 36-byte payload (9 floats) exceeds 30-byte max at 25 Hz (19200 baud)
 	subscribe(SCHEDULER_10HZ, loop_logger);
 }
 

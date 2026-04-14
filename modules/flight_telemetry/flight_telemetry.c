@@ -26,7 +26,7 @@
  *   4=downward_range, 5=optflow_down, 6=optflow_up, 7=gps
  *
  * Bandwidth: 66 + 8 overhead = 74 bytes/frame × 10 Hz = 740 bytes/s
- * (within 960 bytes/s at 9600 baud)
+ * (within 1920 bytes/s at 19200 baud)
  */
 
 #define TELEMETRY_FRAME_SIZE 66
