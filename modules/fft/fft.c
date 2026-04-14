@@ -3,11 +3,16 @@
 #include <platform.h>
 #include <macro.h>
 #include <messages.h>
+#include <fft_analysis.h>
 #include <string.h>
 #include <math.h>
 
 /*
  * FFT Module — On-board vibration analysis, peak detection, and spectrum logging.
+ *
+ * Uses robotkit fft_analysis library for DSP (FFT, peak detection).
+ * This module handles PubSub wiring, ring buffer collection, EMA smoothing,
+ * and log streaming.
  *
  * Two responsibilities:
  *
@@ -42,7 +47,7 @@ static uint8_t g_log_peaks = 0;       /* 1 = streaming smoothed peaks */
 static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z */
 
 /* ================================================================
- *  FFT Peak Detection Configuration
+ *  Configuration
  * ================================================================ */
 
 #define FFT_SIZE            256      /* Must be power of 2 */
@@ -50,23 +55,18 @@ static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z
 #define FFT_MIN_HZ          50.0f   /* Ignore below (body motion, not vibration) */
 #define FFT_MAX_HZ         200.0f   /* Ignore above (motor vibration range) */
 #define FFT_SPECTRUM_HZ    200.0f   /* Spectrum log: send bins up to this freq */
+#define FREQ_BIN_HZ        (FFT_SAMPLE_HZ / (float)FFT_SIZE)
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
 #define FFT_PEAK_SNR         8.0f   /* Peak must be 8× above mean power */
+#define FFT_PEAK_MIN_PWR     1.0f   /* Absolute minimum power threshold */
 #define FREQ_EMA_ALPHA       0.3f   /* Frequency smoothing (0=frozen, 1=instant) */
 #define MIN_PEAK_SEP_HZ     20.0f   /* Minimum Hz between two peaks */
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
 #define FFT_SPECTRUM_RANGE_DB  60.0f   /* dB range (floor+60 → white) */
 
-#define FREQ_BIN_HZ         (FFT_SAMPLE_HZ / (float)FFT_SIZE)
-#define MIN_PEAK_SEP_BINS   ((int)(MIN_PEAK_SEP_HZ / FREQ_BIN_HZ))
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 /* ================================================================
- *  FFT State
+ *  State
  * ================================================================ */
 
 static float g_ring[3][FFT_SIZE];         /* Per-axis gyro ring buffer */
@@ -79,129 +79,7 @@ static uint8_t g_fft_axis;               /* Current axis (0=X, 1=Y, 2=Z) */
 static float g_smooth_freq[3][FFT_NUM_PEAKS]; /* EMA-smoothed peak frequencies */
 static volatile uint8_t g_fft_pending;   /* Flag: ISR requests FFT run in LOOP */
 
-/* ================================================================
- *  FFT Implementation — In-place Radix-2 Cooley-Tukey DIT
- * ================================================================ */
-
-static void init_window(void) {
-	for (int i = 0; i < FFT_SIZE; i++) {
-		g_window[i] = 0.5f * (1.0f - cosf(2.0f * (float)M_PI
-			* (float)i / (float)(FFT_SIZE - 1)));
-	}
-}
-
-static void fft_radix2(float *re, float *im, int n) {
-	/* Bit-reversal permutation */
-	int j = 0;
-	for (int i = 0; i < n - 1; i++) {
-		if (i < j) {
-			float t;
-			t = re[i]; re[i] = re[j]; re[j] = t;
-			t = im[i]; im[i] = im[j]; im[j] = t;
-		}
-		int m = n >> 1;
-		while (m >= 1 && j >= m) {
-			j -= m;
-			m >>= 1;
-		}
-		j += m;
-	}
-
-	/* Butterfly stages */
-	for (int step = 1; step < n; step <<= 1) {
-		float angle = -(float)M_PI / (float)step;
-		float wr = cosf(angle);
-		float wi = sinf(angle);
-		for (int group = 0; group < n; group += step << 1) {
-			float cr = 1.0f, ci = 0.0f;
-			for (int pair = 0; pair < step; pair++) {
-				int a = group + pair;
-				int b = a + step;
-				float tr = cr * re[b] - ci * im[b];
-				float ti = cr * im[b] + ci * re[b];
-				re[b] = re[a] - tr;
-				im[b] = im[a] - ti;
-				re[a] += tr;
-				im[a] += ti;
-				float nr = cr * wr - ci * wi;
-				ci = cr * wi + ci * wr;
-				cr = nr;
-			}
-		}
-	}
-}
-
-/*
- * Find top FFT_NUM_PEAKS frequency peaks in the power spectrum.
- * Operates on g_fft_re/g_fft_im (destroyed — converted to power spectrum).
- */
-static void find_peaks(float *out_freq) {
-	int min_bin = (int)(FFT_MIN_HZ / FREQ_BIN_HZ) + 1;
-	int max_bin = (int)(FFT_MAX_HZ / FREQ_BIN_HZ);
-	if (max_bin > FFT_SIZE / 2) max_bin = FFT_SIZE / 2;
-
-	/* Convert to power spectrum in-place (full range for spectrum log).
-	 * Normalize by N/2 so bins represent true amplitude before squaring. */
-	int pwr_max = max_bin;
-	if (FFT_SPECTRUM_BINS > pwr_max) pwr_max = FFT_SPECTRUM_BINS;
-	float inv_half_n = 2.0f / (float)FFT_SIZE;
-	for (int i = 0; i < pwr_max; i++) {
-		float re = g_fft_re[i] * inv_half_n;
-		float im = g_fft_im[i] * inv_half_n;
-		g_fft_re[i] = re * re + im * im;
-	}
-
-	/* SNR threshold from peak-detection range only */
-	float sum = 0.0f;
-	for (int i = min_bin; i < max_bin; i++) {
-		sum += g_fft_re[i];
-	}
-	float mean = sum / (float)(max_bin - min_bin);
-	float threshold = mean * FFT_PEAK_SNR;
-
-	int found_bins[FFT_NUM_PEAKS];
-	for (int p = 0; p < FFT_NUM_PEAKS; p++) {
-		out_freq[p] = 0.0f;
-		found_bins[p] = -1;
-	}
-
-	/* Find peaks: strongest first, then next with min separation */
-	for (int p = 0; p < FFT_NUM_PEAKS; p++) {
-		float best_mag = 0.0f;
-		int best_bin = -1;
-
-		for (int i = min_bin; i < max_bin; i++) {
-			if (g_fft_re[i] < threshold) continue;
-
-			/* Local maximum check */
-			if (i > min_bin && g_fft_re[i] <= g_fft_re[i - 1]) continue;
-			if (i < max_bin - 1 && g_fft_re[i] <= g_fft_re[i + 1]) continue;
-
-			/* Enforce minimum separation from already-found peaks */
-			int too_close = 0;
-			for (int k = 0; k < p; k++) {
-				if (found_bins[k] < 0) continue;
-				int diff = i - found_bins[k];
-				if (diff < 0) diff = -diff;
-				if (diff < MIN_PEAK_SEP_BINS) {
-					too_close = 1;
-					break;
-				}
-			}
-			if (too_close) continue;
-
-			if (g_fft_re[i] > best_mag) {
-				best_mag = g_fft_re[i];
-				best_bin = i;
-			}
-		}
-
-		if (best_bin >= 0) {
-			out_freq[p] = (float)best_bin * FREQ_BIN_HZ;
-			found_bins[p] = best_bin;
-		}
-	}
-}
+static fft_peak_config_t g_peak_cfg;
 
 /* ================================================================
  *  Callbacks
@@ -270,7 +148,7 @@ static void on_loop(uint8_t *data, size_t size) {
 	fft_radix2(g_fft_re, g_fft_im, FFT_SIZE);
 
 	float peak_freq[FFT_NUM_PEAKS];
-	find_peaks(peak_freq);
+	fft_find_peaks(g_fft_re, g_fft_im, &g_peak_cfg, peak_freq);
 
 	/* Peak smoothing: only track peaks within valid range [MIN_HZ, MAX_HZ].
 	 * Out-of-range or missing → reset to 0. Back in range → snap (re-init).
@@ -316,8 +194,7 @@ static void on_loop(uint8_t *data, size_t size) {
 	 * Layout: [axis(1)] [bins(52 uint8)] [peak1(float)] [peak2(float)]
 	 * Total: 1 + 52 + 8 = 61 bytes */
 	if (g_log_spectrum && axis == (g_log_spectrum - 1)) {
-		/* g_fft_re[0..FFT_SIZE/2] already holds power spectrum from find_peaks().
-		 * Convert to dB scale: 10*log10(power), map to 0-255. */
+		/* g_fft_re[0..spectrum_bins-1] holds power spectrum from fft_find_peaks(). */
 		uint8_t spec_buf[1 + FFT_SPECTRUM_BINS + FFT_NUM_PEAKS * sizeof(float)];
 		spec_buf[0] = axis;
 
@@ -348,7 +225,17 @@ static void on_loop(uint8_t *data, size_t size) {
 /* --- Setup --- */
 
 void fft_setup(void) {
-	init_window();
+	fft_hanning_window(g_window, FFT_SIZE);
+
+	g_peak_cfg.fft_size = FFT_SIZE;
+	g_peak_cfg.sample_hz = FFT_SAMPLE_HZ;
+	g_peak_cfg.min_hz = FFT_MIN_HZ;
+	g_peak_cfg.max_hz = FFT_MAX_HZ;
+	g_peak_cfg.peak_snr = FFT_PEAK_SNR;
+	g_peak_cfg.peak_min_pwr = FFT_PEAK_MIN_PWR;
+	g_peak_cfg.min_sep_hz = MIN_PEAK_SEP_HZ;
+	g_peak_cfg.num_peaks = FFT_NUM_PEAKS;
+	g_peak_cfg.spectrum_bins = FFT_SPECTRUM_BINS;
 
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, on_gyro_update);

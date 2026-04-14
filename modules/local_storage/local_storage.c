@@ -6,7 +6,7 @@
 
 #define SHOULD_CLEAR_STORAGE 0
 
-#define DATA_STORAGE_SIZE 	192
+#define DATA_STORAGE_SIZE 	1024  /* 256 params × 4 bytes — over-allocated for future use */
 #define CHECKSUM_SIZE 		4
 #define LOCAL_STORAGE_SIZE 	(DATA_STORAGE_SIZE + CHECKSUM_SIZE)
 #define PARAM_SIZE 			4
@@ -147,19 +147,17 @@ static void loop_flush(uint8_t *data, size_t size) {
 	platform_storage_write(0, LOCAL_STORAGE_SIZE, g_local_data);
 }
 
+/* ---- 2-page readback at 1 Hz (streams first 48 params only) --------- */
+#define LOG_PAGE1_PARAMS  30
+#define LOG_PAGE2_PARAMS  18
 static void loop_1hz(uint8_t *data, size_t size) {
-	/* Send stored calibration data for verification (runs from ISR — fast).
-	 * Storage is 48 params (192 bytes) but max DB payload is 120 bytes.
-	 * Send in two pages across two 1Hz ticks, then auto-stop:
-	 *   Page 0: params 0-29  (120 bytes)
-	 *   Page 1: params 30-47 ( 72 bytes) */
 	if (g_active_log_class == 0) return;
 
 	if (g_storage_page == 0) {
-		publish(SEND_LOG, g_local_data, 30 * PARAM_SIZE);
+		publish(SEND_LOG, g_local_data, LOG_PAGE1_PARAMS * PARAM_SIZE);
 		g_storage_page = 1;
 	} else {
-		publish(SEND_LOG, &g_local_data[30 * PARAM_SIZE], 18 * PARAM_SIZE);
+		publish(SEND_LOG, &g_local_data[LOG_PAGE1_PARAMS * PARAM_SIZE], LOG_PAGE2_PARAMS * PARAM_SIZE);
 		g_storage_page = 0;
 		g_active_log_class = 0;  /* stop after both pages sent */
 	}
@@ -185,16 +183,14 @@ static void local_storage_save_default(void) {
 static void load_local_data(void) {
 	uint8_t temp_data[LOCAL_STORAGE_SIZE] = {0};
 	
-	// Read data from flash memory
 	platform_storage_read(0, LOCAL_STORAGE_SIZE, temp_data);
 
-	// Checksum validation - if failed, save defaults
-	uint32_t checksum = *(uint32_t *)&temp_data[DATA_STORAGE_SIZE];
+	uint32_t checksum;
+	memcpy(&checksum, &temp_data[DATA_STORAGE_SIZE], CHECKSUM_SIZE);
 	uint32_t calculated_checksum = crc32(temp_data, DATA_STORAGE_SIZE);
 	if (checksum != calculated_checksum) {
 		local_storage_save_default();
 	} else {
-		// Copy valid data to g_local_data
 		memcpy(g_local_data, temp_data, LOCAL_STORAGE_SIZE);
 	}
 }
