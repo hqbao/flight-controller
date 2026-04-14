@@ -8,6 +8,7 @@ import matplotlib
 matplotlib.use('macosx')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from matplotlib.animation import FuncAnimation
 import time
 import os
 import subprocess
@@ -730,12 +731,15 @@ def main():
             btn_log.hovercolor = BTN_GREEN_HOV
     btn_resetfc.on_clicked(reset_fc)
 
-    # --- Animation Loop ---
+    # --- Animation ---
     cur_temp = 0.0
     g_cal_view_active = False
     chip_id_request_time = time.time()  # track auto-request for retry
 
-    while True:
+    def update(frame):
+        nonlocal cur_temp, g_cal_view_active, chip_id_request_time
+        nonlocal line_gx, line_gy, line_gz, line_temp
+
         # Drain chip ID queue (silently store)
         chip_id_updated = False
         while not chip_id_queue.empty():
@@ -971,9 +975,10 @@ def main():
                     )
             plt.draw()
 
-        plt.pause(0.05)
-        if not plt.fignum_exists(fig.number):
-            break
+        return []
+
+    anim = FuncAnimation(fig, update, interval=50, blit=False, cache_frame_data=False)
+    plt.show()
 
 
 if __name__ == "__main__":

@@ -4,8 +4,11 @@ import struct
 import threading
 import queue
 import numpy as np
+import matplotlib
+matplotlib.use('macosx')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from matplotlib.animation import FuncAnimation
 import time
 import os
 from datetime import datetime
@@ -912,8 +915,10 @@ def main():
     # --- Chip ID auto-retry state ---
     chip_id_request_time = time.time()
 
-    # --- Main Loop ---
-    while True:
+    # --- Animation ---
+    def update(frame):
+        nonlocal chip_id_request_time
+
         data_updated = False
         chip_id_updated = False
 
@@ -1141,9 +1146,10 @@ def main():
                     )
             plt.draw()
 
-        plt.pause(0.05)
-        if not plt.fignum_exists(fig.number):
-            break
+        return []
+
+    anim = FuncAnimation(fig, update, interval=50, blit=False, cache_frame_data=False)
+    plt.show()
 
 
 if __name__ == "__main__":

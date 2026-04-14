@@ -6,6 +6,7 @@ import queue
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
+from matplotlib.animation import FuncAnimation
 import time
 
 """
@@ -346,7 +347,7 @@ def main():
     btn_reset.on_clicked(reset_fc)
 
     def live_update(frame):
-        """Called by matplotlib timer to drain the serial queue."""
+        """Called by FuncAnimation to drain the serial queue."""
         updated = False
         latest = None
         while not data_queue.empty():
@@ -361,14 +362,12 @@ def main():
                 f'M5={speeds[5]}  M6={speeds[6]}  M7={speeds[7]}  M8={speeds[8]}  '
                 f'sum={total}')
             status_text.set_color('#55dd55')
-            fig.canvas.draw_idle()
-
-    timer = fig.canvas.new_timer(interval=100)
-    timer.add_callback(live_update, None)
-    timer.start()
+        return []
 
     # Initial empty display
     update_display({m: 0 for m in range(1, 9)})
+
+    anim = FuncAnimation(fig, live_update, interval=100, blit=False, cache_frame_data=False)
     plt.show()
 
 
