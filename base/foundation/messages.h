@@ -138,6 +138,18 @@ typedef struct {
 	double altitude;
 } mix_control_input_t;
 
+// --- Speed Control Configuration ---
+
+typedef enum {
+	PORT_DISABLED = 0,
+	PORT_DSHOT,
+	PORT_PWM
+} port_protocol_t;
+
+typedef struct {
+	uint8_t protocol[8]; // port_protocol_t per port
+} speed_control_config_t;
+
 
 // --- GPS Messages ---
 

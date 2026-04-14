@@ -55,10 +55,10 @@ flight-controller/
 │   ├── optflow/                   #   Optical flow sensor interface
 │   ├── attitude_estimation/       #   Sensor fusion (Mahony/EKF/Madgwick)
 │   ├── attitude_control/          #   Attitude stabilization PID loops
-│   ├── mix_control/               #   Motor mixing (PID → per-motor speeds)
+│   ├── mix_control/               #   Motor/servo mixing (quad/bicopter, build-time selectable)
 │   ├── position_estimation/       #   Position/velocity estimation (GPS + optflow fusion)
 │   ├── position_control/          #   Position hold PID loops
-│   ├── speed_control/             #   Motor output driver (DShot/PWM)
+│   ├── speed_control/             #   Motor/servo output driver (per-port DShot/PWM)
 │   ├── gps_navigation/            #   GPS waypoint navigation (outdoor)
 │   ├── gps_denied_navigation/     #   Optical flow navigation (indoor)
 │   ├── rc_receiver/               #   RC receiver input processing

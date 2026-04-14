@@ -2,60 +2,39 @@
 #include <pubsub.h>
 #include <platform.h>
 #include <string.h>
-#include <math.h>
 #include <macro.h>
+#include <messages.h>
 
-#define SPEED_CONTROL_PROTOCOL 1 // 1: DSHOT, 2: PWM
-#define MAX_MOTORS 8
+#define MAX_PORTS 8
 
-static int g_output_speed[MAX_MOTORS] = {0};
+static uint8_t g_protocol[MAX_PORTS] = {0}; // port_protocol_t per port
+static int g_output[MAX_PORTS] = {0};
 
 static void sc_setup(uint8_t *data, size_t size) {
-#if SPEED_CONTROL_PROTOCOL == 1
-	platform_dshot_init(DSHOT_PORT1);
-	platform_dshot_init(DSHOT_PORT2);
-	platform_dshot_init(DSHOT_PORT3);
-	platform_dshot_init(DSHOT_PORT4);
-	platform_dshot_init(DSHOT_PORT5);
-	platform_dshot_init(DSHOT_PORT6);
-	platform_dshot_init(DSHOT_PORT7);
-	platform_dshot_init(DSHOT_PORT8);
-#elif SPEED_CONTROL_PROTOCOL == 2
-	platform_pwm_init(PWM_PORT1);
-	platform_pwm_init(PWM_PORT2);
-	platform_pwm_init(PWM_PORT3);
-	platform_pwm_init(PWM_PORT4);
-	platform_pwm_init(PWM_PORT5);
-	platform_pwm_init(PWM_PORT6);
-	platform_pwm_init(PWM_PORT7);
-	platform_pwm_init(PWM_PORT8);
-#endif
+	if (size < sizeof(speed_control_config_t)) return;
+	speed_control_config_t *cfg = (speed_control_config_t *)data;
+	memcpy(g_protocol, cfg->protocol, MAX_PORTS);
+
+	for (int i = 0; i < MAX_PORTS; i++) {
+		if (g_protocol[i] == PORT_DSHOT) {
+			platform_dshot_init((dshot_port_t)i);
+		} else if (g_protocol[i] == PORT_PWM) {
+			platform_pwm_init((pwm_port_t)i);
+		}
+	}
 }
 
 static void sc_update(uint8_t *data, size_t size) {
-    if (size > sizeof(g_output_speed)) {
-        size = sizeof(g_output_speed);
-    }
-	memcpy(g_output_speed, data, size);
-#if SPEED_CONTROL_PROTOCOL == 1
-	platform_dshot_send(DSHOT_PORT1, g_output_speed[0]);
-	platform_dshot_send(DSHOT_PORT2, g_output_speed[1]);
-	platform_dshot_send(DSHOT_PORT3, g_output_speed[2]);
-	platform_dshot_send(DSHOT_PORT4, g_output_speed[3]);
-	platform_dshot_send(DSHOT_PORT5, g_output_speed[4]);
-	platform_dshot_send(DSHOT_PORT6, g_output_speed[5]);
-	platform_dshot_send(DSHOT_PORT7, g_output_speed[6]);
-	platform_dshot_send(DSHOT_PORT8, g_output_speed[7]);
-#elif SPEED_CONTROL_PROTOCOL == 2
-	platform_pwm_send(PWM_PORT1, g_output_speed[0]);
-	platform_pwm_send(PWM_PORT2, g_output_speed[1]);
-	platform_pwm_send(PWM_PORT3, g_output_speed[2]);
-	platform_pwm_send(PWM_PORT4, g_output_speed[3]);
-	platform_pwm_send(PWM_PORT5, g_output_speed[4]);
-	platform_pwm_send(PWM_PORT6, g_output_speed[5]);
-	platform_pwm_send(PWM_PORT7, g_output_speed[6]);
-	platform_pwm_send(PWM_PORT8, g_output_speed[7]);
-#endif
+	if (size > sizeof(g_output)) size = sizeof(g_output);
+	memcpy(g_output, data, size);
+
+	for (int i = 0; i < MAX_PORTS; i++) {
+		if (g_protocol[i] == PORT_DSHOT) {
+			platform_dshot_send((dshot_port_t)i, g_output[i]);
+		} else if (g_protocol[i] == PORT_PWM) {
+			platform_pwm_send((pwm_port_t)i, g_output[i]);
+		}
+	}
 }
 
 void speed_control_setup(void) {
