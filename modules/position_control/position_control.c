@@ -25,7 +25,7 @@
 
 /* Output Lowpass Filter */
 #define POS_CTL_OUTPUT_LPF_ALPHA_XY 1.0
-#define POS_CTL_OUTPUT_LPF_ALPHA_Z (5.0 / POS_CTL_FREQ)
+#define POS_CTL_OUTPUT_LPF_ALPHA_Z (5.0 / ACCEL_FREQ)
 
 /* Control Output Limits */
 #define POS_CTL_ANGLE_LIMIT 30.0
@@ -67,9 +67,9 @@ static double g_pos_ctl_alt = 0;
 
 static vector3d_t g_output_smooth = {0, 0, 0};
 
-static int g_moving_state_roll = 0;  // 0: Released, CTL_FREQ: Active stick input
+static int g_moving_state_roll = 0;  // 0: Released, PILOT_CTL_FREQ: Active stick input
 static int g_moving_state_pitch = 0;
-static int g_moving_state_alt = 0;   // Counts down from CTL_FREQ to 0 after release
+static int g_moving_state_alt = 0;   // Counts down from PILOT_CTL_FREQ to 0 after release
 
 static double g_landing_speed = MIN_LANDING_SPEED;
 
@@ -188,7 +188,7 @@ static void manual_control_update(uint8_t *data, size_t size) {
 
 	if (g_rc_state_ctl.mode == 2) {
 		if (fabs(g_rc_att_ctl.alt) > RC_DEADBAND) {
-			g_take_off_speed += 0.5 / CTL_FREQ * g_rc_att_ctl.alt;
+			g_take_off_speed += 0.5 / PILOT_CTL_FREQ * g_rc_att_ctl.alt;
 		}
 		return;
 	}
@@ -196,10 +196,10 @@ static void manual_control_update(uint8_t *data, size_t size) {
 	if (fabs(g_rc_att_ctl.roll) > RC_DEADBAND) {
 		if (g_moving_state_roll == 0) {
 			g_pos_offset.y = g_pos_target.y - g_pos_final.y;
-			g_moving_state_roll = CTL_FREQ;
+			g_moving_state_roll = PILOT_CTL_FREQ;
 		}
 		g_pos_target.y = g_pos_final.y + g_pos_offset.y + g_rc_att_ctl.roll * RC_XY_SCALE;
-	} else if (g_moving_state_roll == CTL_FREQ) {
+	} else if (g_moving_state_roll == PILOT_CTL_FREQ) {
 		g_pos_target.y = g_pos_final.y + g_pos_offset.y;
 		g_moving_state_roll = 0;
 	}
@@ -207,10 +207,10 @@ static void manual_control_update(uint8_t *data, size_t size) {
 	if (fabs(g_rc_att_ctl.pitch) > RC_DEADBAND) {
 		if (g_moving_state_pitch == 0) {
 			g_pos_offset.x = g_pos_target.x - g_pos_final.x;
-			g_moving_state_pitch = CTL_FREQ;
+			g_moving_state_pitch = PILOT_CTL_FREQ;
 		}
 		g_pos_target.x = g_pos_final.x + g_pos_offset.x + g_rc_att_ctl.pitch * RC_XY_SCALE;
-	} else if (g_moving_state_pitch == CTL_FREQ) {
+	} else if (g_moving_state_pitch == PILOT_CTL_FREQ) {
 		g_pos_target.x = g_pos_final.x + g_pos_offset.x;
 		g_moving_state_pitch = 0;
 	}
@@ -221,7 +221,7 @@ static void manual_control_update(uint8_t *data, size_t size) {
 		if (fabs(g_rc_att_ctl.alt) > RC_DEADBAND) {
 			if (g_moving_state_alt == 0) {
 				g_pos_offset.z = g_pos_target.z - g_pos_final.z;
-				g_moving_state_alt = CTL_FREQ;
+				g_moving_state_alt = PILOT_CTL_FREQ;
 			}
 			g_pos_target.z = g_pos_final.z + g_pos_offset.z + g_rc_att_ctl.alt * RC_Z_SCALE;
 		} else if (g_moving_state_alt > 0) {
@@ -252,5 +252,5 @@ void position_control_setup(void) {
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(SCHEDULER_100HZ, manual_control_update);
+	subscribe(PILOT_CTL_SCHEDULER, manual_control_update);
 }

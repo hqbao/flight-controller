@@ -127,7 +127,7 @@ void attitude_control_setup(void) {
 	pid_setup();
 
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
-	subscribe(SCHEDULER_500HZ, attitude_control_loop);
+	subscribe(ATT_CTL_SCHEDULER, attitude_control_loop);
 	subscribe(FLIGHT_STATE_UPDATE, state_update);
 	subscribe(ANGULAR_TARGET_UPDATE, angular_target_update);
 	subscribe(ALTITUDE_CONTROL_UPDATE, altitude_control_update);

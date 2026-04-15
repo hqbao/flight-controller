@@ -31,7 +31,8 @@ ANGULAR_STATE_UPDATE (1 kHz)    ANGULAR_TARGET_UPDATE    ALTITUDE_CONTROL_UPDATE
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `ATT_CTL_FREQ` | 500 | Control loop frequency (Hz) |
+| `ATT_CTL_FREQ` | 500 | Control loop frequency (Hz), defined in `macro.h` |
+| `ATT_CTL_SCHEDULER` | `SCHEDULER_500HZ` | Scheduler alias, defined in `macro.h` |
 
 ## State Machine Behavior
 

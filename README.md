@@ -98,15 +98,15 @@ Modules follow a strict **setup → subscribe → publish** pattern:
 ```c
 // Example: modules/imu/imu.c
 void imu_setup(void) {
-    subscribe(SCHEDULER_1KHZ, on_sensor_read_tick);
-    subscribe(SCHEDULER_500HZ, on_scheduler_500hz);
+    subscribe(GYRO_SCHEDULER, on_gyro_read);    // GYRO_SCHEDULER = SCHEDULER_1KHZ
+    subscribe(ACCEL_SCHEDULER, on_accel_process); // ACCEL_SCHEDULER = SCHEDULER_500HZ
 }
 
-static void on_sensor_read_tick(uint8_t *data, size_t size) {
+static void on_gyro_read(uint8_t *data, size_t size) {
     icm42688p_read(&g_imu_sensor);  // triggers I2C/SPI → callback → publish gyro
 }
 
-static void on_scheduler_500hz(uint8_t *data, size_t size) {
+static void on_accel_process(uint8_t *data, size_t size) {
     // Apply accel calibration, then publish
     publish(SENSOR_IMU1_ACCEL_UPDATE, (uint8_t*)g_imu_data, 12);
 }

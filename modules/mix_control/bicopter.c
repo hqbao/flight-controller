@@ -152,7 +152,7 @@ void bicopter_setup(void) {
 	publish(SPEED_CONTROL_SETUP, (uint8_t *)&cfg, sizeof(cfg));
 
 	subscribe(MIX_CONTROL_UPDATE, mix_control_input_update);
-	subscribe(SCHEDULER_500HZ, mix_control_loop);
+	subscribe(ATT_CTL_SCHEDULER, mix_control_loop);
 	subscribe(FLIGHT_STATE_UPDATE, state_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);

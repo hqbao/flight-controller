@@ -74,7 +74,7 @@ static void on_mag_calibration_status(uint8_t *data, size_t size) {
 	g_mag_calibrated = (data[0] == 1);
 }
 
-static void loop_100hz(uint8_t *data, size_t size) {
+static void on_state_update(uint8_t *data, size_t size) {
 	if (g_rc_state_ctl.state == RC_STATE_DISARMED) {
 		g_state = DISARMED;
 	}
@@ -172,5 +172,5 @@ void flight_state_setup(void) {
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
-	subscribe(SCHEDULER_100HZ, loop_100hz);
+	subscribe(PILOT_CTL_SCHEDULER, on_state_update);
 }

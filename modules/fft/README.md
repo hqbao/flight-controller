@@ -61,7 +61,7 @@ fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
 | Parameter | Value | Notes |
 |-----------|-------|-------|
 | FFT size | 256 samples | Radix-2 Cooley-Tukey DIT |
-| Sample rate | 1000 Hz (GYRO_FREQ) | |
+| Sample rate | 1000 Hz (`GYRO_FREQ`) | Defined in `macro.h` |
 | Frequency resolution | ~3.91 Hz/bin | 1000/256 |
 | Window | Hanning | Pre-computed at init |
 | Analysis range | 50–200 Hz | Body motion below, motor vibration above |
