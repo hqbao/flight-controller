@@ -39,12 +39,13 @@ Activated by `NOTIFY_LOG_CLASS` with `LOG_CLASS_FLIGHT_TELEMETRY` (0x12).
 
 Visualize with:
 ```bash
-python3 tools/flight_telemetry_view.py
+python3 tools/flight_telemetry_view.py            # Quadcopter
+python3 tools/flight_telemetry_bicopter_view.py    # Bicopter
 ```
 
 ### Dashboard Layout (HUD Style)
 
-The viewer uses a full-screen 3D quadcopter as the main background with semi-transparent overlay panels:
+Both viewers use a full-screen 3D aircraft model as the main background with semi-transparent overlay panels. The quadcopter version shows 4 arms with L1/L2 prop discs; the bicopter version shows a horizontal beam with tilting nacelles and servo angles.
 
 - **Left data panel** — Vertical strip showing numeric readouts in sections: ATTITUDE (roll/pitch/yaw in degrees), POSITION (x/y/z in meters), VELOCITY (vx/vy/vz in m/s), MOTORS (FL/FR/BR/BL with Layer 1 and Layer 2 speeds), PID OUT (roll/pitch/yaw)
 - **3D quadcopter** — Center background, NED-rotated wireframe with arm lines, nose indicator (red), prop discs (L1 blue / L2 orange), ground reference ring with North arrow, motor labels (M1–M4)

@@ -84,7 +84,8 @@ flight-controller/
 │   ├── position_estimation_2d_and_z.py # Position dashboard (2D map + altitude + velocity)
 │   ├── position_estimation_chart.py    # Position/velocity time-series (2×2 grid)
 │   ├── position_estimation_optflow.py  # Optical flow & altitude sensor viewer
-│   └── flight_telemetry_view.py   #   Flight telemetry HUD
+│   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
+│   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
 ```
 
 ## Architecture
@@ -394,6 +395,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `mix_control_quadcopter_test.py` | Quadcopter motor output visualizer (8 motors) |
 | `mix_control_bicopter_test.py` | Bicopter tilt-rotor output visualizer (2 motors + 2 servos) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
+| `flight_telemetry_bicopter_view.py` | Flight telemetry HUD: 3D bicopter with tilting nacelles, motors/servos, overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
 
