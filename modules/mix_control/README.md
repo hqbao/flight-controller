@@ -91,8 +91,8 @@ Dual tilt-rotor (V-22 style):
 ```
 
 - **Roll**: differential motor thrust (`m1 = base - roll`, `m2 = base + roll`)
-- **Pitch**: collective servo tilt (both servos tilt same direction)
-- **Yaw**: differential servo tilt (opposite directions)
+- **Pitch**: collective servo tilt — opposite PWM signs produce same physical tilt due to mirrored S2 (`s1 = center + pitch`, `s2 = center - pitch`)
+- **Yaw**: differential servo tilt — same PWM sign, but mirrored S2 makes them tilt opposite (`s1 -= yaw`, `s2 -= yaw`)
 
 Output array: `[0]=left motor, [1]=right motor, [2]=left servo, [3]=right servo, [4-7]=0`
 
@@ -124,7 +124,8 @@ Subscribes to `NOTIFY_LOG_CLASS`. When `LOG_CLASS_MIX_CONTROL` (0x11) is active,
 
 Visualize with:
 ```bash
-python3 tools/mix_control_test.py
+python3 tools/mix_control_quadcopter_test.py   # quadcopter: 8-motor diagram + bar chart
+python3 tools/mix_control_bicopter_test.py     # bicopter: top-view tilt-rotor + bars
 ```
 
 ## PubSub Interface

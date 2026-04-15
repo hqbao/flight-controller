@@ -46,7 +46,6 @@ typedef enum {
 
 	// --- Estimation / fusion ---
 	ANGULAR_STATE_UPDATE,
-	ATTITUDE_VECTOR_UPDATE,
 	LINEAR_ACCEL_UPDATE,
 	POSITION_STATE_UPDATE,
 

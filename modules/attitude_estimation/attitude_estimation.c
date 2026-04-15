@@ -13,7 +13,7 @@
  * 1. SENSOR_IMU1_GYRO_UPDATE (1000Hz) -> gyro_update()
  *    - Integrate gyroscope to predict orientation
  *    - Extract roll/pitch/yaw from quaternion
- *    - Publish ANGULAR_STATE_UPDATE and ATTITUDE_VECTOR_UPDATE
+ *    - Publish ANGULAR_STATE_UPDATE
  * 
  * 2. SENSOR_IMU1_ACCEL_UPDATE (500Hz) -> accel_update()
  *    - Correct gyro drift using gravity direction
@@ -31,7 +31,6 @@
  * 
  * OUTPUT:
  * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
- * - ATTITUDE_VECTOR_UPDATE: v_pred (predicted gravity vector in body frame)
  * - LINEAR_ACCEL_UPDATE: {v_linear_acc (body), v_linear_acc_earth_frame}
  * - SEND_LOG (if enabled):
  *   LOG_CLASS_ATTITUDE (0x03):       v_pred, v_true, v_linear_acc (body frame)
@@ -163,9 +162,6 @@ static void gyro_update(uint8_t *data, size_t size) {
 	g_angular_state.roll = euler.x * RAD2DEG;
 	g_angular_state.pitch = euler.y * RAD2DEG;
 	g_angular_state.yaw = euler.z * RAD2DEG;
-
-	// All fusion algorithms now use v_pred consistently
-	publish(ATTITUDE_VECTOR_UPDATE, (uint8_t*)&g_f11.v_pred, sizeof(vector3d_t));
 
 	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 }

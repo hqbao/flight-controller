@@ -336,9 +336,7 @@ static void on_imu_calibration_result(uint8_t *data, size_t size) {
     g_imu_calibrated = data[0] == 1;
 }
 
-static void state_vector_update(uint8_t *data, size_t size) {
-    memcpy(&g_state_vector, data, size);
-}
+
 
 void core1() {
     // Initialize optical flow
@@ -398,7 +396,6 @@ void core0() {
     platform_setup();
 
     subscribe(CALIBRATION_GYRO_STATUS, on_imu_calibration_result);
-    subscribe(ATTITUDE_VECTOR_UPDATE, state_vector_update);
 
     while (1) {
         publish(LOOP, NULL, 0);

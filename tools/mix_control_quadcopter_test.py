@@ -10,7 +10,7 @@ from matplotlib.animation import FuncAnimation
 import time
 
 """
-Mix Control Test Tool
+Mix Control Quadcopter Test Tool
 
 Connects to the FC via serial, sends LOG_CLASS_MIX_CONTROL,
 and displays real-time motor speeds.
@@ -27,7 +27,7 @@ Motor layout (top view, nose up):
 Layer 2 (coaxial): m5(FL,CCW) m6(FR,CW) m7(BR,CCW) m8(BL,CW)
 
 Usage:
-  python3 mix_control_test.py
+  python3 mix_control_quadcopter_test.py
 """
 
 # --- Configuration ---
@@ -188,7 +188,7 @@ def main():
 
     fig = plt.figure(figsize=(14, 9))
     fig.patch.set_facecolor(BG_COLOR)
-    fig.suptitle('Mix Control Test Tool', fontsize=16,
+    fig.suptitle('Mix Control — Quadcopter', fontsize=16,
                  color=TEXT_COLOR, fontweight='bold', y=0.97)
 
     # --- Left: Motor diagram (top view) ---

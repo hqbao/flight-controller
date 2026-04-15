@@ -76,7 +76,8 @@ flight-controller/
 │   ├── calibration_gyro.py         #   Gyro temperature compensation tool
 │   ├── calibration_accel.py        #   Accelerometer calibration (6-position ellipsoid fit)
 │   ├── calibration_compass.py      #   Compass calibration (ellipsoid fit)
-│   ├── mix_control_test.py        #   Real-time motor speed visualizer
+│   ├── mix_control_quadcopter_test.py #   Quadcopter motor output visualizer
+│   ├── mix_control_bicopter_test.py #   Bicopter tilt-rotor output visualizer
 │   ├── fft_spectrum_view.py        #   Real-time spectrogram + peak overlay
 │   ├── attitude_estimation_view.py#   Attitude fusion dashboard (3D vectors + data panel)
 │   ├── attitude_estimation_mag_view.py # Magnetometer debug dashboard (3D + heading)
@@ -161,7 +162,6 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 - `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
 - `SENSOR_COMPASS` — Calibrated compass vector
 - `ANGULAR_STATE_UPDATE` — Estimated attitude (roll, pitch, yaw)
-- `ATTITUDE_VECTOR_UPDATE` — Predicted gravity vector in body frame (from fusion)
 - `LINEAR_ACCEL_UPDATE` — Gravity-removed acceleration, body + earth frame (from fusion)
 - `POSITION_STATE_UPDATE` — Estimated position and velocity
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
@@ -362,7 +362,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_GYRO_X` | `0x0E` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_FFT_GYRO_Y` | `0x0F` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_STORAGE` | `0x10` | `local_storage.c` | Stored calibration params (48 params in 2 pages: 30 + 18 floats, auto-stops) |
-| `LOG_CLASS_MIX_CONTROL` | `0x11` | `mix_control.c` | Motor speeds (8 floats, 10 Hz) |
+| `LOG_CLASS_MIX_CONTROL` | `0x11` | `quadcopter.c` / `bicopter.c` | Motor/servo outputs (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
 | `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
 | `LOG_CLASS_FFT_GYRO_FILTERED_X` | `0x14` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
@@ -391,7 +391,8 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
 | `calibration_compass.py` | Compass ellipsoid fit calibration (upload, query, default, CSV) |
-| `mix_control_test.py` | Real-time motor speed visualizer (8 motors) |
+| `mix_control_quadcopter_test.py` | Quadcopter motor output visualizer (8 motors) |
+| `mix_control_bicopter_test.py` | Bicopter tilt-rotor output visualizer (2 motors + 2 servos) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |

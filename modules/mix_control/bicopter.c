@@ -68,9 +68,11 @@ static void mix_motors(mix_control_input_t *input) {
 	double m1 = base - roll;   /* left motor  */
 	double m2 = base + roll;   /* right motor */
 
-	/* Servos: collective tilt for pitch, differential tilt for yaw */
-	double s1 = SERVO_CENTER + pitch + yaw;   /* left servo  */
-	double s2 = SERVO_CENTER + pitch - yaw;   /* right servo */
+	/* Servos: collective tilt for pitch, differential tilt for yaw.
+	 * S2 is mirrored on the airframe, so negate pitch to get same physical tilt.
+	 * Both share same yaw sign — mirrored mount makes them tilt opposite. */
+	double s1 = SERVO_CENTER + pitch - yaw;   /* left servo  */
+	double s2 = SERVO_CENTER - pitch - yaw;   /* right servo (mirrored mount) */
 
 	g_output[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
 	g_output[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
