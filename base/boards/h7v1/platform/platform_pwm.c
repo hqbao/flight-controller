@@ -36,7 +36,7 @@ static TIM_TypeDef *g_pwm_time_bases[8] = {
 
 #define SERVO_PWM_50HZ      19999  /* 1 MHz / 20000 = 50 Hz  (analog servo) */
 #define SERVO_PWM_250HZ     3999   /* 1 MHz / 4000  = 250 Hz (digital servo) */
-#define SERVO_PWM_PERIOD    SERVO_PWM_50HZ
+#define SERVO_PWM_PERIOD    SERVO_PWM_250HZ
 
 /* --- Internal helpers ---------------------------------------------------- */
 
