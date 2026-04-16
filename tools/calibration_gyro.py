@@ -50,6 +50,7 @@ MIN_POINTS = 10            # Minimum stationary windows for valid fit
 
 # Log class constants (match messages.h)
 LOG_CLASS_NONE           = 0x00
+LOG_CLASS_HEART_BEAT     = 0x09
 LOG_CLASS_IMU_GYRO_RAW   = 0x0B
 LOG_CLASS_IMU_GYRO_CALIB = 0x0C
 LOG_CLASS_STORAGE        = 0x10
@@ -180,6 +181,7 @@ def serial_reader():
             ser.flush()
             time.sleep(0.1)
             send_chip_id_request(ser)
+            send_log_class(ser, LOG_CLASS_HEART_BEAT)
 
             while True:
                 b1 = ser.read(1)

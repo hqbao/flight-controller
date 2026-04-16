@@ -32,6 +32,7 @@ BAUD_RATE = 19200
 SEND_LOG_ID = 0x00
 
 LOG_CLASS_NONE = 0x00
+LOG_CLASS_HEART_BEAT = 0x09
 LOG_CLASS_FFT_PEAKS = 0x17
 LOG_CLASS_FFT_SPECTRUM_X = 0x18
 LOG_CLASS_FFT_SPECTRUM_Y = 0x19
@@ -138,6 +139,7 @@ def serial_reader():
         ser.flush()
         g_serial = ser
         print(f"  \u2713 Connected to {SERIAL_PORT}")
+        send_log_class_command(ser, LOG_CLASS_HEART_BEAT)
 
         while True:
             b1 = ser.read(1)

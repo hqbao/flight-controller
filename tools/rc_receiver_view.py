@@ -30,6 +30,7 @@ BAUD_RATE = 19200
 SEND_LOG_ID = 0x00
 
 LOG_CLASS_NONE = 0x00
+LOG_CLASS_HEART_BEAT = 0x09
 LOG_CLASS_RC_RECEIVER = 0x1B
 DB_CMD_LOG_CLASS = 0x03
 DB_CMD_RESET = 0x07
@@ -110,6 +111,7 @@ def serial_reader():
         time.sleep(0.05)
         g_serial = ser
         print(f"  \u2713 Connected to {SERIAL_PORT}")
+        send_log_class_command(ser, LOG_CLASS_HEART_BEAT)
 
         while True:
             b1 = ser.read(1)

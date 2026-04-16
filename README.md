@@ -342,7 +342,7 @@ Fits a quadratic polynomial `bias(T) = a·T² + b·T + c` per axis, allowing the
 - ID `0x09`: `DB_CMD_CHIP_ID` — request 8-byte unique chip ID (response sent via `SEND_LOG`)
 
 ### Runtime Log Class Selection
-Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. Each tool has a **"Start Log"** button that sends the appropriate class and a **"Reset FC"** button that sends `DB_CMD_RESET` to perform a hardware reset (`NVIC_SystemReset()`).
+Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. On startup, every tool sends `LOG_CLASS_HEART_BEAT` immediately after connecting — this stops whatever the previous tool was streaming and restores the firmware to its default state. Each tool has a **"Start Log"** button that sends the appropriate class and a **"Reset FC"** button that sends `DB_CMD_RESET` to perform a hardware reset (`NVIC_SystemReset()`).
 
 | Log Class | Value | Module | Data |
 |-----------|-------|--------|------|

@@ -44,6 +44,7 @@ SEND_LOG_ID = 0x00
 
 # Log class constants (match messages.h)
 LOG_CLASS_NONE            = 0x00
+LOG_CLASS_HEART_BEAT      = 0x09
 LOG_CLASS_IMU_ACCEL_RAW   = 0x01
 LOG_CLASS_IMU_ACCEL_CALIB = 0x0A
 LOG_CLASS_STORAGE         = 0x10
@@ -169,6 +170,7 @@ def serial_reader():
             ser.flush()
             time.sleep(0.3)
             send_chip_id_request(ser)
+            send_log_class(ser, LOG_CLASS_HEART_BEAT)
 
             while True:
                 b1 = ser.read(1)

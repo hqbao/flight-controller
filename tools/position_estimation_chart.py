@@ -37,9 +37,10 @@ SERIAL_PORT = None
 BAUD_RATE = 19200
 SEND_LOG_ID = 0x00
 
-LOG_CLASS_NONE     = 0x00
-LOG_CLASS_POSITION = 0x04
-DB_CMD_LOG_CLASS   = 0x03
+LOG_CLASS_NONE      = 0x00
+LOG_CLASS_HEART_BEAT = 0x09
+LOG_CLASS_POSITION  = 0x04
+DB_CMD_LOG_CLASS    = 0x03
 DB_CMD_RESET       = 0x07
 DB_CMD_CHIP_ID     = 0x09
 
@@ -143,6 +144,7 @@ def serial_reader():
         g_serial = ser
         print(f"  \u2713 Connected to {SERIAL_PORT}")
         send_chip_id_request(ser)
+        send_log_class_command(ser, LOG_CLASS_HEART_BEAT)
 
         while True:
             b1 = ser.read(1)
