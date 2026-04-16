@@ -30,6 +30,7 @@
  * - At rest, accel reads (0, 0, -1g) in NED body frame
  * 
  * OUTPUT:
+ * - QUAT_STATE_UPDATE: quaternion_t (16 bytes, float w/x/y/z)
  * - ANGULAR_STATE_UPDATE: {roll, pitch, yaw} in degrees
  * - LINEAR_ACCEL_UPDATE: {v_linear_acc (body), v_linear_acc_earth_frame}
  * - SEND_LOG (if enabled):
@@ -163,6 +164,7 @@ static void gyro_update(uint8_t *data, size_t size) {
 	g_angular_state.pitch = euler.y * RAD2DEG;
 	g_angular_state.yaw = euler.z * RAD2DEG;
 
+	publish(QUAT_STATE_UPDATE, (uint8_t*)&g_f11.q, sizeof(quaternion_t));
 	publish(ANGULAR_STATE_UPDATE, (uint8_t*)&g_angular_state, sizeof(angle3d_t));
 }
 
