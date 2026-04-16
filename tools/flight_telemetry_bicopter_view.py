@@ -21,7 +21,7 @@ Frame layout (66 bytes):
   24–35   Velocity: vx, vy, vz (3 × float, m/s)
   36–51   Motors: m1–m8 (8 × int16_t)
             [0]=left motor, [1]=right motor,
-            [2]=left servo (PWM µs), [3]=right servo (PWM µs),
+            [2..3]=unused, [4]=left servo (PWM µs), [5]=right servo (PWM µs),
             [4..7]=unused
   52–63   PID outputs: roll, pitch, yaw (3 × float)
   64      Flight state (uint8_t)
@@ -603,8 +603,8 @@ def main():
         # Bicopter outputs
         m1_speed = motors[0]  # left motor
         m2_speed = motors[1]  # right motor
-        s1_pwm   = motors[2]  # left servo PWM µs
-        s2_pwm   = motors[3]  # right servo PWM µs
+        s1_pwm   = motors[4]  # left servo PWM µs
+        s2_pwm   = motors[5]  # right servo PWM µs
 
         s1_angle = servo_to_angle_deg(s1_pwm)
         # S2 mounted opposite — negate for display

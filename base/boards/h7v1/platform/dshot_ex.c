@@ -1,4 +1,6 @@
 #include "dshot_ex.h"
+#include "platform_hw.h"
+#include <platform.h>
 
 // Design
 // Max frequency = 4,000,000 / (34 * 20), approximate 5882 Hz
@@ -63,4 +65,37 @@ void dshot_ex_write(dshot_ex_t *dshot_ex, uint32_t data) {
 			(uint32_t)dshot_ex->data_dmabuffer,
 			(uint32_t)dshot_ex->capture_compare_resigter,
 			DSHOT_EX_DMA_BUFFER_SIZE);
+}
+
+/* --- Platform API -------------------------------------------------------- */
+
+static dshot_ex_t g_dshot_exs[4];
+
+char platform_dshot_ex_init(dshot_ex_port_t port) {
+	switch (port) {
+	case DSHOT_EX_PORT1:
+		dshot_ex_init(&g_dshot_exs[0], &htim1, TIM_CHANNEL_1, TIM_DMA_ID_CC1,
+				(uint32_t)&((&htim1)->Instance->CCR1));
+		break;
+	case DSHOT_EX_PORT2:
+		dshot_ex_init(&g_dshot_exs[1], &htim1, TIM_CHANNEL_2, TIM_DMA_ID_CC2,
+				(uint32_t)&((&htim1)->Instance->CCR2));
+		break;
+	case DSHOT_EX_PORT3:
+		dshot_ex_init(&g_dshot_exs[2], &htim1, TIM_CHANNEL_3, TIM_DMA_ID_CC3,
+				(uint32_t)&((&htim1)->Instance->CCR3));
+		break;
+	case DSHOT_EX_PORT4:
+		dshot_ex_init(&g_dshot_exs[3], &htim1, TIM_CHANNEL_4, TIM_DMA_ID_CC4,
+				(uint32_t)&((&htim1)->Instance->CCR4));
+		break;
+	default:
+		break;
+	}
+	return PLATFORM_OK;
+}
+
+char platform_dshot_ex_send(dshot_ex_port_t port, uint32_t data) {
+	dshot_ex_write(&g_dshot_exs[port], data);
+	return PLATFORM_OK;
 }

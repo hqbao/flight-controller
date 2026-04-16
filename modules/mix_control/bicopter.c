@@ -19,11 +19,12 @@
  * Yaw   (about Z): differential servo tilt (opposite directions)
  *
  * Output array [8 ints]:
- *   [0] = left motor  (DShot value, MIN_SPEED..MAX_SPEED)
- *   [1] = right motor (DShot value, MIN_SPEED..MAX_SPEED)
- *   [2] = left servo  (PWM microseconds, SERVO_MIN..SERVO_MAX)
- *   [3] = right servo (PWM microseconds, SERVO_MIN..SERVO_MAX)
- *   [4..7] = 0 (unused)
+ *   [0] = left motor  (DShot value, MIN_SPEED..MAX_SPEED)  — Port1 TIM1 CH1
+ *   [1] = right motor (DShot value, MIN_SPEED..MAX_SPEED)  — Port2 TIM1 CH2
+ *   [2..3] = 0 (unused, TIM1 CH3-4 reserved for DShot)
+ *   [4] = left servo  (PWM microseconds, SERVO_MIN..SERVO_MAX) — Port5 TIM2 CH1
+ *   [5] = right servo (PWM microseconds, SERVO_MIN..SERVO_MAX) — Port6 TIM2 CH2
+ *   [6..7] = 0 (unused)
  *
  * PID convention: error = (state - target), so:
  *   Positive target with zero state -> negative output -> signs below account for this.
@@ -76,10 +77,10 @@ static void mix_motors(mix_control_input_t *input) {
 
 	g_output[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
 	g_output[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
-	g_output[2] = LIMIT((int)s1, SERVO_MIN, SERVO_MAX);
-	g_output[3] = LIMIT((int)s2, SERVO_MIN, SERVO_MAX);
-	g_output[4] = 0;
-	g_output[5] = 0;
+	g_output[2] = 0;
+	g_output[3] = 0;
+	g_output[4] = LIMIT((int)s1, SERVO_MIN, SERVO_MAX);
+	g_output[5] = LIMIT((int)s2, SERVO_MIN, SERVO_MAX);
 	g_output[6] = 0;
 	g_output[7] = 0;
 }
@@ -95,26 +96,35 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 	if (g_state == DISARMED || g_state == ARMED) {
 		g_output[0] = 0;
 		g_output[1] = 0;
-		g_output[2] = SERVO_CENTER;
-		g_output[3] = SERVO_CENTER;
-		for (int i = 4; i < 8; i++) g_output[i] = 0;
+		g_output[2] = 0;
+		g_output[3] = 0;
+		g_output[4] = SERVO_CENTER;
+		g_output[5] = SERVO_CENTER;
+		g_output[6] = 0;
+		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
 	}
 	else if (g_state == READY) {
 		g_output[0] = MIN_SPEED;
 		g_output[1] = MIN_SPEED;
-		g_output[2] = SERVO_CENTER;
-		g_output[3] = SERVO_CENTER;
-		for (int i = 4; i < 8; i++) g_output[i] = 0;
+		g_output[2] = 0;
+		g_output[3] = 0;
+		g_output[4] = SERVO_CENTER;
+		g_output[5] = SERVO_CENTER;
+		g_output[6] = 0;
+		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
 	}
 	else if (g_state == TESTING) {
 		/* RC sticks: yaw->m1, alt->m2, roll->s1, pitch->s2 */
 		g_output[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
 		g_output[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output[2] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.roll / 90  * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
-		g_output[3] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.pitch / 90 * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
-		for (int i = 4; i < 8; i++) g_output[i] = 0;
+		g_output[2] = 0;
+		g_output[3] = 0;
+		g_output[4] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.roll / 90  * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
+		g_output[5] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.pitch / 90 * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
+		g_output[6] = 0;
+		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
 	}
 	/* TAKING_OFF / FLYING / LANDING are driven by MIX_CONTROL_UPDATE from attitude_control */
@@ -145,9 +155,12 @@ static void loop_logger(uint8_t *data, size_t size) {
 }
 
 void bicopter_setup(void) {
+	/* Motors on TIM1 (Port1-2), servos on TIM2 (Port5-6).
+	 * DShot and servo PWM must be on separate timers — each timer's
+	 * prescaler/period is shared across all 4 channels. */
 	speed_control_config_t cfg = {{
-		PORT_DSHOT, PORT_DSHOT, PORT_PWM, PORT_PWM,
-		PORT_DISABLED, PORT_DISABLED, PORT_DISABLED, PORT_DISABLED
+		PORT_DSHOT, PORT_DSHOT, PORT_DISABLED, PORT_DISABLED,
+		PORT_PWM, PORT_PWM, PORT_DISABLED, PORT_DISABLED
 	}};
 	publish(SPEED_CONTROL_SETUP, (uint8_t *)&cfg, sizeof(cfg));
 

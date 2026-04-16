@@ -25,8 +25,9 @@ Bicopter layout (top view, nose up):
 Output array:
   [0] = left motor  (DShot 150..1800)
   [1] = right motor (DShot 150..1800)
-  [2] = left servo  (PWM 1000..2000 µs)
-  [3] = right servo (PWM 1000..2000 µs)
+  [2..3] = 0 (unused, TIM1 CH3-4 reserved for DShot)
+  [4] = left servo  (PWM 1000..2000 µs)  — Port5 TIM2 CH1
+  [5] = right servo (PWM 1000..2000 µs)  — Port6 TIM2 CH2
   [4..7] = 0 (unused)
 
 Usage:
@@ -470,8 +471,8 @@ def main():
         if updated and latest is not None:
             m1 = int(latest[0])
             m2 = int(latest[1])
-            s1 = int(latest[2])
-            s2 = int(latest[3])
+            s1 = int(latest[4])
+            s2 = int(latest[5])
             update_display(m1, m2, s1, s2)
             angle_l = servo_to_angle_deg(s1)
             angle_r = -servo_to_angle_deg(s2)  # S2 mirrored

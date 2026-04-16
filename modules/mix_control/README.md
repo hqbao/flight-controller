@@ -94,9 +94,10 @@ Dual tilt-rotor (V-22 style):
 - **Pitch**: collective servo tilt — opposite PWM signs produce same physical tilt due to mirrored S2 (`s1 = center + pitch`, `s2 = center - pitch`)
 - **Yaw**: differential servo tilt — same PWM sign, but mirrored S2 makes them tilt opposite (`s1 -= yaw`, `s2 -= yaw`)
 
-Output array: `[0]=left motor, [1]=right motor, [2]=left servo, [3]=right servo, [4-7]=0`
+Output array: `[0]=left motor, [1]=right motor, [2..3]=unused, [4]=left servo, [5]=right servo, [6..7]=unused`
 
-Port config: ports 0–1 → DShot, ports 2–3 → PWM, ports 4–7 → disabled.
+Port config: ports 0–1 → DShot (TIM1), ports 4–5 → PWM (TIM2), rest → disabled.
+DShot and servo PWM must be on separate timers — all 4 channels of a timer share one timebase.
 
 ## Common Configuration
 

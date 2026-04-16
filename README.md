@@ -128,11 +128,11 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 | `platform_i2c.c` | I2C read/write/DMA + `HAL_I2C_MemRxCpltCallback` |
 | `platform_spi.c` | SPI stubs + `HAL_SPI_TxRxCpltCallback` |
 | `platform_uart.c` | UART TX (USART1) + RX DMA ring buffers with IDLE detection, publishes `UART_RAW_RECEIVED`, error recovery |
-| `platform_pwm.c` | PWM + DShot + DShot Extended motor protocols |
+| `platform_pwm.c` | Servo PWM output (50 Hz, 1–2 ms pulse width) |
 | `platform_rc.c` | RC PPM decoder via TIM16 input capture |
 | `platform_common.c` | LED toggle, delay, time, console, reset |
-| `dshot.c` / `dshot.h` | DShot600 protocol (16-bit frames, 8 ports on TIM1+TIM2) |
-| `dshot_ex.c` / `dshot_ex.h` | DShot Extended protocol (32-bit frames, 4 ports on TIM1) |
+| `dshot.c` / `dshot.h` | DShot600 protocol + platform API (8 ports on TIM1+TIM2) |
+| `dshot_ex.c` / `dshot_ex.h` | DShot Extended protocol + platform API (4 ports on TIM1) |
 
 ### Scheduler Topics
 | Rate | Usage |

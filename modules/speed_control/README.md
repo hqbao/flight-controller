@@ -29,7 +29,7 @@ The mixer publishes a `speed_control_config_t` (defined in `messages.h`) via `SP
 
 Example configurations:
 - **Quadcopter**: all 8 ports → `PORT_DSHOT`
-- **Bicopter**: ports 0–1 → `PORT_DSHOT` (motors), ports 2–3 → `PORT_PWM` (servos), ports 4–7 → `PORT_DISABLED`
+- **Bicopter**: ports 0–1 → `PORT_DSHOT` (motors, TIM1), ports 4–5 → `PORT_PWM` (servos, TIM2), rest → `PORT_DISABLED`
 
 ## PubSub Interface
 
