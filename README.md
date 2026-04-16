@@ -23,6 +23,11 @@ The Flight Controller is the core autopilot that:
 | **Optical Flow** | External module (flight-optflow) | UART |
 | **MCU** | STM32H7 / ESP32-S3 / ESP32-P4 | — |
 
+## Getting Started
+
+- **STM32CubeIDE setup:** [Importing to STM32CubeIDE](base/boards/h7v1/SETUP_CUBEIDE.md)
+- **WSL2 setup (Windows):** [WSL2 Setup Guide](base/boards/h7v1/SETUP_WSL2.md)
+
 ## Demo Videos
 
 [![Video 1](https://img.youtube.com/vi/rbQvsm3T5Mc/0.jpg)](https://www.youtube.com/shorts/rbQvsm3T5Mc)
