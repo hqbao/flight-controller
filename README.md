@@ -156,7 +156,7 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 ### LOOP Topic
 The `LOOP` topic fires from `main()` (thread context) and is used by modules that need non-ISR execution:
 - `air_pressure` — DPS310 barometer (I2C polling, ~25 Hz rate-limited)
-- `fft` — 256-point FFT vibration analysis (too expensive for ISR; SCHEDULER_10HZ sets a flag, LOOP runs the computation)
+- `fft` — 256-point FFT vibration analysis (SNR=3.0, min separation 40 Hz, lock-and-hold EMA, axis-focused streaming); too expensive for ISR — SCHEDULER_10HZ sets a flag, LOOP runs the computation
 
 ### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
@@ -370,9 +370,9 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_GYRO_FILTERED_Y` | `0x15` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
 | `LOG_CLASS_FFT_GYRO_FILTERED_Z` | `0x16` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
 | `LOG_CLASS_FFT_PEAKS` | `0x17` | `fft.c` | Smoothed peak frequencies (6 floats: 3 axes × 2 peaks, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (61 bytes, ~3.3 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (61 bytes, ~3.3 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (61 bytes, ~3.3 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (61 bytes, 10 Hz axis-focused) |
+| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (61 bytes, 10 Hz axis-focused) |
+| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (61 bytes, 10 Hz axis-focused) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.

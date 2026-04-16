@@ -52,7 +52,7 @@ static void on_gyro_update(uint8_t *data, size_t size) {
 		(uint8_t *)g_filtered, sizeof(g_filtered));
 }
 
-/* --- FFT peaks callback (from fft module, ~3.3 Hz per axis) --- */
+/* --- FFT peaks callback (from fft module, 10 Hz axis-focused) --- */
 
 static void on_fft_peaks(uint8_t *data, size_t size) {
 	if (size < sizeof(fft_peaks_t)) return;

@@ -19,14 +19,15 @@
  * 1. PEAK DETECTION (always active):
  *    Collects gyro samples in a 256-point ring buffer, runs 256-point
  *    Hanning-windowed FFT at 10 Hz (cycling X→Y→Z), detects top 2 vibration
- *    peaks above 50 Hz (SNR threshold 8×, min separation 20 Hz), applies
+ *    peaks above 50 Hz (SNR threshold 3×, min separation 40 Hz), applies
  *    EMA smoothing (alpha 0.3), and publishes fft_peaks_t on
- *    FFT_PEAKS_UPDATE. Out-of-range peaks reset to 0; in-range re-initializes.
- *    The notch_filter module subscribes and adapts its center frequencies.
+ *    FFT_PEAKS_UPDATE. Lock-and-hold: out-of-range peaks keep last valid
+ *    frequency. Axis-focused: when streaming spectrum, only the selected
+ *    axis runs at 10 Hz; otherwise round-robin ~3.3 Hz per axis.
  *
  * 2. LOG STREAMING (when Python tool requests via LOG_CLASS):
  *    - FFT_PEAKS (0x17): 6 floats (3 axes × 2 peaks) at 10 Hz, 24 bytes.
- *    - FFT_SPECTRUM_X/Y/Z (0x18-0x1A): Combined frame at ~3.3 Hz/axis:
+ *    - FFT_SPECTRUM_X/Y/Z (0x18-0x1A): Combined frame at 10 Hz (axis-focused):
  *      [axis(1)] [52 uint8 dB-scaled bins, 0-200 Hz] [peak1(float)] [peak2(float)]
  *      = 61 bytes. Absolute dB scaling: floor -30 dB, range 60 dB.
  *      Peaks are appended in the same frame to avoid UART buffer corruption
@@ -57,10 +58,10 @@ static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z
 #define FFT_SPECTRUM_HZ    200.0f   /* Spectrum log: send bins up to this freq */
 #define FREQ_BIN_HZ        (FFT_SAMPLE_HZ / (float)FFT_SIZE)
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
-#define FFT_PEAK_SNR         8.0f   /* Peak must be 8× above mean power */
+#define FFT_PEAK_SNR         3.0f   /* Peak must be 3× above mean power */
 #define FFT_PEAK_MIN_PWR     1.0f   /* Absolute minimum power threshold */
 #define FREQ_EMA_ALPHA       0.3f   /* Frequency smoothing (0=frozen, 1=instant) */
-#define MIN_PEAK_SEP_HZ     20.0f   /* Minimum Hz between two peaks */
+#define MIN_PEAK_SEP_HZ     40.0f   /* Minimum Hz between two peaks */
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
 #define FFT_SPECTRUM_RANGE_DB  60.0f   /* dB range (floor+60 → white) */
@@ -127,15 +128,20 @@ static void on_fft_trigger(uint8_t *data, size_t size) {
 	if (g_sample_count >= FFT_SIZE) g_fft_pending = 1;
 }
 
-/* FFT analysis: runs in main-thread LOOP context (~3.3 Hz per axis) */
+/* FFT analysis: runs in main-thread LOOP context (10 Hz, axis-focused when logging) */
 static void on_loop(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 
 	if (!g_fft_pending) return;
 	g_fft_pending = 0;
 
-	uint8_t axis = g_fft_axis;
-	g_fft_axis = (g_fft_axis + 1) % 3;
+	uint8_t axis;
+	if (g_log_spectrum) {
+		axis = g_log_spectrum - 1;
+	} else {
+		axis = g_fft_axis;
+		g_fft_axis = (g_fft_axis + 1) % 3;
+	}
 
 	/* Copy ring buffer → FFT workspace with Hanning window */
 	uint16_t start = g_ring_idx;
@@ -150,13 +156,10 @@ static void on_loop(uint8_t *data, size_t size) {
 	float peak_freq[FFT_NUM_PEAKS];
 	fft_find_peaks(g_fft_re, g_fft_im, &g_peak_cfg, peak_freq);
 
-	/* Peak smoothing: only track peaks within valid range [MIN_HZ, MAX_HZ].
-	 * Out-of-range or missing → reset to 0. Back in range → snap (re-init).
-	 * Consecutive in-range → EMA smooth. */
+	/* EMA smoothing — lock-and-hold: keep last valid frequency
+	 * when peak is not detected this frame */
 	for (int i = 0; i < FFT_NUM_PEAKS; i++) {
 		if (peak_freq[i] < FFT_MIN_HZ || peak_freq[i] > FFT_MAX_HZ) {
-			/* Out of range or not found — reset */
-			g_smooth_freq[axis][i] = 0.0f;
 			continue;
 		}
 
