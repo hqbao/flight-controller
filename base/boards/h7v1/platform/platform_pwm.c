@@ -27,13 +27,16 @@ static TIM_TypeDef *g_pwm_time_bases[8] = {
 
 /* --- Timer constants for servo PWM --------------------------------------- */
 /* 240 MHz timer clock / (PSC+1) = 1 MHz tick (1 µs resolution)
- * 1 MHz / (ARR+1) = 50 Hz (20 ms period)
+ * 1 MHz / (ARR+1) = PWM frequency
  * CCR 1000–2000 → 1000–2000 µs pulse width — standard servo range.
  *
  * NOTE: All 4 channels of a timer share one timebase. DShot and servo PWM
  * MUST NOT coexist on the same timer. */
 #define SERVO_PWM_PRESCALER  239    /* 240 MHz / 240 = 1 MHz tick */
-#define SERVO_PWM_PERIOD     19999  /* 1 MHz / 20000 = 50 Hz */
+
+#define SERVO_PWM_50HZ      19999  /* 1 MHz / 20000 = 50 Hz  (analog servo) */
+#define SERVO_PWM_250HZ     3999   /* 1 MHz / 4000  = 250 Hz (digital servo) */
+#define SERVO_PWM_PERIOD    SERVO_PWM_50HZ
 
 /* --- Internal helpers ---------------------------------------------------- */
 
