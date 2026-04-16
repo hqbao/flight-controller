@@ -272,8 +272,8 @@ static void loop_logger(uint8_t *data, size_t size) {
 }
 
 void position_estimation_setup(void) {
-    fusion5_init(&g_fusion_x, 1.0, 1.0, 1.0, 20.0, 0.1);
-    fusion5_init(&g_fusion_y, 1.0, 1.0, 1.0, 20.0, 0.1);
+    fusion5_init(&g_fusion_x, 1.0, 1.25, 1.0, 10.0, 0.1);
+    fusion5_init(&g_fusion_y, 1.0, 1.25, 1.0, 10.0, 0.1);
     fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 10.0, 0.1);
 
 	subscribe(LINEAR_ACCEL_UPDATE, linear_accel_update);
