@@ -16,7 +16,7 @@ Receives on-board computed FFT spectrum and dynamic notch peak frequencies
 from the flight controller and displays a real-time scrolling spectrogram.
 
 Spectrum mode (LOG_CLASS_FFT_SPECTRUM_X/Y/Z, 0x18-0x1A):
-  Combined frame: [axis(1)] [52 uint8 dB-scaled bins, 0-200 Hz] [peak1(float)] [peak2(float)]
+  Combined frame: [axis(1)] [103 uint8 dB-scaled bins, 0-400 Hz] [peak1(float)] [peak2(float)]
   = 61 bytes per frame, ~3.3 Hz per axis, peaks overlaid as colored traces.
 
 Peaks-only mode (LOG_CLASS_FFT_PEAKS, 0x17):
@@ -44,7 +44,7 @@ DB_CMD_RESET = 0x07
 FFT_SIZE = 256
 SAMPLE_HZ = 1000.0
 FREQ_BIN_HZ = SAMPLE_HZ / FFT_SIZE        # ~3.906 Hz
-SPECTRUM_MAX_HZ = 200.0
+SPECTRUM_MAX_HZ = 400.0
 SPECTRUM_BINS = int(SPECTRUM_MAX_HZ / FREQ_BIN_HZ) + 1  # 52
 NUM_PEAKS = 2
 

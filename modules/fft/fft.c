@@ -54,13 +54,13 @@ static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z
 #define FFT_SIZE            256      /* Must be power of 2 */
 #define FFT_SAMPLE_HZ      ((float)GYRO_FREQ)
 #define FFT_MIN_HZ          50.0f   /* Ignore below (body motion, not vibration) */
-#define FFT_MAX_HZ         200.0f   /* Ignore above (motor vibration range) */
-#define FFT_SPECTRUM_HZ    200.0f   /* Spectrum log: send bins up to this freq */
+#define FFT_MAX_HZ         400.0f   /* Ignore above (motor vibration range) */
+#define FFT_SPECTRUM_HZ    400.0f   /* Spectrum log: send bins up to this freq */
 #define FREQ_BIN_HZ        (FFT_SAMPLE_HZ / (float)FFT_SIZE)
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
-#define FFT_PEAK_SNR         3.0f   /* Peak must be 3× above mean power */
+#define FFT_PEAK_SNR         5.0f   /* Peak must be 5× above mean power */
 #define FFT_PEAK_MIN_PWR     1.0f   /* Absolute minimum power threshold */
-#define FREQ_EMA_ALPHA       0.3f   /* Frequency smoothing (0=frozen, 1=instant) */
+#define FREQ_EMA_ALPHA       0.15f  /* Frequency smoothing (0=frozen, 1=instant) */
 #define MIN_PEAK_SEP_HZ     40.0f   /* Minimum Hz between two peaks */
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
@@ -194,8 +194,8 @@ static void on_loop(uint8_t *data, size_t size) {
 	}
 
 	/* Stream spectrum + peaks as single frame to avoid UART buffer conflict.
-	 * Layout: [axis(1)] [bins(52 uint8)] [peak1(float)] [peak2(float)]
-	 * Total: 1 + 52 + 8 = 61 bytes */
+	 * Layout: [axis(1)] [bins(103 uint8)] [peak1(float)] [peak2(float)]
+	 * Total: 1 + 103 + 8 = 112 bytes */
 	if (g_log_spectrum && axis == (g_log_spectrum - 1)) {
 		/* g_fft_re[0..spectrum_bins-1] holds power spectrum from fft_find_peaks(). */
 		uint8_t spec_buf[1 + FFT_SPECTRUM_BINS + FFT_NUM_PEAKS * sizeof(float)];
