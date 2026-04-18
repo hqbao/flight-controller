@@ -61,8 +61,8 @@ flight-controller/
 │   ├── attitude_estimation/       #   Sensor fusion (Mahony/EKF/Madgwick)
 │   ├── attitude_control/          #   Attitude stabilization PID loops
 │   ├── mix_control/               #   Motor/servo mixing (quad/bicopter, build-time selectable)
-│   ├── position_estimation/       #   Position/velocity estimation (GPS + optflow fusion)
-│   ├── position_control/          #   Position hold PID loops
+│   ├── position_estimation/       #   Position/velocity estimation (Fusion5 + Fusion4 parallel, configurable)
+│   ├── position_control/          #   Position hold P-control loops
 │   ├── speed_control/             #   Motor/servo output driver (per-port DShot/PWM)
 │   ├── gps_navigation/            #   GPS waypoint navigation (outdoor)
 │   ├── gps_denied_navigation/     #   Optical flow navigation (indoor)
@@ -382,6 +382,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (61 bytes, 10 Hz axis-focused) |
 | `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (61 bytes, 10 Hz axis-focused) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
+| `LOG_CLASS_POSITION_COMPARE` | `0x1C` | `position_estimation.c` | Fusion5 vs Fusion4 comparison (12 floats: F5 pos/vel + F4 pos/vel, 25 Hz) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -395,6 +396,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_2d_and_z.py` | Position dashboard: 2D map with trail + velocity arrow, data panel, altitude & velocity charts |
 | `position_estimation_chart.py` | Position/velocity time-series (2×2 grid) with live value annotations |
 | `position_estimation_optflow.py` | Optical flow (downward/upward) & altitude sensors (range finder/barometer) time-series |
+| `position_estimation_compare.py` | Fusion5 vs Fusion4 side-by-side comparison (2×3 grid: position + velocity, all axes) |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
