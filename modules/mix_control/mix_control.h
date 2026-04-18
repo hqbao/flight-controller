@@ -13,7 +13,7 @@
 #define AIRCRAFT_BICOPTER   2
 
 #ifndef AIRCRAFT_TYPE
-#define AIRCRAFT_TYPE AIRCRAFT_BICOPTER
+#define AIRCRAFT_TYPE AIRCRAFT_QUADCOPTER
 #endif
 
 void mix_control_setup(void);

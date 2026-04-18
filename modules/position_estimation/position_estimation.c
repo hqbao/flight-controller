@@ -27,11 +27,15 @@
 #include <pubsub.h>
 
 #include <fusion5.h>
+#include <fusion4.h>
 #include <vector3d.h>
 #include <string.h>
 #include <math.h>
 #include <macro.h>
 #include <messages.h>
+
+/* Select active filter for flight control: 0=Fusion5 (complementary), 1=Fusion4 (Kalman) */
+#define USE_FUSION4 0
 
 /* SI Unit Constants */
 #define GRAVITY_MSS 9.80665
@@ -50,7 +54,14 @@ static fusion5_t g_fusion_x;
 static fusion5_t g_fusion_y;
 static fusion5_t g_fusion_z;
 
-static uint8_t g_monitor_msg[24] = {0};
+/* Fusion4 (Kalman) — parallel instances for comparison */
+static fusion4_t g_fusion4_x;
+static fusion4_t g_fusion4_y;
+static fusion4_t g_fusion4_z;
+static vector3d_t g_f4_pos = {0, 0, 0};
+static vector3d_t g_f4_vel = {0, 0, 0};
+
+static uint8_t g_monitor_msg[48] = {0};
 static uint8_t g_log_class = LOG_CLASS_NONE;
 
 /* Optical Flow Data Storage for Logging */
@@ -79,6 +90,9 @@ typedef enum {
 } alt_source_t;
 
 static alt_source_t g_alt_source = ALT_SOURCE_LASER;
+
+/* Hybrid altitude: accumulated from alt_d deltas — source-agnostic like fusion5 */
+static double g_hybrid_alt = 0;
 
 static void gps_position_update(uint8_t *data, size_t size) {
     if (size < sizeof(gps_position_t)) return;
@@ -138,6 +152,10 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
     fusion5_update(&g_fusion_x, flow_vel_x, dt_flow);
     fusion5_update(&g_fusion_y, flow_vel_y, dt_flow);
 
+    /* Fusion4: velocity update (same data) */
+    fusion4_update(&g_fusion4_x, flow_vel_x);
+    fusion4_update(&g_fusion4_y, flow_vel_y);
+
 	if (g_alt_source == ALT_SOURCE_LASER) {
 		// Update altitude
 		g_alt = g_range_finder_alt;
@@ -147,6 +165,10 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		fusion5_update(&g_fusion_z, alt_d, 1.0);
+
+		/* Fusion4: use hybrid altitude accumulated from deltas */
+		g_hybrid_alt += alt_d;
+		fusion4_update_position(&g_fusion4_z, g_hybrid_alt, 0.05);
 	}
 }
 
@@ -170,6 +192,10 @@ static void air_pressure_update(uint8_t *data, size_t size) {
 		double alt_d = g_alt - g_alt_prev;
 		g_alt_prev = g_alt;
 		fusion5_update(&g_fusion_z, alt_d, 1.0);
+
+		/* Fusion4: use hybrid altitude accumulated from deltas */
+		g_hybrid_alt += alt_d;
+		fusion4_update_position(&g_fusion4_z, g_hybrid_alt, 0.1);
 	}
 }
 
@@ -219,25 +245,43 @@ static void linear_accel_update(uint8_t *data, size_t size) {
     fusion5_predict(&g_fusion_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
     fusion5_predict(&g_fusion_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
 
+	/* Fusion4: predict (same accel, same dt) */
+	fusion4_predict(&g_fusion4_x, g_linear_accel.x, 1.0 / ACCEL_FREQ);
+	fusion4_predict(&g_fusion4_y, g_linear_accel.y, 1.0 / ACCEL_FREQ);
+	fusion4_predict(&g_fusion4_z, g_linear_accel.z, 1.0 / ACCEL_FREQ);
+
+	/* Read both filters (both always run for comparison logging) */
 	g_pos_final.x = g_fusion_x.pos_final;
 	g_pos_final.y = g_fusion_y.pos_final;
 	g_pos_final.z = g_fusion_z.pos_final;
-
 	g_linear_veloc_final.x = g_fusion_x.veloc_final;
 	g_linear_veloc_final.y = g_fusion_y.veloc_final;
 	g_linear_veloc_final.z = g_fusion_z.veloc_final;
 
+	g_f4_pos.x = fusion4_get_position(&g_fusion4_x);
+	g_f4_pos.y = fusion4_get_position(&g_fusion4_y);
+	g_f4_pos.z = fusion4_get_position(&g_fusion4_z);
+	g_f4_vel.x = fusion4_get_velocity(&g_fusion4_x);
+	g_f4_vel.y = fusion4_get_velocity(&g_fusion4_y);
+	g_f4_vel.z = fusion4_get_velocity(&g_fusion4_z);
+
     // Pack position and velocity into update buffer
 	position_state_t state_update;
+#if USE_FUSION4
+	state_update.position = g_f4_pos;
+	state_update.velocity = g_f4_vel;
+#else
 	state_update.position = g_pos_final;
 	state_update.velocity = g_linear_veloc_final;
+#endif
 
     publish(POSITION_STATE_UPDATE, (uint8_t*)&state_update, sizeof(state_update));
 }
 
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
-	if (data[0] == LOG_CLASS_POSITION || data[0] == LOG_CLASS_POSITION_OPTFLOW) {
+	if (data[0] == LOG_CLASS_POSITION || data[0] == LOG_CLASS_POSITION_OPTFLOW
+		|| data[0] == LOG_CLASS_POSITION_COMPARE) {
 		g_log_class = data[0];
 	} else {
 		g_log_class = LOG_CLASS_NONE;
@@ -246,6 +290,28 @@ static void on_notify_log_class(uint8_t *data, size_t size) {
 
 static void loop_logger(uint8_t *data, size_t size) {
 	if (g_log_class == LOG_CLASS_NONE) return;
+
+	if (g_log_class == LOG_CLASS_POSITION_COMPARE) {
+		/* Fusion5 vs Fusion4 comparison: 12 floats, 48 bytes */
+		float val[12];
+		/* Fusion5 (existing) */
+		val[0] = g_pos_final.x;
+		val[1] = g_pos_final.y;
+		val[2] = g_pos_final.z;
+		val[3] = g_linear_veloc_final.x;
+		val[4] = g_linear_veloc_final.y;
+		val[5] = g_linear_veloc_final.z;
+		/* Fusion4 (new) */
+		val[6]  = g_f4_pos.x;
+		val[7]  = g_f4_pos.y;
+		val[8]  = g_f4_pos.z;
+		val[9]  = g_f4_vel.x;
+		val[10] = g_f4_vel.y;
+		val[11] = g_f4_vel.z;
+		memcpy(g_monitor_msg, val, 48);
+		publish(SEND_LOG, (uint8_t*)g_monitor_msg, 48);
+		return;
+	}
 
     float val[6];
 
@@ -275,6 +341,11 @@ void position_estimation_setup(void) {
     fusion5_init(&g_fusion_x, 1.0, 1.25, 1.0, 10.0, 0.1);
     fusion5_init(&g_fusion_y, 1.0, 1.25, 1.0, 10.0, 0.1);
     fusion5_init(&g_fusion_z, 1.0, 0.5, 1.0, 10.0, 0.1);
+
+    /* Fusion4: sigma_accel, sigma_vel, sigma_bias */
+    fusion4_init(&g_fusion4_x, 0.5, 0.1, 0.01);
+    fusion4_init(&g_fusion4_y, 0.5, 0.1, 0.01);
+    fusion4_init(&g_fusion4_z, 0.2, 0.1, 0.001);
 
 	subscribe(LINEAR_ACCEL_UPDATE, linear_accel_update);
 	subscribe(SENSOR_AIR_PRESSURE, air_pressure_update);

@@ -16,7 +16,7 @@
  * P-gain was increased to compensate for the smaller error magnitude.
  * Legacy Gain: 50.0  -> Current SI Gain: 100.0
  */
-#define POS_CTL_XY_P 100.0
+#define POS_CTL_XY_P 50.0
 #define POS_CTL_Z_P 2000.0
 
 /* Velocity Scaling */
@@ -139,7 +139,7 @@ static void position_update(uint8_t *data, size_t size) {
 	} else {
 		if (g_moving_state_roll == 0) g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
 		if (g_moving_state_pitch == 0) g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
-		g_veloc_applied.z = g_veloc_final.z - g_veloc_offset.z;
+		g_veloc_applied.z = (g_veloc_final.z - g_veloc_offset.z) * POS_CTL_VELOC_Z_SCALE;
 
 		// Simple P Control: Output = (Current - Target) * P
 		// Note: P-term in PID lib was (feedback - setpoint) * P. 
@@ -161,7 +161,7 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_roll 		= -LIMIT(g_output_smooth.y + g_veloc_applied.y, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
 		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
 		g_pos_ctl_yaw 		= -g_yaw_veloc;
-		g_pos_ctl_alt 		= -(g_output_smooth.z + g_veloc_applied.z * POS_CTL_VELOC_Z_SCALE);
+		g_pos_ctl_alt 		= -(g_output_smooth.z + g_veloc_applied.z);
 	}
 	
 	publish_angular_target();
