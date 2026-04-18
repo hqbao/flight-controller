@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build script for STM32H7 Flight Controller
 # Compiles the flight controller firmware
-# Usage: ./build.sh [clean]
+# Usage: ./build.sh [clean] [quad|bicopter]
 
 set -e
 
@@ -25,12 +25,31 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Parse arguments
+AIRCRAFT="bicopter"
+for arg in "$@"; do
+    case "$arg" in
+        clean) CLEAN=1 ;;
+        quad|quadcopter) AIRCRAFT="quad" ;;
+        bicopter) AIRCRAFT="bicopter" ;;
+    esac
+done
+
+if [[ "$AIRCRAFT" == "quad" ]]; then
+    AIRCRAFT_DEF="-DAIRCRAFT_TYPE=AIRCRAFT_QUADCOPTER"
+    AIRCRAFT_LABEL="Quadcopter"
+else
+    AIRCRAFT_DEF="-DAIRCRAFT_TYPE=AIRCRAFT_BICOPTER"
+    AIRCRAFT_LABEL="Bicopter"
+fi
+
 echo -e "${YELLOW}========================================${NC}"
 echo -e "${YELLOW}STM32H7 Flight Controller - Build${NC}"
+echo -e "${YELLOW}Aircraft: ${GREEN}${AIRCRAFT_LABEL}${NC}"
 echo -e "${YELLOW}========================================${NC}"
 
 # Clean if requested
-if [[ "$1" == "clean" ]]; then
+if [[ "$CLEAN" == "1" ]]; then
     echo -e "${YELLOW}Cleaning build artifacts...${NC}"
     cd "$DEBUG_DIR"
     make clean
@@ -347,6 +366,11 @@ clean-modules-2f-dblink:
 .PHONY: clean-modules-2f-dblink
 SUBMK
 fi
+
+# Inject AIRCRAFT_TYPE define into all gcc compile lines
+# Remove any previous AIRCRAFT_TYPE define first, then inject the new one
+find "$DEBUG_DIR" -name "subdir.mk" -exec sed -i '' 's/ -DAIRCRAFT_TYPE=[A-Z_]*//g' {} +
+find "$DEBUG_DIR" -name "subdir.mk" -exec sed -i '' "s/-DSTM32H743xx/-DSTM32H743xx ${AIRCRAFT_DEF}/g" {} +
 
 # Build
 echo -e "${YELLOW}Building...${NC}"

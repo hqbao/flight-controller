@@ -22,11 +22,13 @@ NC='\033[0m'
 # Parse arguments
 VERIFY=false
 DEBUG=false
+AIRCRAFT=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --verify) VERIFY=true; shift ;;
         --debug) DEBUG=true; shift ;;
+        quad|quadcopter|bicopter) AIRCRAFT="$1"; shift ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -38,7 +40,7 @@ echo ""
 
 # Step 1: Build
 echo -e "${YELLOW}[1/2] Building...${NC}"
-"$PROJECT_DIR/build.sh"
+"$PROJECT_DIR/build.sh" $AIRCRAFT
 echo ""
 
 # Step 2: Flash

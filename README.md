@@ -208,8 +208,11 @@ All ports route raw bytes to `dblink`, which auto-detects both **DB** and **UBX*
 ### STM32H7
 ```bash
 cd flight-controller/base/boards/h7v1
-./build.sh            # Build (auto-patches CubeIDE makefiles)
-./build-flash.sh      # Build + flash
+./build.sh              # Build bicopter (default)
+./build.sh quad         # Build quadcopter
+./build.sh bicopter     # Build bicopter (explicit)
+./build-flash.sh        # Build bicopter + flash
+./build-flash.sh quad   # Build quadcopter + flash
 ```
 
 ### ESP32 (requires ESP-IDF v5.x)
