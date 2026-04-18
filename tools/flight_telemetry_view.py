@@ -4,6 +4,9 @@ import struct
 import threading
 import queue
 import numpy as np
+import sys
+import matplotlib
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 import time
@@ -82,7 +85,7 @@ HISTORY_LEN = 200  # 20 seconds at 10 Hz
 ports = serial.tools.list_ports.comports()
 print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -144,16 +147,40 @@ def send_chip_id_request(ser):
     print("  \u2192 Chip ID request sent")
 
 
+_bad_data_count = 0
+_bad_data_last_log = 0
+
+def _sanitize_floats(values, label):
+    """Replace NaN/Inf with 0.0 and log a warning (rate-limited)."""
+    global _bad_data_count, _bad_data_last_log
+    clean = []
+    bad = False
+    for v in values:
+        if not math.isfinite(v):
+            bad = True
+            clean.append(0.0)
+        else:
+            clean.append(v)
+    if bad:
+        _bad_data_count += 1
+        now = time.time()
+        if now - _bad_data_last_log >= 1.0:
+            print(f"  \u26a0 {label} has bad data: {tuple(values)}  ({_bad_data_count} bad frames)")
+            _bad_data_count = 0
+            _bad_data_last_log = now
+    return tuple(clean)
+
+
 def parse_telemetry(payload):
     """Unpack 66-byte telemetry frame into a dict."""
     if len(payload) != TELEMETRY_FRAME_SIZE:
         return None
 
-    att = struct.unpack_from('<3f', payload, 0)
-    pos = struct.unpack_from('<3f', payload, 12)
-    vel = struct.unpack_from('<3f', payload, 24)
+    att = _sanitize_floats(struct.unpack_from('<3f', payload, 0), 'att')
+    pos = _sanitize_floats(struct.unpack_from('<3f', payload, 12), 'pos')
+    vel = _sanitize_floats(struct.unpack_from('<3f', payload, 24), 'vel')
     motors = struct.unpack_from('<8h', payload, 36)
-    pid = struct.unpack_from('<3f', payload, 52)
+    pid = _sanitize_floats(struct.unpack_from('<3f', payload, 52), 'pid')
     state = payload[64]
     health = payload[65]
 
@@ -564,6 +591,15 @@ def main():
             btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
 
+            # FC reboots after reset — wait then re-init
+            def _post_reset():
+                time.sleep(2.0)
+                if g_serial and g_serial.is_open:
+                    g_serial.reset_input_buffer()
+                    send_log_class_command(g_serial, LOG_CLASS_HEART_BEAT)
+
+            threading.Thread(target=_post_reset, daemon=True).start()
+
     btn_reset.on_clicked(on_reset)
 
     # =========================================================================
@@ -657,15 +693,16 @@ def main():
         # =================================================================
         # Position XY
         # =================================================================
-        xy_history['x'].append(py_ned)
-        xy_history['y'].append(px_ned)
+        if np.isfinite(py_ned) and np.isfinite(px_ned):
+            xy_history['x'].append(py_ned)
+            xy_history['y'].append(px_ned)
         if len(xy_history['x']) > HISTORY_LEN:
             xy_history['x'] = xy_history['x'][-HISTORY_LEN:]
             xy_history['y'] = xy_history['y'][-HISTORY_LEN:]
         pos_trail.set_data(xy_history['x'], xy_history['y'])
         pos_dot.set_data([py_ned], [px_ned])
         # Zoom: manual (scroll) or auto-fit
-        if xy_zoom[0] is not None:
+        if xy_zoom[0] is not None and np.isfinite(py_ned) and np.isfinite(px_ned):
             half = xy_zoom[0]
             ax_xy.set_xlim(py_ned - half, py_ned + half)
             ax_xy.set_ylim(px_ned - half, px_ned + half)
@@ -704,9 +741,11 @@ def main():
         if len(vel_history['t']) > 1:
             ax_vel.set_xlim(vel_history['t'][0], vel_history['t'][-1] + 0.1)
             all_v = np.array(vel_history['vx'] + vel_history['vy'] + vel_history['vz'])
-            vmin, vmax = all_v.min(), all_v.max()
-            vm = max(0.5, (vmax - vmin) * 0.2)
-            ax_vel.set_ylim(vmin - vm, vmax + vm)
+            all_v = all_v[np.isfinite(all_v)]
+            if len(all_v) > 0:
+                vmin, vmax = all_v.min(), all_v.max()
+                vm = max(0.5, (vmax - vmin) * 0.2)
+                ax_vel.set_ylim(vmin - vm, vmax + vm)
         updated.extend(vel_lines)
 
         # =================================================================
@@ -724,9 +763,11 @@ def main():
         if len(alt_history['t']) > 1:
             ax_alt.set_xlim(alt_history['t'][0], alt_history['t'][-1] + 0.1)
             zarr = np.array(alt_history['z'])
-            zmin, zmax = zarr.min(), zarr.max()
-            margin = max(0.5, (zmax - zmin) * 0.2)
-            ax_alt.set_ylim(zmin - margin, zmax + margin)
+            zarr = zarr[np.isfinite(zarr)]
+            if len(zarr) > 0:
+                zmin, zmax = zarr.min(), zarr.max()
+                margin = max(0.5, (zmax - zmin) * 0.2)
+                ax_alt.set_ylim(zmin - margin, zmax + margin)
         updated.append(alt_line)
 
         # =================================================================

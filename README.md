@@ -74,6 +74,7 @@ flight-controller/
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── fft/                       #   FFT vibration analysis
 │   ├── notch_filter/              #   Gyro notch filter (motor vibration rejection)
+│   ├── config/                    #   Runtime tuning parameters (56 params, flash-persistent)
 │   ├── dblink/                    #   UART protocol parser + TX queue (DB/UBX framing)
 │   └── local_storage/             #   Persistent configuration storage
 │
@@ -89,6 +90,10 @@ flight-controller/
 │   ├── position_estimation_2d_and_z.py # Position dashboard (2D map + altitude + velocity)
 │   ├── position_estimation_chart.py    # Position/velocity time-series (2×2 grid)
 │   ├── position_estimation_optflow.py  # Optical flow & altitude sensor viewer
+│   ├── position_estimation_compare.py  # Fusion5 vs Fusion4 comparison
+│   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
+│   ├── tuning_board.py            #   Parameter tuning GUI (56 params, query/upload/defaults)
+│   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
 ```
@@ -198,7 +203,7 @@ All ports route raw bytes to `dblink`, which auto-detects both **DB** and **UBX*
 
 | UART | Baud | Direction | Notes |
 |------|------|-----------|-------|
-| USART1 | 9600 | TX + RX | Telemetry output + Python tool commands (USB) |
+| USART1 | 19200 | TX + RX | Telemetry output + Python tool commands (USB) |
 | USART2 | 38400 | RX only | General-purpose sensor input |
 | USART3 | 38400 | RX only | General-purpose sensor input |
 | UART4 | 38400 | RX only | General-purpose sensor input |
@@ -348,6 +353,7 @@ Fits a quadratic polynomial `bias(T) = a·T² + b·T + c` per axis, allowing the
 - ID `0x07`: `DB_CMD_RESET` — command from Python tool to reset the flight controller
 - ID `0x08`: `DB_CMD_CALIBRATE_GYRO_TEMP` — command from Python tool to upload gyro temp compensation (9 floats: 3 axes × 3 polynomial coefficients)
 - ID `0x09`: `DB_CMD_CHIP_ID` — request 8-byte unique chip ID (response sent via `SEND_LOG`)
+- ID `0x0A`: `DB_CMD_TUNING` — upload single tuning parameter (4-byte param_id LE + 4-byte float LE)
 
 ### Runtime Log Class Selection
 Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging from a specific module at runtime — **no firmware recompilation needed**. On startup, every tool sends `LOG_CLASS_HEART_BEAT` immediately after connecting — this stops whatever the previous tool was streaming and restores the firmware to its default state. Each tool has a **"Start Log"** button that sends the appropriate class and a **"Reset FC"** button that sends `DB_CMD_RESET` to perform a hardware reset (`NVIC_SystemReset()`).
@@ -370,7 +376,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_COMPASS_CALIB` | `0x0D` | `compass.c` | Calibrated magnetometer (3 floats) |
 | `LOG_CLASS_FFT_GYRO_X` | `0x0E` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_FFT_GYRO_Y` | `0x0F` | — | *(Removed — was host-side FFT raw gyro streaming)* |
-| `LOG_CLASS_STORAGE` | `0x10` | `local_storage.c` | Stored calibration params (48 params in 2 pages: 30 + 18 floats, auto-stops) |
+| `LOG_CLASS_STORAGE` | `0x10` | `local_storage.c` | Stored params (104 params in 4 pages: 26 floats × 4, auto-stops) |
 | `LOG_CLASS_MIX_CONTROL` | `0x11` | `quadcopter.c` / `bicopter.c` | Motor/servo outputs (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
 | `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
@@ -378,9 +384,9 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_GYRO_FILTERED_Y` | `0x15` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
 | `LOG_CLASS_FFT_GYRO_FILTERED_Z` | `0x16` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
 | `LOG_CLASS_FFT_PEAKS` | `0x17` | `fft.c` | Smoothed peak frequencies (6 floats: 3 axes × 2 peaks, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (61 bytes, 10 Hz axis-focused) |
-| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (61 bytes, 10 Hz axis-focused) |
-| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (61 bytes, 10 Hz axis-focused) |
+| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | `position_estimation.c` | Fusion5 vs Fusion4 comparison (12 floats: F5 pos/vel + F4 pos/vel, 25 Hz) |
 
@@ -408,8 +414,9 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `flight_telemetry_bicopter_view.py` | Flight telemetry HUD: 3D bicopter with tilting nacelles, motors/servos, overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
+| `tuning_board.py` | Parameter tuning GUI: 56 flash-persistent params in 7 categories, query/upload/defaults with confirmation |
 
-> **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect.
+> **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect. All tools use the macOS-native backend on darwin and TkAgg on other platforms.
 
 ## Related Projects
 

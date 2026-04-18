@@ -26,8 +26,8 @@
 
 /* --- Configuration --- */
 #define NOTCH_SAMPLE_HZ     ((float)GYRO_FREQ)
-#define NOTCH_Q_FACTOR       3.0f
-#define NOTCH_MIN_HZ         50.0f   /* Below this → lock-and-hold last valid frequency */
+static float g_notch_q         = 3.0f;
+static float g_notch_min_hz    = 50.0f;
 
 /* --- Filter State --- */
 static notch_filter_t g_notch_a[3];  /* Per-axis notch A */
@@ -61,17 +61,27 @@ static void on_fft_peaks(uint8_t *data, size_t size) {
 
 	if (peaks.axis >= 3) return;
 
-	if (peaks.freq[0] > NOTCH_MIN_HZ) {
+	if (peaks.freq[0] > g_notch_min_hz) {
 		notch_filter_update(&g_notch_a[peaks.axis],
-			peaks.freq[0], NOTCH_SAMPLE_HZ, NOTCH_Q_FACTOR);
+			peaks.freq[0], NOTCH_SAMPLE_HZ, g_notch_q);
 	}
-	/* Below MIN_HZ → keep last valid frequency (lock-and-hold) */
+	/* Below min_hz → keep last valid frequency (lock-and-hold) */
 
-	if (FFT_NUM_PEAKS >= 2 && peaks.freq[1] > NOTCH_MIN_HZ) {
+	if (FFT_NUM_PEAKS >= 2 && peaks.freq[1] > g_notch_min_hz) {
 		notch_filter_update(&g_notch_b[peaks.axis],
-			peaks.freq[1], NOTCH_SAMPLE_HZ, NOTCH_Q_FACTOR);
+			peaks.freq[1], NOTCH_SAMPLE_HZ, g_notch_q);
 	}
-	/* Below MIN_HZ → keep last valid frequency (lock-and-hold) */
+	/* Below min_hz → keep last valid frequency (lock-and-hold) */
+}
+
+/* --- Tuning --- */
+
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+	g_notch_q = t.notch_q;
+	g_notch_min_hz = t.notch_min_hz;
 }
 
 /* --- Setup --- */
@@ -80,11 +90,12 @@ void notch_filter_setup(void) {
 	/* Start in passthrough — notch only activates once FFT detects real peaks */
 	for (int i = 0; i < 3; i++) {
 		notch_filter_init(&g_notch_a[i], 0.0f,
-			NOTCH_SAMPLE_HZ, NOTCH_Q_FACTOR);
+			NOTCH_SAMPLE_HZ, g_notch_q);
 		notch_filter_init(&g_notch_b[i], 0.0f,
-			NOTCH_SAMPLE_HZ, NOTCH_Q_FACTOR);
+			NOTCH_SAMPLE_HZ, g_notch_q);
 	}
 
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, on_gyro_update);
 	subscribe(FFT_PEAKS_UPDATE, on_fft_peaks);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

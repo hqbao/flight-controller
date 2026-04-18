@@ -64,6 +64,9 @@ static vector3d_t g_f4_vel = {0, 0, 0};
 static uint8_t g_monitor_msg[48] = {0};
 static uint8_t g_log_class = LOG_CLASS_NONE;
 
+/* Optical flow velocity gain (default — overridden by tuning) */
+static double g_optflow_gain = 5.0;
+
 /* Optical Flow Data Storage for Logging */
 static float g_optflow_down_dx = 0.0f;
 static float g_optflow_down_dy = 0.0f;
@@ -128,8 +131,8 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	 * 3. Empirical gain of 5.0 applied to angular displacement.
 	 */
 	
-	double vel_x = msg.dx * 5.0;
-	double vel_y = msg.dy * 5.0;
+	double vel_x = msg.dx * g_optflow_gain;
+	double vel_y = msg.dy * g_optflow_gain;
 
     double flow_vel_x = 0;
     double flow_vel_y = 0;
@@ -337,6 +340,33 @@ static void loop_logger(uint8_t *data, size_t size) {
 	publish(SEND_LOG, (uint8_t*)g_monitor_msg, 24);
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+
+	g_optflow_gain = t.pe_optflow_gain;
+
+	/* Update fusion5 params without resetting filter state */
+	g_fusion_x.params.stage1_integ    = t.pe_xy_s1_integ;
+	g_fusion_x.params.stage1_corr     = t.pe_xy_s1_corr;
+	g_fusion_x.params.stage2_integ    = t.pe_xy_s2_integ;
+	g_fusion_x.params.stage2_corr     = t.pe_xy_s2_corr;
+	g_fusion_x.params.veloc_feedback  = t.pe_xy_v_fb;
+
+	g_fusion_y.params.stage1_integ    = t.pe_xy_s1_integ;
+	g_fusion_y.params.stage1_corr     = t.pe_xy_s1_corr;
+	g_fusion_y.params.stage2_integ    = t.pe_xy_s2_integ;
+	g_fusion_y.params.stage2_corr     = t.pe_xy_s2_corr;
+	g_fusion_y.params.veloc_feedback  = t.pe_xy_v_fb;
+
+	g_fusion_z.params.stage1_integ    = t.pe_z_s1_integ;
+	g_fusion_z.params.stage1_corr     = t.pe_z_s1_corr;
+	g_fusion_z.params.stage2_integ    = t.pe_z_s2_integ;
+	g_fusion_z.params.stage2_corr     = t.pe_z_s2_corr;
+	g_fusion_z.params.veloc_feedback  = t.pe_z_v_fb;
+}
+
 void position_estimation_setup(void) {
     fusion5_init(&g_fusion_x, 1.0, 1.25, 1.0, 10.0, 0.1);
     fusion5_init(&g_fusion_y, 1.0, 1.25, 1.0, 10.0, 0.1);
@@ -355,4 +385,5 @@ void position_estimation_setup(void) {
 	subscribe(SCHEDULER_10HZ, check_altitude_source);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_25HZ, loop_logger);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

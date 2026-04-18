@@ -4,6 +4,9 @@ import struct
 import threading
 import queue
 import numpy as np
+import matplotlib
+import sys
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -54,7 +57,7 @@ ALT_COLOR = '#ffaa55'
 ports = serial.tools.list_ports.comports()
 print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -298,9 +301,6 @@ def main():
                          abs(np.min(hist_alt[-100:])), abs(np.max(hist_alt[-100:])), 5)
             ax_ya.set_ylim(-ya_max * 1.2, ya_max * 1.2)
 
-            state_names = {0: 'DISARM', 1: 'ARMING', 2: 'ARMED', 3: 'TAKEOFF',
-                           4: 'FLYING', 5: 'LANDING', 6: 'TESTING'}
-            mode_names = {0: 'STAB', 1: 'ALT_HOLD', 2: 'POS_HOLD', 3: 'NAV'}
             s = int(last_state[0])
             m = int(last_mode[0])
 
@@ -310,8 +310,8 @@ def main():
                 f"Yaw:   {hist_yaw[-1]:+7.1f}°\n"
                 f"Alt:   {hist_alt[-1]:+7.1f}°\n"
                 f"\n"
-                f"State: {s} ({state_names.get(s, '?')})\n"
-                f"Mode:  {m} ({mode_names.get(m, '?')})\n"
+                f"State: {s}\n"
+                f"Mode:  {m}\n"
                 f"\n"
                 f"Msg#:  {int(last_cnt[0])}\n"
                 f"Frames: {frame_count[0]}"
@@ -346,6 +346,14 @@ def main():
     def on_reset(event):
         if g_serial and g_serial.is_open:
             send_reset_command(g_serial)
+
+            def _post_reset():
+                time.sleep(2.0)
+                if g_serial and g_serial.is_open:
+                    g_serial.reset_input_buffer()
+                    send_log_class_command(g_serial, LOG_CLASS_HEART_BEAT)
+
+            threading.Thread(target=_post_reset, daemon=True).start()
 
     def on_clear(event):
         hist_roll[:] = 0

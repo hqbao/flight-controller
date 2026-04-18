@@ -78,6 +78,7 @@ typedef enum {
 	LOCAL_STORAGE_LOAD,
 	LOCAL_STORAGE_RESULT,
 	LOCAL_STORAGE_SAVE,
+	TUNING_READY,
 
 	// --- Health & fault ---
 	FAULT_DETECTION,

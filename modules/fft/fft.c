@@ -58,9 +58,9 @@ static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z
 #define FFT_SPECTRUM_HZ    400.0f   /* Spectrum log: send bins up to this freq */
 #define FREQ_BIN_HZ        (FFT_SAMPLE_HZ / (float)FFT_SIZE)
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
-#define FFT_PEAK_SNR         5.0f   /* Peak must be 5× above mean power */
+static float g_fft_peak_snr    = 5.0f;
 #define FFT_PEAK_MIN_PWR     1.0f   /* Absolute minimum power threshold */
-#define FREQ_EMA_ALPHA       0.15f  /* Frequency smoothing (0=frozen, 1=instant) */
+static float g_freq_ema_alpha  = 0.15f;
 #define MIN_PEAK_SEP_HZ     40.0f   /* Minimum Hz between two peaks */
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
@@ -169,8 +169,8 @@ static void on_loop(uint8_t *data, size_t size) {
 		} else {
 			/* Consecutive valid peaks — EMA smooth */
 			g_smooth_freq[axis][i] =
-				FREQ_EMA_ALPHA * peak_freq[i] +
-				(1.0f - FREQ_EMA_ALPHA) * g_smooth_freq[axis][i];
+					g_freq_ema_alpha * peak_freq[i] +
+				(1.0f - g_freq_ema_alpha) * g_smooth_freq[axis][i];
 		}
 	}
 
@@ -225,6 +225,18 @@ static void on_loop(uint8_t *data, size_t size) {
 	}
 }
 
+/* --- Tuning --- */
+
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t tp;
+	memcpy(&tp, data, sizeof(tp));
+
+	g_fft_peak_snr   = tp.fft_peak_snr;
+	g_freq_ema_alpha = tp.fft_freq_alpha;
+	g_peak_cfg.peak_snr = g_fft_peak_snr;
+}
+
 /* --- Setup --- */
 
 void fft_setup(void) {
@@ -234,7 +246,7 @@ void fft_setup(void) {
 	g_peak_cfg.sample_hz = FFT_SAMPLE_HZ;
 	g_peak_cfg.min_hz = FFT_MIN_HZ;
 	g_peak_cfg.max_hz = FFT_MAX_HZ;
-	g_peak_cfg.peak_snr = FFT_PEAK_SNR;
+	g_peak_cfg.peak_snr = g_fft_peak_snr;
 	g_peak_cfg.peak_min_pwr = FFT_PEAK_MIN_PWR;
 	g_peak_cfg.min_sep_hz = MIN_PEAK_SEP_HZ;
 	g_peak_cfg.num_peaks = FFT_NUM_PEAKS;
@@ -244,4 +256,5 @@ void fft_setup(void) {
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, on_gyro_update);
 	subscribe(SCHEDULER_10HZ, on_fft_trigger);
 	subscribe(LOOP, on_loop);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

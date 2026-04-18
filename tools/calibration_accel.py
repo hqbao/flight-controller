@@ -5,7 +5,8 @@ import threading
 import queue
 import numpy as np
 import matplotlib
-matplotlib.use('macosx')
+import sys
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -65,7 +66,7 @@ PARAM_ACCEL_SCALE_BASE = 8
 ports = serial.tools.list_ports.comports()
 print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -117,6 +118,39 @@ ORIENTATIONS = [
 
 
 # --- DB Protocol Helpers ---
+
+
+def _open_file_dialog(title="Select file", initialdir=".", filetypes=None):
+    """Cross-platform file picker (works on macOS, Windows, Linux)."""
+    if filetypes is None:
+        filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
+    if sys.platform == 'darwin':
+        import subprocess
+        script = (
+            f'set theFile to choose file with prompt "{title}" '
+            f'default location POSIX file "{initialdir}" '
+            f'of type {{"csv"}}\n'
+            f'return POSIX path of theFile'
+        )
+        try:
+            result = subprocess.run(['osascript', '-e', script],
+                                    capture_output=True, text=True, timeout=120)
+            fpath = result.stdout.strip()
+            return fpath if fpath else None
+        except Exception:
+            return None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        fpath = filedialog.askopenfilename(
+            title=title, initialdir=initialdir, filetypes=filetypes)
+        root.destroy()
+        return fpath if fpath else None
+    except Exception:
+        return None
 
 def build_db_frame(cmd_id, payload_bytes):
     msg_class = 0x00
@@ -218,13 +252,9 @@ def serial_reader():
                     elif length == 8 and any(b != 0 for b in payload):
                         heartbeat_queue.put(('chip_id', payload.hex().upper()))
 
-                    # Storage page 0: 30 floats = 120 bytes
-                    elif length == 120:
-                        storage_queue.put(('page0', payload))
-
-                    # Storage page 1: 18 floats = 72 bytes
-                    elif length == 72:
-                        storage_queue.put(('page1', payload))
+                    # Storage page: 26 floats = 104 bytes (4 pages sent sequentially)
+                    elif length == 104:
+                        storage_queue.put(payload)
 
     except Exception as e:
         print(f"Serial error: {e}")
@@ -579,6 +609,7 @@ def main():
         if not g_serial or not g_serial.is_open:
             return
         while not storage_queue.empty(): storage_queue.get_nowait()
+        storage_pages.clear()
         g_querying_storage = True
         send_log_class(g_serial, LOG_CLASS_STORAGE)
         info_text.set_text('Querying FC...')
@@ -617,22 +648,8 @@ def main():
 
     def load_csv(event):
         cal_dir = get_cal_dir()
-        info_text.set_text('Opening file picker...')
-        plt.draw()
-        def _pick_file():
-            try:
-                result = subprocess.run(
-                    ['osascript', '-e',
-                     'POSIX path of (choose file with prompt "Load accel calibration CSV" '
-                     'default location (POSIX file "' + cal_dir + '") '
-                     'of type {"public.comma-separated-values-text", "public.text"})'],
-                    capture_output=True, text=True, timeout=120
-                )
-                fpath = result.stdout.strip()
-                load_csv_queue.put(fpath if fpath else None)
-            except Exception:
-                load_csv_queue.put(None)
-        threading.Thread(target=_pick_file, daemon=True).start()
+        fpath = _open_file_dialog(title='Load calibration CSV', initialdir=cal_dir)
+        load_csv_queue.put(fpath)
     btn_loadcsv.on_clicked(load_csv)
 
     def clear_points(event):
@@ -665,6 +682,14 @@ def main():
         btn_viewcal.color = BTN_COLOR
         btn_viewcal.hovercolor = BTN_HOVER
         send_reset(g_serial)
+
+        def _post_reset():
+            time.sleep(2.0)
+            if g_serial and g_serial.is_open:
+                g_serial.reset_input_buffer()
+                send_log_class(g_serial, LOG_CLASS_HEART_BEAT)
+
+        threading.Thread(target=_post_reset, daemon=True).start()
     btn_reset.on_clicked(reset_fc)
 
     # --- Axes setup ---
@@ -690,7 +715,7 @@ def main():
     fig.canvas.mpl_connect('scroll_event', on_scroll)
 
     # --- Animation ---
-    storage_pages = {}
+    storage_pages = []
 
     def update(frame):
         nonlocal g_logging_active, g_verify_active
@@ -761,17 +786,16 @@ def main():
             )
             print(f'  \u2713 Loaded {len(raw_data_points)} positions from {fpath}')
 
-        # Process storage readback
+        # Process storage readback (4 pages of 26 floats each, sent sequentially)
         while not storage_queue.empty():
             try:
-                page_tag, payload = storage_queue.get_nowait()
+                payload = storage_queue.get_nowait()
             except queue.Empty:
                 break
-            if page_tag == 'page0':
-                storage_pages[0] = struct.unpack('<30f', payload)
+            storage_pages.append(struct.unpack('<26f', payload))
 
-        if g_querying_storage and 0 in storage_pages:
-            params = storage_pages[0]
+        if g_querying_storage and len(storage_pages) >= 1:
+            params = storage_pages[0]  # accel params 4-16 are all in page 0
             stored_cal = params[PARAM_ACCEL_CAL_FLAG]
 
             if stored_cal > 0.0:

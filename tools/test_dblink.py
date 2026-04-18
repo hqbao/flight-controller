@@ -74,17 +74,17 @@ LOG_CLASS_TESTS = [
     (LOG_CLASS_FLIGHT_TELEMETRY, "Telemetry",         66, 3.0),
     (LOG_CLASS_RC_RECEIVER,      "RC Receiver",       28, 3.0),
     (LOG_CLASS_FFT_PEAKS,        "FFT Peaks",         24, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_X,   "FFT Spectrum X",    61, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_Y,   "FFT Spectrum Y",    61, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_Z,   "FFT Spectrum Z",    61, 5.0),
-    (LOG_CLASS_STORAGE,          "Storage",          None, 5.0),  # 120 or 72 bytes (2 pages)
+    (LOG_CLASS_FFT_SPECTRUM_X,   "FFT Spectrum X",   112, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_Y,   "FFT Spectrum Y",   112, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_Z,   "FFT Spectrum Z",   112, 5.0),
+    (LOG_CLASS_STORAGE,          "Storage",          None, 5.0),  # 4 pages of 104 bytes
 ]
 
 
 def find_serial_port():
     ports = serial.tools.list_ports.comports()
     for port, desc, hwid in sorted(ports):
-        if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+        if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
             return port
     return None
 
@@ -179,8 +179,8 @@ def collect_frames(ser, expected_size, timeout, count=3):
             continue
         if expected_size is not None and len(payload) != expected_size:
             continue
-        if expected_size is None and len(payload) not in (120, 72):
-            continue  # Storage sends 2 page sizes
+        if expected_size is None and len(payload) != 104:
+            continue  # Storage sends 4 pages of 104 bytes
         frames.append(payload)
     return frames
 
@@ -202,10 +202,10 @@ def format_payload(payload, expected_size):
         return (f"att=({att[0]:+.1f},{att[1]:+.1f},{att[2]:+.1f})° "
                 f"pos=({pos[0]:+.2f},{pos[1]:+.2f},{pos[2]:+.2f})m "
                 f"state={state} health=0x{health:02X}")
-    elif expected_size == 61:
-        # FFT spectrum: 1 byte axis + 52 bytes bins + 2 floats peaks
+    elif expected_size == 112:
+        # FFT spectrum: 1 byte axis + 103 bytes bins + 2 floats peaks
         axis = payload[0]
-        peaks = struct.unpack('<2f', payload[53:61])
+        peaks = struct.unpack('<2f', payload[104:112])
         axis_name = {0: 'X', 1: 'Y', 2: 'Z'}.get(axis, '?')
         return f"axis={axis_name}, peaks=({peaks[0]:.1f},{peaks[1]:.1f})Hz"
     elif expected_size is None:

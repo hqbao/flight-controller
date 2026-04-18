@@ -5,7 +5,8 @@ import threading
 import queue
 import numpy as np
 import matplotlib
-matplotlib.use('macosx')
+import sys
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -59,10 +60,10 @@ DB_CMD_CALIBRATE_GYRO_TEMP = 0x08
 DB_CMD_RESET             = 0x07
 DB_CMD_CHIP_ID           = 0x09
 
-# FC storage layout: page0=120 bytes (30 floats), page1=72 bytes (18 floats)
-# Gyro temp params: index 30=flag, 31-39=coefficients (Xa,Xb,Xc, Ya,Yb,Yc, Za,Zb,Zc)
-STORAGE_PAGE0_SIZE = 120   # 30 floats
-STORAGE_PAGE1_SIZE = 72    # 18 floats
+# FC storage layout: 104 params across 4 pages (26 params × 4 bytes = 104 bytes each)
+# Gyro temp params: ID 30=flag, 31-39=coefficients (Xa,Xb,Xc, Ya,Yb,Yc, Za,Zb,Zc)
+STORAGE_PAGE_SIZE  = 104   # 26 floats per page
+STORAGE_TOTAL_PAGES = 4
 PARAM_GYRO_TEMP_FLAG = 30
 PARAM_GYRO_TEMP_BASE = 31
 
@@ -91,7 +92,7 @@ COLOR_TEMP     = '#ffaa55'
 ports = serial.tools.list_ports.comports()
 print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -120,6 +121,39 @@ g_view_cal = False         # False = raw (LSB), True = calibrated (deg/s)
 
 
 # --- DB Frame Helpers (FC protocol) ---
+
+
+def _open_file_dialog(title="Select file", initialdir=".", filetypes=None):
+    """Cross-platform file picker (works on macOS, Windows, Linux)."""
+    if filetypes is None:
+        filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
+    if sys.platform == 'darwin':
+        import subprocess
+        script = (
+            f'set theFile to choose file with prompt "{title}" '
+            f'default location POSIX file "{initialdir}" '
+            f'of type {{"csv"}}\n'
+            f'return POSIX path of theFile'
+        )
+        try:
+            result = subprocess.run(['osascript', '-e', script],
+                                    capture_output=True, text=True, timeout=120)
+            fpath = result.stdout.strip()
+            return fpath if fpath else None
+        except Exception:
+            return None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        fpath = filedialog.askopenfilename(
+            title=title, initialdir=initialdir, filetypes=filetypes)
+        root.destroy()
+        return fpath if fpath else None
+    except Exception:
+        return None
 
 def build_db_frame(cmd_id, payload_bytes):
     """Build a DB frame using FC protocol: 'db' + msg_id + msg_class(0x00) + length + payload + checksum."""
@@ -230,13 +264,9 @@ def serial_reader():
                 elif msg_id == SEND_LOG_ID and length == 12:
                     data_queue.put(struct.unpack('<3f', payload) + (None,))
 
-                # Storage page 0: 30 floats = 120 bytes
-                elif msg_id == SEND_LOG_ID and length == STORAGE_PAGE0_SIZE:
-                    storage_queue.put(('page0', payload))
-
-                # Storage page 1: 18 floats = 72 bytes
-                elif msg_id == SEND_LOG_ID and length == STORAGE_PAGE1_SIZE:
-                    storage_queue.put(('page1', payload))
+                # Storage page: 26 floats = 104 bytes (4 pages sent sequentially)
+                elif msg_id == SEND_LOG_ID and length == STORAGE_PAGE_SIZE:
+                    storage_queue.put(payload)
 
     except Exception as e:
         print(f"Serial error: {e}")
@@ -550,6 +580,7 @@ def main():
         if not g_serial or not g_serial.is_open:
             return
         while not storage_queue.empty(): storage_queue.get_nowait()
+        storage_pages.clear()
         g_querying_storage = True
         send_log_class(g_serial, LOG_CLASS_STORAGE)
         status_text.set_text('Querying FC...')
@@ -582,25 +613,8 @@ def main():
 
     def on_load_csv(event):
         cal_dir = get_cal_dir()
-        status_text.set_text('Opening file picker...')
-        status_text.set_color(DIM_TEXT)
-        def _pick_file():
-            try:
-                result = subprocess.run(
-                    ['osascript', '-e',
-                     'POSIX path of (choose file with prompt "Load gyro calibration CSV" '
-                     'default location (POSIX file "' + cal_dir + '") '
-                     'of type {"public.comma-separated-values-text", "public.text"})'],
-                    capture_output=True, text=True, timeout=120
-                )
-                fpath = result.stdout.strip()
-                if fpath:
-                    load_csv_queue.put(fpath)
-                else:
-                    load_csv_queue.put(None)
-            except Exception:
-                load_csv_queue.put(None)
-        threading.Thread(target=_pick_file, daemon=True).start()
+        fpath = _open_file_dialog(title='Load calibration CSV', initialdir=cal_dir)
+        load_csv_queue.put(fpath)
 
     def on_reset(event):
         global g_logging_active, g_recording
@@ -615,6 +629,14 @@ def main():
         send_reset(g_serial)
         status_text.set_text('Reset sent')
         status_text.set_color(DIM_TEXT)
+
+        def _post_reset():
+            time.sleep(2.0)
+            if g_serial and g_serial.is_open:
+                g_serial.reset_input_buffer()
+                send_log_class(g_serial, LOG_CLASS_HEART_BEAT)
+
+        threading.Thread(target=_post_reset, daemon=True).start()
 
     def on_viewcal(event):
         global g_view_cal
@@ -658,7 +680,7 @@ def main():
     btn_clear.on_clicked(on_clear)
 
     # --- Animation ---
-    storage_pages = {}
+    storage_pages = []
 
     def update(frame_num):
         global g_chip_id, g_cal_coeffs, g_cal_done, g_querying_storage
@@ -704,19 +726,18 @@ def main():
             status_text.set_color('#55cc55')
             print(f'  Loaded {n} points from {fpath}')
 
-        # Process storage readback
+        # Process storage readback (4 pages of 26 floats each, sent sequentially)
         while not storage_queue.empty():
             try:
-                page_tag, payload = storage_queue.get_nowait()
+                payload = storage_queue.get_nowait()
             except queue.Empty:
                 break
-            if page_tag == 'page0':
-                storage_pages[0] = struct.unpack('<30f', payload)
-            elif page_tag == 'page1':
-                storage_pages[1] = struct.unpack('<18f', payload)
+            storage_pages.append(struct.unpack('<26f', payload))
 
-        if g_querying_storage and 0 in storage_pages and 1 in storage_pages:
-            all_params = list(storage_pages[0]) + list(storage_pages[1])
+        if g_querying_storage and len(storage_pages) >= STORAGE_TOTAL_PAGES:
+            all_params = []
+            for page in storage_pages[:STORAGE_TOTAL_PAGES]:
+                all_params.extend(page)
 
             cal_flag = all_params[PARAM_GYRO_TEMP_FLAG] if len(all_params) > PARAM_GYRO_TEMP_FLAG else 0.0
             if cal_flag > 0:

@@ -123,6 +123,30 @@ static void state_update(uint8_t *data, size_t size) {
 	}
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+
+	pid_control_set_p_gain(&g_pid_att_roll, t.att_roll_p);
+	pid_control_set_d_gain(&g_pid_att_roll, t.att_roll_d);
+	pid_control_set_i_gain(&g_pid_att_roll, t.att_roll_i, t.att_gain_time);
+	pid_control_set_i_limit(&g_pid_att_roll, t.att_roll_i_limit);
+	pid_control_set_smooth(&g_pid_att_roll, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
+
+	pid_control_set_p_gain(&g_pid_att_pitch, t.att_pitch_p);
+	pid_control_set_d_gain(&g_pid_att_pitch, t.att_pitch_d);
+	pid_control_set_i_gain(&g_pid_att_pitch, t.att_pitch_i, t.att_gain_time);
+	pid_control_set_i_limit(&g_pid_att_pitch, t.att_pitch_i_limit);
+	pid_control_set_smooth(&g_pid_att_pitch, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
+
+	pid_control_set_p_gain(&g_pid_att_yaw, t.att_yaw_p);
+	pid_control_set_d_gain(&g_pid_att_yaw, t.att_yaw_d);
+	pid_control_set_i_gain(&g_pid_att_yaw, t.att_yaw_i, t.att_gain_time);
+	pid_control_set_i_limit(&g_pid_att_yaw, t.att_yaw_i_limit);
+	pid_control_set_smooth(&g_pid_att_yaw, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
+}
+
 void attitude_control_setup(void) {
 	pid_setup();
 
@@ -131,4 +155,5 @@ void attitude_control_setup(void) {
 	subscribe(FLIGHT_STATE_UPDATE, state_update);
 	subscribe(ANGULAR_TARGET_UPDATE, angular_target_update);
 	subscribe(ALTITUDE_CONTROL_UPDATE, altitude_control_update);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

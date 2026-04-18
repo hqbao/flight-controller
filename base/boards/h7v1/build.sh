@@ -206,6 +206,10 @@ modules/config \\
 fi
 if ! grep -q 'modules/config/' "$DEBUG_DIR/objects.list" 2>/dev/null; then
     printf '"./modules/config/config.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/config/config_accel.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/config/config_gyro.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/config/config_mag.o"\n' >> "$DEBUG_DIR/objects.list"
+    printf '"./modules/config/config_tuning.o"\n' >> "$DEBUG_DIR/objects.list"
 fi
 # Create config subdir.mk (build rules for config module)
 CONFIG_DIR="$DEBUG_DIR/modules/config"
@@ -214,21 +218,49 @@ if [[ ! -f "$CONFIG_DIR/subdir.mk" ]]; then
     MODULES_ABS="$(cd "$PROJECT_DIR/../../../modules" && pwd)"
     cat > "$CONFIG_DIR/subdir.mk" << SUBMK
 C_SRCS += \\
-$MODULES_ABS/config/config.c
+$MODULES_ABS/config/config.c \\
+$MODULES_ABS/config/config_accel.c \\
+$MODULES_ABS/config/config_gyro.c \\
+$MODULES_ABS/config/config_mag.c \\
+$MODULES_ABS/config/config_tuning.c
 
 OBJS += \\
-./modules/config/config.o
+./modules/config/config.o \\
+./modules/config/config_accel.o \\
+./modules/config/config_gyro.o \\
+./modules/config/config_mag.o \\
+./modules/config/config_tuning.o
 
 C_DEPS += \\
-./modules/config/config.d
+./modules/config/config.d \\
+./modules/config/config_accel.d \\
+./modules/config/config_gyro.d \\
+./modules/config/config_mag.d \\
+./modules/config/config_tuning.d
 
 modules/config/config.o: $MODULES_ABS/config/config.c modules/config/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+modules/config/config_accel.o: $MODULES_ABS/config/config_accel.c modules/config/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+modules/config/config_gyro.o: $MODULES_ABS/config/config_gyro.c modules/config/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+modules/config/config_mag.o: $MODULES_ABS/config/config_mag.c modules/config/subdir.mk
+	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
+
+modules/config/config_tuning.o: $MODULES_ABS/config/config_tuning.c modules/config/subdir.mk
 	arm-none-eabi-gcc "\$<" -mcpu=cortex-m7 -std=gnu11 -g3 -DDEBUG -DUSE_PWR_LDO_SUPPLY -DUSE_HAL_DRIVER -DSTM32H743xx -c -I../Core/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Include -I../../../../libs/robotkit -I../../../../modules -I../../../foundation -I../platform -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"\$(@:%.o=%.d)" -MT"\$@" --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -o "\$@"
 
 clean: clean-modules-2f-config
 
 clean-modules-2f-config:
 	-\$(RM) ./modules/config/config.cyclo ./modules/config/config.d ./modules/config/config.o ./modules/config/config.su
+	-\$(RM) ./modules/config/config_accel.cyclo ./modules/config/config_accel.d ./modules/config/config_accel.o ./modules/config/config_accel.su
+	-\$(RM) ./modules/config/config_gyro.cyclo ./modules/config/config_gyro.d ./modules/config/config_gyro.o ./modules/config/config_gyro.su
+	-\$(RM) ./modules/config/config_mag.cyclo ./modules/config/config_mag.d ./modules/config/config_mag.o ./modules/config/config_mag.su
+	-\$(RM) ./modules/config/config_tuning.cyclo ./modules/config/config_tuning.d ./modules/config/config_tuning.o ./modules/config/config_tuning.su
 
 .PHONY: clean-modules-2f-config
 SUBMK

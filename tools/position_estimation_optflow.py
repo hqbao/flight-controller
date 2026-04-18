@@ -4,6 +4,9 @@ import struct
 import threading
 import queue
 import numpy as np
+import sys
+import matplotlib
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -70,7 +73,7 @@ COLOR_BARO     = '#42a5f5'  # Blue for air pressure
 ports = serial.tools.list_ports.comports()
 print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -335,6 +338,14 @@ def main():
             btn_toggle.color = BTN_GREEN
             btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
+
+            def _post_reset():
+                time.sleep(2.0)
+                if g_serial and g_serial.is_open:
+                    g_serial.reset_input_buffer()
+                    send_log_class_command(g_serial, LOG_CLASS_HEART_BEAT)
+
+            threading.Thread(target=_post_reset, daemon=True).start()
 
     btn_reset.on_clicked(on_reset)
 

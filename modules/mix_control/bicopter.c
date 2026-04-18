@@ -42,16 +42,16 @@
 #define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
 
 #if MOTOR_TYPE == 1
-#define MIN_SPEED 150
-#define MAX_SPEED 1800
+static int g_min_speed = 150;
+static int g_max_speed = 1800;
 #elif MOTOR_TYPE == 2
-#define MIN_SPEED 80
-#define MAX_SPEED 3000
+static int g_min_speed = 80;
+static int g_max_speed = 3000;
 #endif
 
-#define SERVO_MIN    1000  /* PWM microseconds — full tilt one direction */
-#define SERVO_MAX    2000  /* PWM microseconds — full tilt other direction */
-#define SERVO_CENTER 1500  /* PWM microseconds — neutral (vertical thrust) */
+static int g_servo_min    = 1000;
+static int g_servo_max    = 2000;
+static int g_servo_center = 1500;
 
 static int g_output[8] = {0};
 static state_t g_state = DISARMED;
@@ -60,7 +60,7 @@ static uint8_t g_log_class = 0;
 static uint8_t g_log_msg[32]; // 8 floats
 
 static void mix_motors(mix_control_input_t *input) {
-	double base  = MIN_SPEED + input->altitude;
+	double base  = g_min_speed + input->altitude;
 	double roll  = input->roll;
 	double pitch = input->pitch;
 	double yaw   = input->yaw;
@@ -72,15 +72,15 @@ static void mix_motors(mix_control_input_t *input) {
 	/* Servos: collective tilt for pitch, differential tilt for yaw.
 	 * S2 is mirrored on the airframe, so negate pitch to get same physical tilt.
 	 * Both share same yaw sign — mirrored mount makes them tilt opposite. */
-	double s1 = SERVO_CENTER + pitch - yaw;   /* left servo  */
-	double s2 = SERVO_CENTER - pitch - yaw;   /* right servo (mirrored mount) */
+	double s1 = g_servo_center + pitch - yaw;   /* left servo  */
+	double s2 = g_servo_center - pitch - yaw;   /* right servo (mirrored mount) */
 
-	g_output[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
-	g_output[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
+	g_output[0] = LIMIT((int)m1, g_min_speed, g_max_speed);
+	g_output[1] = LIMIT((int)m2, g_min_speed, g_max_speed);
 	g_output[2] = 0;
 	g_output[3] = 0;
-	g_output[4] = LIMIT((int)s1, SERVO_MIN, SERVO_MAX);
-	g_output[5] = LIMIT((int)s2, SERVO_MIN, SERVO_MAX);
+	g_output[4] = LIMIT((int)s1, g_servo_min, g_servo_max);
+	g_output[5] = LIMIT((int)s2, g_servo_min, g_servo_max);
 	g_output[6] = 0;
 	g_output[7] = 0;
 }
@@ -98,31 +98,31 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 		g_output[1] = 0;
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = SERVO_CENTER;
-		g_output[5] = SERVO_CENTER;
+		g_output[4] = g_servo_center;
+		g_output[5] = g_servo_center;
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
 	}
 	else if (g_state == READY) {
-		g_output[0] = MIN_SPEED;
-		g_output[1] = MIN_SPEED;
+		g_output[0] = g_min_speed;
+		g_output[1] = g_min_speed;
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = SERVO_CENTER;
-		g_output[5] = SERVO_CENTER;
+		g_output[4] = g_servo_center;
+		g_output[5] = g_servo_center;
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
 	}
 	else if (g_state == TESTING) {
 		/* RC sticks: yaw->m1, alt->m2, roll->s1, pitch->s2 */
-		g_output[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output[0] = LIMIT(g_min_speed + g_rc_att_ctl.yaw / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output[1] = LIMIT(g_min_speed + g_rc_att_ctl.alt / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.roll / 90  * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
-		g_output[5] = LIMIT(SERVO_CENTER + (int)(g_rc_att_ctl.pitch / 90 * (SERVO_MAX - SERVO_CENTER)), SERVO_MIN, SERVO_MAX);
+		g_output[4] = LIMIT(g_servo_center + (int)(g_rc_att_ctl.roll / 90  * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
+		g_output[5] = LIMIT(g_servo_center + (int)(g_rc_att_ctl.pitch / 90 * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
@@ -154,6 +154,17 @@ static void loop_logger(uint8_t *data, size_t size) {
 	publish(SEND_LOG, g_log_msg, sizeof(g_log_msg));
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+	g_min_speed = (int)t.motor_min;
+	g_max_speed = (int)t.motor_max;
+	g_servo_min = (int)t.servo_min;
+	g_servo_max = (int)t.servo_max;
+	g_servo_center = (int)t.servo_center;
+}
+
 void bicopter_setup(void) {
 	/* Motors on TIM1 (Port1-2), servos on TIM2 (Port5-6).
 	 * DShot and servo PWM must be on separate timers — each timer's
@@ -170,4 +181,5 @@ void bicopter_setup(void) {
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_10HZ, loop_logger);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

@@ -32,11 +32,11 @@
 #define MOTOR_TYPE 1 // 1: BRUSHLESS, 2: BRUSHED
 
 #if MOTOR_TYPE == 1
-#define MIN_SPEED 150
-#define MAX_SPEED 1800
+static int g_min_speed = 150;
+static int g_max_speed = 1800;
 #elif MOTOR_TYPE == 2
-#define MIN_SPEED 80
-#define MAX_SPEED 3000
+static int g_min_speed = 80;
+static int g_max_speed = 3000;
 #endif
 
 static int g_output_speed[8] = {0};
@@ -46,7 +46,7 @@ static uint8_t g_log_class = 0;
 static uint8_t g_log_msg[32]; // 8 floats
 
 static void mix_motors(mix_control_input_t *input) {
-	double base = MIN_SPEED + input->altitude;
+	double base = g_min_speed + input->altitude;
 	double roll  = input->roll;
 	double pitch = input->pitch;
 	double yaw   = input->yaw;
@@ -63,14 +63,14 @@ static void mix_motors(mix_control_input_t *input) {
 	double m7 = base + roll + pitch - yaw;   /* BR2, CCW */
 	double m8 = base - roll + pitch + yaw;   /* BL2, CW  */
 
-	g_output_speed[0] = LIMIT((int)m1, MIN_SPEED, MAX_SPEED);
-	g_output_speed[1] = LIMIT((int)m2, MIN_SPEED, MAX_SPEED);
-	g_output_speed[2] = LIMIT((int)m3, MIN_SPEED, MAX_SPEED);
-	g_output_speed[3] = LIMIT((int)m4, MIN_SPEED, MAX_SPEED);
-	g_output_speed[4] = LIMIT((int)m5, MIN_SPEED, MAX_SPEED);
-	g_output_speed[5] = LIMIT((int)m6, MIN_SPEED, MAX_SPEED);
-	g_output_speed[6] = LIMIT((int)m7, MIN_SPEED, MAX_SPEED);
-	g_output_speed[7] = LIMIT((int)m8, MIN_SPEED, MAX_SPEED);
+	g_output_speed[0] = LIMIT((int)m1, g_min_speed, g_max_speed);
+	g_output_speed[1] = LIMIT((int)m2, g_min_speed, g_max_speed);
+	g_output_speed[2] = LIMIT((int)m3, g_min_speed, g_max_speed);
+	g_output_speed[3] = LIMIT((int)m4, g_min_speed, g_max_speed);
+	g_output_speed[4] = LIMIT((int)m5, g_min_speed, g_max_speed);
+	g_output_speed[5] = LIMIT((int)m6, g_min_speed, g_max_speed);
+	g_output_speed[6] = LIMIT((int)m7, g_min_speed, g_max_speed);
+	g_output_speed[7] = LIMIT((int)m8, g_min_speed, g_max_speed);
 }
 
 static void mix_control_input_update(uint8_t *data, size_t size) {
@@ -86,18 +86,18 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output_speed, sizeof(int) * 8);
 	}
 	else if (g_state == READY) {
-		for (int i = 0; i < 8; i++) g_output_speed[i] = MIN_SPEED;
+		for (int i = 0; i < 8; i++) g_output_speed[i] = g_min_speed;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output_speed, sizeof(int) * 8);
 	}
 	else if (g_state == TESTING) {
-		g_output_speed[0] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[1] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[2] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90  * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[3] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[4] = LIMIT(MIN_SPEED + g_rc_att_ctl.yaw / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[5] = LIMIT(MIN_SPEED + g_rc_att_ctl.alt / 90   * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[6] = LIMIT(MIN_SPEED + g_rc_att_ctl.roll / 90  * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
-		g_output_speed[7] = LIMIT(MIN_SPEED + g_rc_att_ctl.pitch / 90 * (MAX_SPEED - MIN_SPEED), 0, MAX_SPEED);
+		g_output_speed[0] = LIMIT(g_min_speed + g_rc_att_ctl.yaw / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[1] = LIMIT(g_min_speed + g_rc_att_ctl.alt / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[2] = LIMIT(g_min_speed + g_rc_att_ctl.roll / 90  * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[3] = LIMIT(g_min_speed + g_rc_att_ctl.pitch / 90 * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[4] = LIMIT(g_min_speed + g_rc_att_ctl.yaw / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[5] = LIMIT(g_min_speed + g_rc_att_ctl.alt / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[6] = LIMIT(g_min_speed + g_rc_att_ctl.roll / 90  * (g_max_speed - g_min_speed), 0, g_max_speed);
+		g_output_speed[7] = LIMIT(g_min_speed + g_rc_att_ctl.pitch / 90 * (g_max_speed - g_min_speed), 0, g_max_speed);
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output_speed, sizeof(int) * 8);
 	}
 	/* TAKING_OFF / FLYING / LANDING are driven by MIX_CONTROL_UPDATE from attitude_control */
@@ -127,6 +127,14 @@ static void loop_logger(uint8_t *data, size_t size) {
 	publish(SEND_LOG, g_log_msg, sizeof(g_log_msg));
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+	g_min_speed = (int)t.motor_min;
+	g_max_speed = (int)t.motor_max;
+}
+
 void quadcopter_setup(void) {
 	speed_control_config_t cfg = {{
 		PORT_DSHOT, PORT_DSHOT, PORT_DSHOT, PORT_DSHOT,
@@ -140,4 +148,5 @@ void quadcopter_setup(void) {
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_10HZ, loop_logger);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

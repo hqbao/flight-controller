@@ -5,7 +5,8 @@ import threading
 import queue
 import numpy as np
 import matplotlib
-matplotlib.use('macosx')
+import sys
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -68,7 +69,7 @@ PARAM_MAG_SCALE_BASE = 21
 ports = serial.tools.list_ports.comports()
 print("Scanning for ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -108,6 +109,39 @@ last_calibration_time = 0
 
 
 # --- DB Protocol Helpers ---
+
+
+def _open_file_dialog(title="Select file", initialdir=".", filetypes=None):
+    """Cross-platform file picker (works on macOS, Windows, Linux)."""
+    if filetypes is None:
+        filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
+    if sys.platform == 'darwin':
+        import subprocess
+        script = (
+            f'set theFile to choose file with prompt "{title}" '
+            f'default location POSIX file "{initialdir}" '
+            f'of type {{"csv"}}\n'
+            f'return POSIX path of theFile'
+        )
+        try:
+            result = subprocess.run(['osascript', '-e', script],
+                                    capture_output=True, text=True, timeout=120)
+            fpath = result.stdout.strip()
+            return fpath if fpath else None
+        except Exception:
+            return None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        fpath = filedialog.askopenfilename(
+            title=title, initialdir=initialdir, filetypes=filetypes)
+        root.destroy()
+        return fpath if fpath else None
+    except Exception:
+        return None
 
 def build_db_frame(cmd_id, payload_bytes):
     msg_class = 0x00
@@ -212,15 +246,10 @@ def serial_reader():
                         g_chip_id = payload.hex().upper()
                         print(f"  \u2713 Chip ID: {g_chip_id}")
 
-                    # LOG_CLASS_STORAGE page 1: 30 floats (120 bytes)
-                    elif length == 120:
-                        values = struct.unpack('<30f', payload)
-                        storage_queue.put(('page1', values))
-
-                    # LOG_CLASS_STORAGE page 2: 18 floats (72 bytes)
-                    elif length == 72:
-                        values = struct.unpack('<18f', payload)
-                        storage_queue.put(('page2', values))
+                    # LOG_CLASS_STORAGE: 26 floats = 104 bytes (4 pages sent sequentially)
+                    elif length == 104:
+                        values = struct.unpack('<26f', payload)
+                        storage_queue.put(values)
 
     except Exception as e:
         print(f"Serial error: {e}")
@@ -543,6 +572,7 @@ def main():
             return
         while not storage_queue.empty():
             storage_queue.get_nowait()
+        storage_pages.clear()
         g_querying_storage = True
         send_log_class(g_serial, LOG_CLASS_STORAGE)
         info_text.set_text('Querying FC...')
@@ -576,76 +606,52 @@ def main():
         plt.draw()
     btn_savecsv.on_clicked(save_csv)
 
-    file_picker_queue = queue.Queue()
 
     def load_csv(event):
         global raw_data_points, calibration_result, last_calibration_time
-        # Check for async file picker result
-        if not file_picker_queue.empty():
-            filepath = file_picker_queue.get()
-            if not filepath:
-                return
-            points = []
-            try:
-                with open(filepath, 'r') as f:
-                    header = f.readline()
-                    for line in f:
-                        parts = line.strip().split(',')
-                        if len(parts) >= 4:
-                            x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                            points.append((x, y, z))
-            except Exception as e:
-                print(f"  \u2717 Failed to load CSV: {e}")
-                return
-            if not points:
-                return
-
-            raw_data_points = list(points)
-            calibration_result = (np.zeros(3), np.eye(3))
-            last_calibration_time = 0
-
-            data_np = np.array(raw_data_points)
-            plot_raw.set_data(data_np[:, 0], data_np[:, 1])
-            plot_raw.set_3d_properties(data_np[:, 2])
-            plot_corr.set_data([], [])
-            plot_corr.set_3d_properties([])
-            if len(data_np) > 0:
-                last_pt = data_np[-1]
-                plot_last.set_data([last_pt[0]], [last_pt[1]])
-                plot_last.set_3d_properties([last_pt[2]])
-
-            info_text.set_text(
-                f"CSV LOADED \u2713\n"
-                f"{'=' * 26}\n\n"
-                f"Points: {len(raw_data_points)}\n"
-                f"File: {os.path.basename(filepath)}\n\n"
-                f"Click 'Stream' to add\n"
-                f"more points, or auto-fit\n"
-                f"will run on next stream."
-            )
-            print(f"  \u2713 Loaded {len(points)} points from {filepath}")
-            plt.draw()
+        cal_dir = get_cal_dir()
+        filepath = _open_file_dialog(title='Load calibration CSV', initialdir=cal_dir)
+        if not filepath:
+            return
+        points = []
+        try:
+            with open(filepath, 'r') as f:
+                header = f.readline()
+                for line in f:
+                    parts = line.strip().split(',')
+                    if len(parts) >= 4:
+                        x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
+                        points.append((x, y, z))
+        except Exception as e:
+            print(f"  \u2717 Failed to load CSV: {e}")
+            return
+        if not points:
             return
 
-        # Launch async file picker
-        cal_dir = get_cal_dir()
+        raw_data_points = list(points)
+        calibration_result = (np.zeros(3), np.eye(3))
+        last_calibration_time = 0
 
-        def pick_file():
-            script = (
-                f'set theFile to choose file with prompt "Select Mag CSV" '
-                f'default location POSIX file "{cal_dir}" '
-                f'of type {{"csv"}}\n'
-                f'return POSIX path of theFile'
-            )
-            try:
-                result = subprocess.run(['osascript', '-e', script],
-                                        capture_output=True, text=True, timeout=60)
-                file_picker_queue.put(result.stdout.strip() or None)
-            except Exception:
-                file_picker_queue.put(None)
+        data_np = np.array(raw_data_points)
+        plot_raw.set_data(data_np[:, 0], data_np[:, 1])
+        plot_raw.set_3d_properties(data_np[:, 2])
+        plot_corr.set_data([], [])
+        plot_corr.set_3d_properties([])
+        if len(data_np) > 0:
+            last_pt = data_np[-1]
+            plot_last.set_data([last_pt[0]], [last_pt[1]])
+            plot_last.set_3d_properties([last_pt[2]])
 
-        threading.Thread(target=pick_file, daemon=True).start()
-        info_text.set_text("Select CSV file...")
+        info_text.set_text(
+            f"CSV LOADED \u2713\n"
+            f"{'=' * 26}\n\n"
+            f"Points: {len(raw_data_points)}\n"
+            f"File: {os.path.basename(filepath)}\n\n"
+            f"Click 'Stream' to add\n"
+            f"more points, or auto-fit\n"
+            f"will run on next stream."
+        )
+        print(f"  \u2713 Loaded {len(points)} points from {filepath}")
         plt.draw()
     btn_loadcsv.on_clicked(load_csv)
 
@@ -682,6 +688,14 @@ def main():
         btn_viewcal.color = BTN_COLOR
         btn_viewcal.hovercolor = BTN_HOVER
         send_reset(g_serial)
+
+        def _post_reset():
+            time.sleep(2.0)
+            if g_serial and g_serial.is_open:
+                g_serial.reset_input_buffer()
+                send_log_class(g_serial, LOG_CLASS_HEART_BEAT)
+
+        threading.Thread(target=_post_reset, daemon=True).start()
     btn_reset.on_clicked(reset_fc)
 
     # --- Axes setup ---
@@ -710,6 +724,7 @@ def main():
     chip_id_request_time = time.time()
 
     # --- Animation ---
+    storage_pages = []
     def update(frame):
         nonlocal chip_id_request_time
         global g_received_count, g_last_raw, g_chip_id
@@ -728,10 +743,6 @@ def main():
                     send_chip_id_request(g_serial)
                 except Exception:
                     pass
-
-        # Process async file picker result
-        if not file_picker_queue.empty():
-            load_csv(None)
 
         # Process compass data
         while not data_queue.empty():
@@ -843,21 +854,24 @@ def main():
                     f"rotate drone."
                 )
 
-        # Check for storage readback (Query FC)
+        # Check for storage readback (Query FC) — 4 pages of 26 floats each
         if g_querying_storage:
             while not storage_queue.empty():
-                page_tag, params = storage_queue.get()
-                if page_tag != 'page1':
-                    continue
+                page = storage_queue.get()
+                storage_pages.append(page)
+
+            if len(storage_pages) >= 2:  # mag params 17-29 span page 0 and 1
+                all_params = list(storage_pages[0]) + list(storage_pages[1])
 
                 g_querying_storage = False
+                storage_pages.clear()
                 if g_serial and g_serial.is_open:
                     send_log_class(g_serial, LOG_CLASS_NONE)
 
-                stored_cal = params[PARAM_MAG_CAL_FLAG] if len(params) > PARAM_MAG_CAL_FLAG else 0.0
+                stored_cal = all_params[PARAM_MAG_CAL_FLAG] if len(all_params) > PARAM_MAG_CAL_FLAG else 0.0
                 if stored_cal > 0.0:
-                    stored_bias = [params[PARAM_MAG_BIAS_BASE + i] for i in range(3)]
-                    stored_scale = [[params[PARAM_MAG_SCALE_BASE + r * 3 + c] for c in range(3)] for r in range(3)]
+                    stored_bias = [all_params[PARAM_MAG_BIAS_BASE + i] for i in range(3)]
+                    stored_scale = [[all_params[PARAM_MAG_SCALE_BASE + r * 3 + c] for c in range(3)] for r in range(3)]
                     info_text.set_text(
                         f"FLASH VERIFIED \u2705\n"
                         f"{'=' * 26}\n\n"

@@ -48,14 +48,158 @@ typedef enum {
 	PARAM_ID_GYRO_TEMP_Z_A = 37,   // Z: a*T²
 	PARAM_ID_GYRO_TEMP_Z_B = 38,   // Z: b*T
 	PARAM_ID_GYRO_TEMP_Z_C = 39,   // Z: c
-	// Max (40 of 48 used = 160 of 192 bytes)
-	PARAM_ID_MAX = 48,
+
+	// === Tuning Parameters (IDs 48-103) ===
+
+	// Attitude PID (16 params)
+	PARAM_ID_ATT_ROLL_P = 48,
+	PARAM_ID_ATT_ROLL_I = 49,
+	PARAM_ID_ATT_ROLL_D = 50,
+	PARAM_ID_ATT_ROLL_I_LIMIT = 51,
+	PARAM_ID_ATT_PITCH_P = 52,
+	PARAM_ID_ATT_PITCH_I = 53,
+	PARAM_ID_ATT_PITCH_D = 54,
+	PARAM_ID_ATT_PITCH_I_LIMIT = 55,
+	PARAM_ID_ATT_YAW_P = 56,
+	PARAM_ID_ATT_YAW_I = 57,
+	PARAM_ID_ATT_YAW_D = 58,
+	PARAM_ID_ATT_YAW_I_LIMIT = 59,
+	PARAM_ID_ATT_SMOOTH_INPUT = 60,
+	PARAM_ID_ATT_SMOOTH_P_TERM = 61,
+	PARAM_ID_ATT_SMOOTH_OUTPUT = 62,
+	PARAM_ID_ATT_GAIN_TIME = 63,
+
+	// Position Control (8 params)
+	PARAM_ID_POS_XY_P = 64,
+	PARAM_ID_POS_Z_P = 65,
+	PARAM_ID_POS_VELOC_XY_SCALE = 66,
+	PARAM_ID_POS_VELOC_Z_SCALE = 67,
+	PARAM_ID_POS_LPF_XY = 68,
+	PARAM_ID_POS_LPF_Z = 69,
+	PARAM_ID_POS_ANGLE_LIMIT = 70,
+	PARAM_ID_POS_RC_DEADBAND = 71,
+
+	// Motor/Servo Limits (5 params)
+	PARAM_ID_MOTOR_MIN = 72,
+	PARAM_ID_MOTOR_MAX = 73,
+	PARAM_ID_SERVO_MIN = 74,
+	PARAM_ID_SERVO_MAX = 75,
+	PARAM_ID_SERVO_CENTER = 76,
+
+	// Attitude Estimation (8 params)
+	PARAM_ID_ATT_MAHONY_KP = 77,
+	PARAM_ID_ATT_MAHONY_KI = 78,
+	PARAM_ID_ATT_F3_BETA = 79,
+	PARAM_ID_ATT_F3_ZETA = 80,
+	PARAM_ID_ATT_ACCEL_SMOOTH = 81,
+	PARAM_ID_ATT_LIN_ACC_DECAY = 82,
+	PARAM_ID_ATT_LIN_ACCEL_MIN = 83,
+	PARAM_ID_ATT_LIN_ACCEL_MAX = 84,
+
+	// Position Estimation (11 params)
+	PARAM_ID_PE_XY_S1_INTEG = 85,
+	PARAM_ID_PE_XY_S1_CORR = 86,
+	PARAM_ID_PE_XY_S2_INTEG = 87,
+	PARAM_ID_PE_XY_S2_CORR = 88,
+	PARAM_ID_PE_XY_V_FB = 89,
+	PARAM_ID_PE_Z_S1_INTEG = 90,
+	PARAM_ID_PE_Z_S1_CORR = 91,
+	PARAM_ID_PE_Z_S2_INTEG = 92,
+	PARAM_ID_PE_Z_S2_CORR = 93,
+	PARAM_ID_PE_Z_V_FB = 94,
+	PARAM_ID_PE_OPTFLOW_GAIN = 95,
+
+	// FFT/Notch Filter (4 params)
+	PARAM_ID_NOTCH_Q = 96,
+	PARAM_ID_NOTCH_MIN_HZ = 97,
+	PARAM_ID_FFT_PEAK_SNR = 98,
+	PARAM_ID_FFT_FREQ_ALPHA = 99,
+
+	// Flight State (4 params)
+	PARAM_ID_DISARM_ANGLE = 100,
+	PARAM_ID_DISARM_RANGE = 101,
+	PARAM_ID_ALLOWED_LANDING_RANGE = 102,
+	PARAM_ID_TOOK_OFF_RANGE = 103,
+
+	// Tuning boundary markers
+	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,   // 48
+	PARAM_ID_TUNING_LAST  = PARAM_ID_TOOK_OFF_RANGE, // 103
+	PARAM_ID_TUNING_COUNT = 56,
+
+	PARAM_ID_MAX = 128,
 } param_id_e;
 
 typedef struct {
 	param_id_e id;
 	float value;
 } param_storage_t;
+
+// Tuning parameters struct — fields are in 1:1 sequential order with PARAM_IDs 48-103
+typedef struct {
+	// Attitude PID (16 floats, IDs 48-63)
+	float att_roll_p;
+	float att_roll_i;
+	float att_roll_d;
+	float att_roll_i_limit;
+	float att_pitch_p;
+	float att_pitch_i;
+	float att_pitch_d;
+	float att_pitch_i_limit;
+	float att_yaw_p;
+	float att_yaw_i;
+	float att_yaw_d;
+	float att_yaw_i_limit;
+	float att_smooth_input;
+	float att_smooth_p_term;
+	float att_smooth_output;
+	float att_gain_time;
+	// Position Control (8 floats, IDs 64-71)
+	float pos_xy_p;
+	float pos_z_p;
+	float pos_veloc_xy_scale;
+	float pos_veloc_z_scale;
+	float pos_lpf_xy;
+	float pos_lpf_z;
+	float pos_angle_limit;
+	float pos_rc_deadband;
+	// Motor/Servo (5 floats, IDs 72-76)
+	float motor_min;
+	float motor_max;
+	float servo_min;
+	float servo_max;
+	float servo_center;
+	// Attitude Estimation (8 floats, IDs 77-84)
+	float att_mahony_kp;
+	float att_mahony_ki;
+	float att_f3_beta;
+	float att_f3_zeta;
+	float att_accel_smooth;
+	float att_lin_acc_decay;
+	float att_lin_accel_min;
+	float att_lin_accel_max;
+	// Position Estimation (11 floats, IDs 85-95)
+	float pe_xy_s1_integ;
+	float pe_xy_s1_corr;
+	float pe_xy_s2_integ;
+	float pe_xy_s2_corr;
+	float pe_xy_v_fb;
+	float pe_z_s1_integ;
+	float pe_z_s1_corr;
+	float pe_z_s2_integ;
+	float pe_z_s2_corr;
+	float pe_z_v_fb;
+	float pe_optflow_gain;
+	// FFT/Notch (4 floats, IDs 96-99)
+	float notch_q;
+	float notch_min_hz;
+	float fft_peak_snr;
+	float fft_freq_alpha;
+	// Flight State (4 floats, IDs 100-103)
+	float disarm_angle;
+	float disarm_range;
+	float allowed_landing_range;
+	float took_off_range;
+} tuning_params_t;
 
 // Calibration data delivery structs (calibration module → sensor modules)
 
@@ -238,6 +382,7 @@ typedef struct {
 #define DB_CMD_RESET                    0x07
 #define DB_CMD_CALIBRATE_GYRO_TEMP      0x08
 #define DB_CMD_CHIP_ID                  0x09
+#define DB_CMD_TUNING                   0x0A
 
 // UART frame constants
 #define UART_FRAME_MAX_SIZE 128

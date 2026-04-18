@@ -271,6 +271,21 @@ static void loop_logger(uint8_t *data, size_t size) {
 	publish(SEND_LOG, g_monitor_msg, sizeof(g_monitor_msg));
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+#if FUSION_ALGO == 1
+	g_f11.gain_acc_smooth = t.att_accel_smooth;
+	g_f11.gain_prop = t.att_mahony_kp;
+	g_f11.gain_int = t.att_mahony_ki;
+#elif FUSION_ALGO == 3
+	g_f11.k0 = t.att_accel_smooth;
+	g_f11.beta = t.att_f3_beta;
+	g_f11.zeta = t.att_f3_zeta;
+#endif
+}
+
 void attitude_estimation_setup(void) {
 #if FUSION_ALGO == 1
 	// Initialize Fusion1 (Mahony filter)
@@ -295,5 +310,6 @@ void attitude_estimation_setup(void) {
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	// 10 Hz: 36-byte payload (9 floats) exceeds 30-byte max at 25 Hz (19200 baud)
 	subscribe(SCHEDULER_10HZ, loop_logger);
+	subscribe(TUNING_READY, on_tuning_ready);
 }
 

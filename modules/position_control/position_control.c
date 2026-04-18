@@ -9,38 +9,26 @@
 
 #define MIN_LANDING_SPEED 50
 
-/* Control Gains */
-/*
- * NOTE: SI Unit Migration
- * The scale of input error has changed from ~100 units/m to 1.0 unit/m.
- * P-gain was increased to compensate for the smaller error magnitude.
- * Legacy Gain: 50.0  -> Current SI Gain: 100.0
- */
-#define POS_CTL_XY_P 50.0
-#define POS_CTL_Z_P 2000.0
+/* Control Gains (defaults — overridden by tuning params from flash) */
+static double g_pos_xy_p = 50.0;
+static double g_pos_z_p = 2000.0;
+static double g_pos_veloc_xy_scale = 50.0;
+static double g_pos_veloc_z_scale = 2000.0;
+static double g_pos_lpf_xy = 1.0;
+static double g_pos_lpf_z_raw = 5.0;
+static double g_pos_angle_limit = 30.0;
+static double g_rc_deadband = 0.1;
 
-/* Velocity Scaling */
-#define POS_CTL_VELOC_XY_SCALE 50.0
-#define POS_CTL_VELOC_Z_SCALE 2000.0
-
-/* Output Lowpass Filter */
-#define POS_CTL_OUTPUT_LPF_ALPHA_XY 1.0
-#define POS_CTL_OUTPUT_LPF_ALPHA_Z (5.0 / ACCEL_FREQ)
-
-/* Control Output Limits */
-#define POS_CTL_ANGLE_LIMIT 30.0
-
-/* Landing Control */
-#define LANDING_RANGE_THRESHOLD 2000.0
-#define LANDING_SPEED_INC 1.0
-#define LANDING_SPEED_DEC 5.0
-#define LANDING_DESCENT_RATE_THRESHOLD -20.0
+/* Landing Control (defaults — overridden by tuning) */
+static double g_landing_range_thr = 2000.0;
+static double g_landing_speed_inc = 1.0;
+static double g_landing_speed_dec = 5.0;
+static double g_landing_descent_thr = -20.0;
 
 /* RC Control */
-#define RC_DEADBAND 0.1
-#define RC_XY_SCALE 0.01
-#define RC_Z_SCALE 0.04
-#define RC_YAW_SCALE -0.5
+static double g_rc_xy_scale = 0.01;
+static double g_rc_z_scale = 0.04;
+static double g_rc_yaw_scale = -0.5;
 
 static state_t g_state = DISARMED;
 static rc_state_ctl_t g_rc_state_ctl = {0};
@@ -92,11 +80,11 @@ static void optflow_sensor_update(uint8_t *data, size_t size) {
 	if (msg.direction == OPTFLOW_DOWNWARD) {
 		g_downward_range = msg.z;
 		if (g_state == LANDING) {
-			if (g_downward_range < LANDING_RANGE_THRESHOLD) {
+			if (g_downward_range < g_landing_range_thr) {
 				if (g_downward_range - g_downward_range_prev >= 0) { // Not moving down
-					g_landing_speed += LANDING_SPEED_INC;
-				} else if (g_downward_range - g_downward_range_prev < LANDING_DESCENT_RATE_THRESHOLD) { // Too high speed
-					g_landing_speed -= LANDING_SPEED_DEC;
+					g_landing_speed += g_landing_speed_inc;
+				} else if (g_downward_range - g_downward_range_prev < g_landing_descent_thr) { // Too high speed
+					g_landing_speed -= g_landing_speed_dec;
 				}
 			}
 			g_downward_range_prev = g_downward_range;
@@ -137,20 +125,21 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_yaw 		= -g_yaw_veloc;
 		g_pos_ctl_alt 		= g_rc_att_ctl.alt * 2;
 	} else {
-		g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
-		g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
-		g_veloc_applied.z = (g_veloc_final.z - g_veloc_offset.z) * POS_CTL_VELOC_Z_SCALE;
+		g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * g_pos_veloc_xy_scale;
+		g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * g_pos_veloc_xy_scale;
+		g_veloc_applied.z = (g_veloc_final.z - g_veloc_offset.z) * g_pos_veloc_z_scale;
 
 		// Simple P Control: Output = (Current - Target) * P
 		// Note: P-term in PID lib was (feedback - setpoint) * P. 
 		// We maintain that structure.
-		double x_output = (g_pos_final.x - g_pos_target.x) * POS_CTL_XY_P;
-		double y_output = (g_pos_final.y - g_pos_target.y) * POS_CTL_XY_P;
-		double z_output = (g_pos_final.z - g_pos_target.z) * POS_CTL_Z_P;
+		double x_output = (g_pos_final.x - g_pos_target.x) * g_pos_xy_p;
+		double y_output = (g_pos_final.y - g_pos_target.y) * g_pos_xy_p;
+		double z_output = (g_pos_final.z - g_pos_target.z) * g_pos_z_p;
 
-		g_output_smooth.x += POS_CTL_OUTPUT_LPF_ALPHA_XY * (x_output - g_output_smooth.x);
-		g_output_smooth.y += POS_CTL_OUTPUT_LPF_ALPHA_XY * (y_output - g_output_smooth.y);
-		g_output_smooth.z += POS_CTL_OUTPUT_LPF_ALPHA_Z * (z_output - g_output_smooth.z);
+		double lpf_z = g_pos_lpf_z_raw / ACCEL_FREQ;
+		g_output_smooth.x += g_pos_lpf_xy * (x_output - g_output_smooth.x);
+		g_output_smooth.y += g_pos_lpf_xy * (y_output - g_output_smooth.y);
+		g_output_smooth.z += lpf_z * (z_output - g_output_smooth.z);
 
 		/*
 		 * Body-Frame Position→Angle Mapping:
@@ -158,8 +147,8 @@ static void position_update(uint8_t *data, size_t size) {
 		 * - Positive Y error (right of target) → need negative roll (right wing up) to fly left → negated
 		 * - Positive Z error (above target) → need less throttle to descend → negated
 		 */
-		g_pos_ctl_roll 		= -LIMIT(g_output_smooth.y + g_veloc_applied.y, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
-		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x, -POS_CTL_ANGLE_LIMIT, POS_CTL_ANGLE_LIMIT);
+		g_pos_ctl_roll 		= -LIMIT(g_output_smooth.y + g_veloc_applied.y, -g_pos_angle_limit, g_pos_angle_limit);
+		g_pos_ctl_pitch 	= LIMIT(g_output_smooth.x + g_veloc_applied.x, -g_pos_angle_limit, g_pos_angle_limit);
 		g_pos_ctl_yaw 		= -g_yaw_veloc;
 		g_pos_ctl_alt 		= -(g_output_smooth.z + g_veloc_applied.z);
 	}
@@ -184,32 +173,32 @@ static void state_update(uint8_t *data, size_t size) {
 }
 
 static void manual_control_update(uint8_t *data, size_t size) {
-	g_yaw_veloc = fabs(g_rc_att_ctl.yaw) > RC_DEADBAND ? g_rc_att_ctl.yaw * RC_YAW_SCALE : 0;
+	g_yaw_veloc = fabs(g_rc_att_ctl.yaw) > g_rc_deadband ? g_rc_att_ctl.yaw * g_rc_yaw_scale : 0;
 
 	if (g_rc_state_ctl.mode == 2) {
-		if (fabs(g_rc_att_ctl.alt) > RC_DEADBAND) {
+		if (fabs(g_rc_att_ctl.alt) > g_rc_deadband) {
 			g_take_off_speed += 0.5 / PILOT_CTL_FREQ * g_rc_att_ctl.alt;
 		}
 		return;
 	}
 
-	if (fabs(g_rc_att_ctl.roll) > RC_DEADBAND) {
+	if (fabs(g_rc_att_ctl.roll) > g_rc_deadband) {
 		if (g_moving_state_roll == 0) {
 			g_pos_offset.y = g_pos_target.y - g_pos_final.y;
 			g_moving_state_roll = PILOT_CTL_FREQ;
 		}
-		g_pos_target.y = g_pos_final.y + g_pos_offset.y + g_rc_att_ctl.roll * RC_XY_SCALE;
+		g_pos_target.y = g_pos_final.y + g_pos_offset.y + g_rc_att_ctl.roll * g_rc_xy_scale;
 	} else if (g_moving_state_roll == PILOT_CTL_FREQ) {
 		g_pos_target.y = g_pos_final.y + g_pos_offset.y;
 		g_moving_state_roll = 0;
 	}
 
-	if (fabs(g_rc_att_ctl.pitch) > RC_DEADBAND) {
+	if (fabs(g_rc_att_ctl.pitch) > g_rc_deadband) {
 		if (g_moving_state_pitch == 0) {
 			g_pos_offset.x = g_pos_target.x - g_pos_final.x;
 			g_moving_state_pitch = PILOT_CTL_FREQ;
 		}
-		g_pos_target.x = g_pos_final.x + g_pos_offset.x + g_rc_att_ctl.pitch * RC_XY_SCALE;
+		g_pos_target.x = g_pos_final.x + g_pos_offset.x + g_rc_att_ctl.pitch * g_rc_xy_scale;
 	} else if (g_moving_state_pitch == PILOT_CTL_FREQ) {
 		g_pos_target.x = g_pos_final.x + g_pos_offset.x;
 		g_moving_state_pitch = 0;
@@ -218,12 +207,12 @@ static void manual_control_update(uint8_t *data, size_t size) {
 	if (g_state == LANDING) {
 		g_pos_target.z = g_pos_final.z + g_pos_offset.z - g_landing_speed;
 	} else {
-		if (fabs(g_rc_att_ctl.alt) > RC_DEADBAND) {
+		if (fabs(g_rc_att_ctl.alt) > g_rc_deadband) {
 			if (g_moving_state_alt == 0) {
 				g_pos_offset.z = g_pos_target.z - g_pos_final.z;
 				g_moving_state_alt = PILOT_CTL_FREQ;
 			}
-			g_pos_target.z = g_pos_final.z + g_pos_offset.z + g_rc_att_ctl.alt * RC_Z_SCALE;
+			g_pos_target.z = g_pos_final.z + g_pos_offset.z + g_rc_att_ctl.alt * g_rc_z_scale;
 		} else if (g_moving_state_alt > 0) {
 			g_pos_target.z = g_pos_final.z + g_pos_offset.z;
 			g_moving_state_alt -= 1;
@@ -245,6 +234,20 @@ static void state_control_update(uint8_t *data, size_t size) {
 	memcpy(&g_rc_state_ctl, data, size);
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t t;
+	memcpy(&t, data, sizeof(tuning_params_t));
+	g_pos_xy_p = t.pos_xy_p;
+	g_pos_z_p = t.pos_z_p;
+	g_pos_veloc_xy_scale = t.pos_veloc_xy_scale;
+	g_pos_veloc_z_scale = t.pos_veloc_z_scale;
+	g_pos_lpf_xy = t.pos_lpf_xy;
+	g_pos_lpf_z_raw = t.pos_lpf_z;
+	g_pos_angle_limit = t.pos_angle_limit;
+	g_rc_deadband = t.pos_rc_deadband;
+}
+
 void position_control_setup(void) {
 	subscribe(POSITION_STATE_UPDATE, position_update);
 	subscribe(POSITION_TARGET_UPDATE, position_target_update);
@@ -253,4 +256,5 @@ void position_control_setup(void) {
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(PILOT_CTL_SCHEDULER, manual_control_update);
+	subscribe(TUNING_READY, on_tuning_ready);
 }

@@ -4,6 +4,9 @@ import struct
 import threading
 import queue
 import numpy as np
+import matplotlib
+import sys
+matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
@@ -73,7 +76,7 @@ MOTOR_LABELS_L2 = {5: 'M5\nFL CCW', 6: 'M6\nFR CW', 7: 'M7\nBR CCW', 8: 'M8\nBL 
 ports = serial.tools.list_ports.comports()
 print("Scanning for serial ports...")
 for port, desc, hwid in sorted(ports):
-    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB']):
+    if any(x in port for x in ['usbmodem', 'usbserial', 'SLAB_USBtoUART', 'ttyACM', 'ttyUSB', 'COM']):
         SERIAL_PORT = port
         print(f"  \u2713 Auto-selected: {port} ({desc})")
         break
@@ -345,6 +348,14 @@ def main():
             btn_log.color = BTN_GREEN
             btn_log.hovercolor = BTN_GREEN_HOV
             fig.canvas.draw_idle()
+
+            def _post_reset():
+                time.sleep(2.0)
+                if g_serial and g_serial.is_open:
+                    g_serial.reset_input_buffer()
+                    send_log_class_command(g_serial, LOG_CLASS_HEART_BEAT)
+
+            threading.Thread(target=_post_reset, daemon=True).start()
 
     btn_reset.on_clicked(reset_fc)
 

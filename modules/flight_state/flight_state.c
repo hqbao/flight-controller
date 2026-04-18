@@ -8,11 +8,11 @@
 #include <messages.h>
 
 /* Thresholds (units: mm for range, degrees for angles, loop iterations for time) */
-#define DISARM_RANGE_WHEN_LANDING 10     // Range (mm) below which drone is considered landed
+static float g_disarm_angle  = 60.0f;   // Max tilt angle (deg) before emergency disarm
+static float g_disarm_range  = 10.0f;   // Range (mm) below which drone is considered landed
+static float g_allowed_landing_range = 500.0f;  // Min range (mm) to allow landing mode
+static float g_took_off_range = 100.0f; // Range (mm) to confirm takeoff complete
 #define DISARM_TIME_WHEN_LANDING 50      // Iterations at 100Hz (~500ms) to confirm landing
-#define DISARM_IF_EXCEEDED_ANGLE_RANGE 60 // Max tilt angle (deg) before emergency disarm
-#define ALLOWED_LANDING_RANGE 500        // Min range (mm) to allow landing mode
-#define TOOK_OFF_RANGE 100               // Range (mm) to confirm takeoff complete
 
 /* RC Input Constants */
 #define RC_STATE_DISARMED 0
@@ -108,33 +108,33 @@ static void on_state_update(uint8_t *data, size_t size) {
 	}
 
 	if (g_state == TAKING_OFF) {
-		if (g_downward_range > TOOK_OFF_RANGE) {
+		if (g_downward_range > g_took_off_range) {
 			g_state = FLYING;
 		}
 	}
 
 	if (g_state == FLYING) {
-		if (g_downward_range < DISARM_RANGE_WHEN_LANDING && g_rc_att_ctl.alt == -90) {
+		if (g_downward_range < g_disarm_range && g_rc_att_ctl.alt == -90) {
 			g_state = DISARMED;
 		}
 
 		if (g_rc_state_ctl.state == 2 && g_rc_state_ctl_prev.state != 2) {
-			if (g_downward_range > ALLOWED_LANDING_RANGE) {
+			if (g_downward_range > g_allowed_landing_range) {
 				g_state = LANDING;
 			}
 		}
 	}
 
 	if (g_state == TAKING_OFF || g_state == FLYING) {
-		if (fabs(g_angular_state.roll) > DISARM_IF_EXCEEDED_ANGLE_RANGE
-				|| fabs(g_angular_state.pitch) > DISARM_IF_EXCEEDED_ANGLE_RANGE) {
+		if (fabs(g_angular_state.roll) > g_disarm_angle
+				|| fabs(g_angular_state.pitch) > g_disarm_angle) {
 			g_state = DISARMED;
 		}
 	}
 
 	if (g_state == LANDING) {
 		static int landing_counter = DISARM_TIME_WHEN_LANDING;
-		if (g_downward_range < DISARM_RANGE_WHEN_LANDING) {
+		if (g_downward_range < g_disarm_range) {
 			if (landing_counter < 1) {
 				g_state = DISARMED;
 			}
@@ -163,6 +163,17 @@ static void angular_state_update(uint8_t *data, size_t size) {
 	memcpy(&g_angular_state, data, size);
 }
 
+static void on_tuning_ready(uint8_t *data, size_t size) {
+	if (size < sizeof(tuning_params_t)) return;
+	tuning_params_t tp;
+	memcpy(&tp, data, sizeof(tp));
+
+	g_disarm_angle          = tp.disarm_angle;
+	g_disarm_range          = tp.disarm_range;
+	g_allowed_landing_range = tp.allowed_landing_range;
+	g_took_off_range        = tp.took_off_range;
+}
+
 void flight_state_setup(void) {
 	subscribe(CALIBRATION_GYRO_STATUS, on_gyro_calibration_status);
 	subscribe(CALIBRATION_ACCEL_STATUS, on_accel_calibration_status);
@@ -173,4 +184,5 @@ void flight_state_setup(void) {
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
 	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
 	subscribe(PILOT_CTL_SCHEDULER, on_state_update);
+	subscribe(TUNING_READY, on_tuning_ready);
 }
