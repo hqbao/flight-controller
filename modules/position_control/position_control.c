@@ -137,8 +137,8 @@ static void position_update(uint8_t *data, size_t size) {
 		g_pos_ctl_yaw 		= -g_yaw_veloc;
 		g_pos_ctl_alt 		= g_rc_att_ctl.alt * 2;
 	} else {
-		if (g_moving_state_roll == 0) g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
-		if (g_moving_state_pitch == 0) g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
+		g_veloc_applied.y = (g_veloc_final.y - g_veloc_offset.y) * POS_CTL_VELOC_XY_SCALE;
+		g_veloc_applied.x = (g_veloc_final.x - g_veloc_offset.x) * POS_CTL_VELOC_XY_SCALE;
 		g_veloc_applied.z = (g_veloc_final.z - g_veloc_offset.z) * POS_CTL_VELOC_Z_SCALE;
 
 		// Simple P Control: Output = (Current - Target) * P
