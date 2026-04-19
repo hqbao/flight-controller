@@ -238,6 +238,7 @@ def main():
     ax.set_xlim(-1.2, 1.2)
     ax.set_ylim(-1.2, 1.2)
     ax.set_zlim(-1.2, 1.2)
+    ax.invert_xaxis()
     ax.set_xlabel('X \u2014 Forward', fontsize=9, labelpad=6)
     ax.set_ylabel('Y \u2014 Right', fontsize=9, labelpad=6)
     ax.set_zlabel('Z \u2014 Down', fontsize=9, labelpad=6)
