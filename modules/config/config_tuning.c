@@ -39,10 +39,8 @@ static uint8_t g_tuning_count = 0;
 void config_tuning_on_result(param_storage_t *p) {
 	if (p->id < PARAM_ID_TUNING_FIRST || p->id > PARAM_ID_TUNING_LAST) return;
 
-	/* Reject invalid values from flash — keep compiled default.
-	 * Flash written by older firmware (before tuning system) has 0x00
-	 * for all tuning param slots. No tuning param should be 0, NaN, or Inf. */
-	if (p->value == 0.0f || isnan(p->value) || isinf(p->value)) {
+	/* Reject invalid values from flash — keep compiled default. */
+	if (isnan(p->value) || isinf(p->value)) {
 		g_tuning_count++;
 		if (g_tuning_count >= PARAM_ID_TUNING_COUNT) g_tuning_loaded = 1;
 		return;
