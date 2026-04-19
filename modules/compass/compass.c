@@ -116,9 +116,16 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	 * BMM350 on PCB: sensor X=Right, sensor Y=Forward, sensor Z=Down
 	 * Body frame:    X=Forward, Y=Right, Z=Down
 	 * Mapping: body_x = sensor_y, body_y = -sensor_x, body_z = sensor_z */
+	// FC2
 	double tmp = mag_vec.x;
 	mag_vec.x = mag_vec.y;
 	mag_vec.y = -tmp;
+
+	// FC1
+	// double tmp = mag_vec.x;
+	// mag_vec.x = -mag_vec.y;
+	// mag_vec.y = -tmp;
+	// mag_vec.z = -mag_vec.z;
 
 	g_compass_cal = mag_vec;
 	publish(SENSOR_COMPASS, (uint8_t *)&mag_vec, sizeof(vector3d_t));
