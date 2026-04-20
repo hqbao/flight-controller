@@ -121,10 +121,16 @@ typedef enum {
 	PARAM_ID_ALLOWED_LANDING_RANGE = 102,
 	PARAM_ID_TOOK_OFF_RANGE = 103,
 
+	// Servo Bias (4 params)
+	PARAM_ID_SERVO_BIAS_1 = 104,
+	PARAM_ID_SERVO_BIAS_2 = 105,
+	PARAM_ID_SERVO_BIAS_3 = 106,
+	PARAM_ID_SERVO_BIAS_4 = 107,
+
 	// Tuning boundary markers
 	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,   // 48
-	PARAM_ID_TUNING_LAST  = PARAM_ID_TOOK_OFF_RANGE, // 103
-	PARAM_ID_TUNING_COUNT = 56,
+	PARAM_ID_TUNING_LAST  = PARAM_ID_SERVO_BIAS_4, // 107
+	PARAM_ID_TUNING_COUNT = 60,
 
 	PARAM_ID_MAX = 128,
 } param_id_e;
@@ -199,6 +205,11 @@ typedef struct {
 	float disarm_range;
 	float allowed_landing_range;
 	float took_off_range;
+	// Servo Bias (4 floats, IDs 104-107)
+	float servo_bias_1;
+	float servo_bias_2;
+	float servo_bias_3;
+	float servo_bias_4;
 } tuning_params_t;
 
 // Calibration data delivery structs (calibration module → sensor modules)

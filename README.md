@@ -74,7 +74,7 @@ flight-controller/
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── fft/                       #   FFT vibration analysis
 │   ├── notch_filter/              #   Gyro notch filter (motor vibration rejection)
-│   ├── config/                    #   Runtime tuning parameters (56 params, flash-persistent)
+│   ├── config/                    #   Runtime tuning parameters (60 params, flash-persistent)
 │   ├── dblink/                    #   UART protocol parser + TX queue (DB/UBX framing)
 │   └── local_storage/             #   Persistent configuration storage
 │
@@ -92,7 +92,7 @@ flight-controller/
 │   ├── position_estimation_optflow.py  # Optical flow & altitude sensor viewer
 │   ├── position_estimation_compare.py  # Fusion5 vs Fusion4 comparison
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
-│   ├── tuning_board.py            #   Parameter tuning GUI (56 params, query/upload/defaults)
+│   ├── tuning_board.py            #   Parameter tuning GUI (60 params, query/upload/defaults)
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -414,7 +414,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `flight_telemetry_bicopter_view.py` | Flight telemetry HUD: 3D bicopter with tilting nacelles, motors/servos, overlays |
 | `gps_read_ubx.py` | GPS satellite/position monitor |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
-| `tuning_board.py` | Parameter tuning GUI: 56 flash-persistent params in 7 categories, query/upload/defaults with confirmation |
+| `tuning_board.py` | Parameter tuning GUI: 60 flash-persistent params in 7 categories, query/upload/defaults with confirmation |
 
 > **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect. All tools use the macOS-native backend on darwin and TkAgg on other platforms.
 

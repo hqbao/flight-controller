@@ -113,16 +113,21 @@ TUNING_PARAMS = [
     (101, 'disarm_range',      'Disarm Range (mm)',  10.0),
     (102, 'landing_range',     'Landing Range (mm)',500.0),
     (103, 'took_off_range',    'Takeoff Range (mm)',100.0),
+    # --- Servo Bias (IDs 104-107) ---
+    (104, 'servo_bias_1',     'Servo 1 Bias (bicopter L)',  0.0),
+    (105, 'servo_bias_2',     'Servo 2 Bias (bicopter R)',  0.0),
+    (106, 'servo_bias_3',     'Servo 3 Bias',               0.0),
+    (107, 'servo_bias_4',     'Servo 4 Bias',               0.0),
 ]
 
 CATEGORIES = [
-    ('Attitude PID',     48,  63),
-    ('Position Ctl',     64,  71),
-    ('Motor/Servo',      72,  76),
-    ('Att Estimation',   77,  84),
-    ('Pos Estimation',   85,  95),
-    ('FFT/Notch',        96,  99),
-    ('Flight State',    100, 103),
+    ('Attitude PID',     [(48,  63)]),
+    ('Position Ctl',     [(64,  71)]),
+    ('Motor/Servo',      [(72,  76), (104, 107)]),
+    ('Att Estimation',   [(77,  84)]),
+    ('Pos Estimation',   [(85,  95)]),
+    ('FFT/Notch',        [(96,  99)]),
+    ('Flight State',     [(100, 103)]),
 ]
 
 # --- UI Colors ---
@@ -293,9 +298,9 @@ def parse_storage_pages():
 
 
 def get_category_params(cat_idx):
-    _, id_first, id_last = CATEGORIES[cat_idx]
+    _, ranges = CATEGORIES[cat_idx]
     return [(pid, name, disp, default) for pid, name, disp, default in TUNING_PARAMS
-            if id_first <= pid <= id_last]
+            if any(lo <= pid <= hi for lo, hi in ranges)]
 
 
 # =====================================================================
@@ -318,7 +323,7 @@ tab_width = 0.125
 tab_gap = 0.006
 tab_x0 = 0.02
 
-for i, (cat_name, _, _) in enumerate(CATEGORIES):
+for i, (cat_name, _) in enumerate(CATEGORIES):
     x = tab_x0 + i * (tab_width + tab_gap)
     ax_tab = fig.add_axes([x, 0.905, tab_width, 0.04])
     color = BTN_TAB_ACTIVE if i == 0 else BTN_COLOR
@@ -450,7 +455,7 @@ status_bar = fig.text(0.03, 0.015, 'Ready', fontsize=9, fontfamily='monospace', 
 
 def rebuild_table():
     global g_dirty
-    cat_name, _, _ = CATEGORIES[g_active_cat]
+    cat_name, _ = CATEGORIES[g_active_cat]
     params = get_category_params(g_active_cat)
     cat_label.set_text(f'{cat_name}  ({len(params)} params)')
 

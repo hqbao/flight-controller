@@ -52,6 +52,8 @@ static int g_max_speed = 3000;
 static int g_servo_min    = 1000;
 static int g_servo_max    = 2000;
 static int g_servo_center = 1500;
+static int g_servo_bias_1 = 0;
+static int g_servo_bias_2 = 0;
 
 static int g_output[8] = {0};
 static state_t g_state = DISARMED;
@@ -72,8 +74,8 @@ static void mix_motors(mix_control_input_t *input) {
 	/* Servos: collective tilt for pitch, differential tilt for yaw.
 	 * S2 is mirrored on the airframe, so negate pitch to get same physical tilt.
 	 * Both share same yaw sign — mirrored mount makes them tilt opposite. */
-	double s1 = g_servo_center + pitch - yaw;   /* left servo  */
-	double s2 = g_servo_center - pitch - yaw;   /* right servo (mirrored mount) */
+	double s1 = g_servo_center + g_servo_bias_1 + pitch - yaw;   /* left servo  */
+	double s2 = g_servo_center + g_servo_bias_2 - pitch - yaw;   /* right servo (mirrored mount) */
 
 	g_output[0] = LIMIT((int)m1, g_min_speed, g_max_speed);
 	g_output[1] = LIMIT((int)m2, g_min_speed, g_max_speed);
@@ -98,8 +100,8 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 		g_output[1] = 0;
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = g_servo_center;
-		g_output[5] = g_servo_center;
+		g_output[4] = g_servo_center + g_servo_bias_1;
+		g_output[5] = g_servo_center + g_servo_bias_2;
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
@@ -109,8 +111,8 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 		g_output[1] = g_min_speed;
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = g_servo_center;
-		g_output[5] = g_servo_center;
+		g_output[4] = g_servo_center + g_servo_bias_1;
+		g_output[5] = g_servo_center + g_servo_bias_2;
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
@@ -121,8 +123,8 @@ static void mix_control_loop(uint8_t *data, size_t size) {
 		g_output[1] = LIMIT(g_min_speed + g_rc_att_ctl.alt / 90   * (g_max_speed - g_min_speed), 0, g_max_speed);
 		g_output[2] = 0;
 		g_output[3] = 0;
-		g_output[4] = LIMIT(g_servo_center + (int)(g_rc_att_ctl.roll / 90  * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
-		g_output[5] = LIMIT(g_servo_center + (int)(g_rc_att_ctl.pitch / 90 * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
+		g_output[4] = LIMIT(g_servo_center + g_servo_bias_1 + (int)(g_rc_att_ctl.roll / 90  * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
+		g_output[5] = LIMIT(g_servo_center + g_servo_bias_2 + (int)(g_rc_att_ctl.pitch / 90 * (g_servo_max - g_servo_center)), g_servo_min, g_servo_max);
 		g_output[6] = 0;
 		g_output[7] = 0;
 		publish(SPEED_CONTROL_UPDATE, (uint8_t *)g_output, sizeof(int) * 8);
@@ -163,6 +165,8 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	g_servo_min = (int)t.servo_min;
 	g_servo_max = (int)t.servo_max;
 	g_servo_center = (int)t.servo_center;
+	g_servo_bias_1 = (int)t.servo_bias_1;
+	g_servo_bias_2 = (int)t.servo_bias_2;
 }
 
 void bicopter_setup(void) {

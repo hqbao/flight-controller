@@ -32,6 +32,9 @@ static tuning_params_t g_tuning = {
 	// Flight State
 	.disarm_angle = 60.0f, .disarm_range = 10.0f,
 	.allowed_landing_range = 500.0f, .took_off_range = 100.0f,
+	// Servo Bias
+	.servo_bias_1 = 0.0f, .servo_bias_2 = 0.0f,
+	.servo_bias_3 = 0.0f, .servo_bias_4 = 0.0f,
 };
 static uint8_t g_tuning_loaded = 0;
 static uint8_t g_tuning_count = 0;
