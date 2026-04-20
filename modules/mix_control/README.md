@@ -123,7 +123,7 @@ t = (cmd - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)     // normalize to [0,1]
 cmd_out = MIN_SPEED + (p1*t + p2*t²) * range         // apply polynomial, scale back
 ```
 
-Tuning parameters (IDs 108–109, under Motor/Servo):
+Tuning parameters (IDs 114–115, under Motor/Servo):
 - `thrust_p1` (default 1.0) — linear coefficient
 - `thrust_p2` (default 0.0) — quadratic coefficient
 

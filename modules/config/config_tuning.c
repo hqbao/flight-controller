@@ -4,8 +4,11 @@
 static tuning_params_t g_tuning = {
 	// Attitude PID
 	.att_roll_p = 4.0f, .att_roll_i = 1.0f, .att_roll_d = 2.0f, .att_roll_i_limit = 5.0f,
+	.att_roll_p_limit = 1000000.0f, .att_roll_o_limit = 1000000.0f,
 	.att_pitch_p = 4.0f, .att_pitch_i = 1.0f, .att_pitch_d = 2.0f, .att_pitch_i_limit = 5.0f,
+	.att_pitch_p_limit = 1000000.0f, .att_pitch_o_limit = 1000000.0f,
 	.att_yaw_p = 10.0f, .att_yaw_i = 1.0f, .att_yaw_d = 5.0f, .att_yaw_i_limit = 5.0f,
+	.att_yaw_p_limit = 1000000.0f, .att_yaw_o_limit = 1000000.0f,
 	.att_smooth_input = 1.0f, .att_smooth_p_term = 1.0f, .att_smooth_output = 1.0f, .att_gain_time = 1.0f,
 	// Position Control
 	.pos_xy_p = 50.0f, .pos_z_p = 2000.0f,

@@ -42,99 +42,105 @@ DB_CMD_RESET         = 0x07
 DB_CMD_TUNING        = 0x0A
 
 PARAMS_PER_PAGE = 26
-TOTAL_PARAMS    = 104
-TOTAL_PAGES     = 4
+TOTAL_PARAMS    = 128
+TOTAL_PAGES     = 5
 TUNING_FIRST    = 48
-TUNING_LAST     = 103
-TUNING_COUNT    = 56
+TUNING_LAST     = 118
+TUNING_COUNT    = 71  # 48..118 contiguous
 
 # --- Tuning Parameters: (param_id, field_name, display_name, default_value) ---
 TUNING_PARAMS = [
-    # --- Attitude PID (IDs 48-63) ---
-    (48,  'att_roll_p',        'Roll P',             4.0),
-    (49,  'att_roll_i',        'Roll I',             1.0),
-    (50,  'att_roll_d',        'Roll D',             2.0),
-    (51,  'att_roll_i_limit',  'Roll I Limit',       5.0),
-    (52,  'att_pitch_p',       'Pitch P',            4.0),
-    (53,  'att_pitch_i',       'Pitch I',            1.0),
-    (54,  'att_pitch_d',       'Pitch D',            2.0),
-    (55,  'att_pitch_i_limit', 'Pitch I Limit',      5.0),
-    (56,  'att_yaw_p',         'Yaw P',             10.0),
-    (57,  'att_yaw_i',         'Yaw I',              1.0),
-    (58,  'att_yaw_d',         'Yaw D',              5.0),
-    (59,  'att_yaw_i_limit',   'Yaw I Limit',        5.0),
-    (60,  'att_smooth_input',  'Smooth Input',       1.0),
-    (61,  'att_smooth_p_term', 'Smooth P Term',      1.0),
-    (62,  'att_smooth_output', 'Smooth Output',      1.0),
-    (63,  'att_gain_time',     'Gain Ramp Time',     1.0),
-    # --- Position Control (IDs 64-71) ---
-    (64,  'pos_xy_p',          'XY P Gain',         50.0),
-    (65,  'pos_z_p',           'Z P Gain',        2000.0),
-    (66,  'pos_veloc_xy_s',    'XY Vel Scale',      50.0),
-    (67,  'pos_veloc_z_s',     'Z Vel Scale',     2000.0),
-    (68,  'pos_lpf_xy',        'XY LPF Alpha',       1.0),
-    (69,  'pos_lpf_z',         'Z LPF Alpha',        5.0),
-    (70,  'pos_angle_limit',   'Angle Limit (deg)', 30.0),
-    (71,  'pos_rc_deadband',   'RC Deadband',        0.1),
-    # --- Motor / Servo (IDs 72-76) ---
-    (72,  'motor_min',         'Motor Min',        150.0),
-    (73,  'motor_max',         'Motor Max',       1800.0),
-    (74,  'servo_min',         'Servo Min',       1000.0),
-    (75,  'servo_max',         'Servo Max',       2000.0),
-    (76,  'servo_center',      'Servo Center',    1500.0),
-    # --- Attitude Estimation (IDs 77-84) ---
-    (77,  'att_mahony_kp',     'Mahony Kp',          0.1),
-    (78,  'att_mahony_ki',     'Mahony Ki',        0.001),
-    (79,  'att_f3_beta',       'Madgwick Beta',    0.001),
-    (80,  'att_f3_zeta',       'Madgwick Zeta',   0.0001),
-    (81,  'att_accel_smooth',  'Accel Smooth',       4.0),
-    (82,  'att_lin_acc_decay', 'LinAcc Decay',       0.5),
-    (83,  'att_lin_accel_min', 'LinAcc Min',         0.5),
-    (84,  'att_lin_accel_max', 'LinAcc Max',         2.0),
-    # --- Position Estimation (IDs 85-95) ---
-    (85,  'pe_xy_s1_integ',    'XY S1 Integ',       1.0),
-    (86,  'pe_xy_s1_corr',     'XY S1 Corr',       1.25),
-    (87,  'pe_xy_s2_integ',    'XY S2 Integ',       1.0),
-    (88,  'pe_xy_s2_corr',     'XY S2 Corr',       10.0),
-    (89,  'pe_xy_v_fb',        'XY Vel Feedback',    0.1),
-    (90,  'pe_z_s1_integ',     'Z S1 Integ',        1.0),
-    (91,  'pe_z_s1_corr',      'Z S1 Corr',         0.5),
-    (92,  'pe_z_s2_integ',     'Z S2 Integ',        1.0),
-    (93,  'pe_z_s2_corr',      'Z S2 Corr',        10.0),
-    (94,  'pe_z_v_fb',         'Z Vel Feedback',     0.1),
-    (95,  'pe_optflow_gain',   'OptFlow Gain',       5.0),
-    # --- FFT/Notch (IDs 96-99) ---
-    (96,  'notch_q',           'Notch Q Factor',     3.0),
-    (97,  'notch_min_hz',      'Notch Min Hz',      50.0),
-    (98,  'fft_peak_snr',      'FFT Peak SNR',       5.0),
-    (99,  'fft_freq_alpha',    'FFT Freq Alpha',    0.15),
-    # --- Flight State (IDs 100-103) ---
-    (100, 'disarm_angle',      'Disarm Angle (deg)', 60.0),
-    (101, 'disarm_range',      'Disarm Range (mm)',  10.0),
-    (102, 'landing_range',     'Landing Range (mm)',500.0),
-    (103, 'took_off_range',    'Takeoff Range (mm)',100.0),
-    # --- Servo Bias (IDs 104-107) ---
-    (104, 'servo_bias_1',     'Servo 1 Bias (bicopter L)',  0.0),
-    (105, 'servo_bias_2',     'Servo 2 Bias (bicopter R)',  0.0),
-    (106, 'servo_bias_3',     'Servo 3 Bias',               0.0),
-    (107, 'servo_bias_4',     'Servo 4 Bias',               0.0),
-    # --- Thrust Linearization (IDs 108-109) ---
-    (108, 'thrust_p1',        'Thrust P1 (linear)',          1.0),
-    (109, 'thrust_p2',        'Thrust P2 (quadratic)',       0.0),
-    # --- RC Scale (IDs 110-112) ---
-    (110, 'rc_xy_scale',      'RC XY Scale',                0.01),
-    (111, 'rc_z_scale',       'RC Z Scale',                 0.04),
-    (112, 'rc_yaw_scale',     'RC Yaw Scale',              -0.5),
+    # --- Attitude PID (IDs 48-69) ---
+    (48,  'att_roll_p',         'Roll P',              4.0),
+    (49,  'att_roll_i',         'Roll I',              1.0),
+    (50,  'att_roll_d',         'Roll D',              2.0),
+    (51,  'att_roll_i_limit',   'Roll I Limit',        5.0),
+    (52,  'att_roll_p_limit',   'Roll P-Term Limit',   1000000.0),
+    (53,  'att_roll_o_limit',   'Roll Output Limit',   1000000.0),
+    (54,  'att_pitch_p',        'Pitch P',             4.0),
+    (55,  'att_pitch_i',        'Pitch I',             1.0),
+    (56,  'att_pitch_d',        'Pitch D',             2.0),
+    (57,  'att_pitch_i_limit',  'Pitch I Limit',       5.0),
+    (58,  'att_pitch_p_limit',  'Pitch P-Term Limit',  1000000.0),
+    (59,  'att_pitch_o_limit',  'Pitch Output Limit',  1000000.0),
+    (60,  'att_yaw_p',          'Yaw P',              10.0),
+    (61,  'att_yaw_i',          'Yaw I',               1.0),
+    (62,  'att_yaw_d',          'Yaw D',               5.0),
+    (63,  'att_yaw_i_limit',    'Yaw I Limit',         5.0),
+    (64,  'att_yaw_p_limit',    'Yaw P-Term Limit',    1000000.0),
+    (65,  'att_yaw_o_limit',    'Yaw Output Limit',    1000000.0),
+    (66,  'att_smooth_input',   'Smooth Input',        1.0),
+    (67,  'att_smooth_p_term',  'Smooth P Term',       1.0),
+    (68,  'att_smooth_output',  'Smooth Output',       1.0),
+    (69,  'att_gain_time',      'Gain Ramp Time',      1.0),
+    # --- Position Control (IDs 70-77) ---
+    (70,  'pos_xy_p',           'XY P Gain',          50.0),
+    (71,  'pos_z_p',            'Z P Gain',         2000.0),
+    (72,  'pos_veloc_xy_s',     'XY Vel Scale',       50.0),
+    (73,  'pos_veloc_z_s',      'Z Vel Scale',      2000.0),
+    (74,  'pos_lpf_xy',         'XY LPF Alpha',        1.0),
+    (75,  'pos_lpf_z',          'Z LPF Alpha',         5.0),
+    (76,  'pos_angle_limit',    'Angle Limit (deg)',  30.0),
+    (77,  'pos_rc_deadband',    'RC Deadband',         0.1),
+    # --- Motor / Servo (IDs 78-82) ---
+    (78,  'motor_min',          'Motor Min',         150.0),
+    (79,  'motor_max',          'Motor Max',        1800.0),
+    (80,  'servo_min',          'Servo Min',        1000.0),
+    (81,  'servo_max',          'Servo Max',        2000.0),
+    (82,  'servo_center',       'Servo Center',     1500.0),
+    # --- Attitude Estimation (IDs 83-90) ---
+    (83,  'att_mahony_kp',      'Mahony Kp',           0.1),
+    (84,  'att_mahony_ki',      'Mahony Ki',         0.001),
+    (85,  'att_f3_beta',        'Madgwick Beta',     0.001),
+    (86,  'att_f3_zeta',        'Madgwick Zeta',    0.0001),
+    (87,  'att_accel_smooth',   'Accel Smooth',        4.0),
+    (88,  'att_lin_acc_decay',  'LinAcc Decay',        0.5),
+    (89,  'att_lin_accel_min',  'LinAcc Min',          0.5),
+    (90,  'att_lin_accel_max',  'LinAcc Max',          2.0),
+    # --- Position Estimation (IDs 91-101) ---
+    (91,  'pe_xy_s1_integ',     'XY S1 Integ',        1.0),
+    (92,  'pe_xy_s1_corr',      'XY S1 Corr',        1.25),
+    (93,  'pe_xy_s2_integ',     'XY S2 Integ',        1.0),
+    (94,  'pe_xy_s2_corr',      'XY S2 Corr',        10.0),
+    (95,  'pe_xy_v_fb',         'XY Vel Feedback',     0.1),
+    (96,  'pe_z_s1_integ',      'Z S1 Integ',         1.0),
+    (97,  'pe_z_s1_corr',       'Z S1 Corr',          0.5),
+    (98,  'pe_z_s2_integ',      'Z S2 Integ',         1.0),
+    (99,  'pe_z_s2_corr',       'Z S2 Corr',         10.0),
+    (100, 'pe_z_v_fb',          'Z Vel Feedback',      0.1),
+    (101, 'pe_optflow_gain',    'OptFlow Gain',        5.0),
+    # --- FFT/Notch (IDs 102-105) ---
+    (102, 'notch_q',            'Notch Q Factor',      3.0),
+    (103, 'notch_min_hz',       'Notch Min Hz',       50.0),
+    (104, 'fft_peak_snr',       'FFT Peak SNR',        5.0),
+    (105, 'fft_freq_alpha',     'FFT Freq Alpha',     0.15),
+    # --- Flight State (IDs 106-109) ---
+    (106, 'disarm_angle',       'Disarm Angle (deg)',  60.0),
+    (107, 'disarm_range',       'Disarm Range (mm)',   10.0),
+    (108, 'landing_range',      'Landing Range (mm)', 500.0),
+    (109, 'took_off_range',     'Takeoff Range (mm)', 100.0),
+    # --- Servo Bias (IDs 110-113) ---
+    (110, 'servo_bias_1',       'Servo 1 Bias (bicopter L)',  0.0),
+    (111, 'servo_bias_2',       'Servo 2 Bias (bicopter R)',  0.0),
+    (112, 'servo_bias_3',       'Servo 3 Bias',               0.0),
+    (113, 'servo_bias_4',       'Servo 4 Bias',               0.0),
+    # --- Thrust Linearization (IDs 114-115) ---
+    (114, 'thrust_p1',          'Thrust P1 (linear)',          1.0),
+    (115, 'thrust_p2',          'Thrust P2 (quadratic)',       0.0),
+    # --- RC Scale (IDs 116-118) ---
+    (116, 'rc_xy_scale',        'RC XY Scale',                0.01),
+    (117, 'rc_z_scale',         'RC Z Scale',                 0.04),
+    (118, 'rc_yaw_scale',       'RC Yaw Scale',              -0.5),
 ]
 
 CATEGORIES = [
-    ('Attitude PID',     [(48,  63)]),
-    ('Position Ctl',     [(64,  71), (110, 112)]),
-    ('Motor/Servo',      [(72,  76), (104, 109)]),
-    ('Att Estimation',   [(77,  84)]),
-    ('Pos Estimation',   [(85,  95)]),
-    ('FFT/Notch',        [(96,  99)]),
-    ('Flight State',     [(100, 103)]),
+    ('Attitude PID',     [(48,  69)]),
+    ('Position Ctl',     [(70,  77), (116, 118)]),
+    ('Motor/Servo',      [(78,  82), (110, 115)]),
+    ('Att Estimation',   [(83,  90)]),
+    ('Pos Estimation',   [(91, 101)]),
+    ('FFT/Notch',        [(102, 105)]),
+    ('Flight State',     [(106, 109)]),
 ]
 
 # --- UI Colors ---
@@ -159,9 +165,9 @@ BTN_TAB_ACTIVE     = '#264f78'
 BTN_TAB_ACTIVE_HOV = '#305f88'
 HIGHLIGHT_BG   = '#264f78'
 
-MAX_ROWS  = 16
+MAX_ROWS  = 22
 ROW_START = 0.88
-ROW_STEP  = 0.054
+ROW_STEP  = 0.039
 
 # --- Auto-detect serial port ---
 ports = serial.tools.list_ports.comports()

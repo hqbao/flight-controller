@@ -8,31 +8,6 @@
 #include <macro.h>
 #include <messages.h>
 
-/* PID Gains */
-// Roll
-#define ATT_ROLL_P 4.0
-#define ATT_ROLL_I 1.0
-#define ATT_ROLL_D 2.0
-#define ATT_ROLL_I_LIMIT 5.0
-
-// Pitch
-#define ATT_PITCH_P 4.0
-#define ATT_PITCH_I 1.0
-#define ATT_PITCH_D 2.0
-#define ATT_PITCH_I_LIMIT 5.0
-
-// Yaw
-#define ATT_YAW_P 10.0
-#define ATT_YAW_I 1.0
-#define ATT_YAW_D 5.0
-#define ATT_YAW_I_LIMIT 5.0
-
-// Smoothing
-#define ATT_SMOOTH_INPUT 1.0
-#define ATT_SMOOTH_P_TERM 1.0
-#define ATT_SMOOTH_OUTPUT 1.0
-#define ATT_GAIN_TIME 1.0
-
 static angle3d_t g_angular_state = {0, 0, 0};
 static angle3d_t g_angular_target = {0, 0, 0};
 static state_t g_state = DISARMED;
@@ -65,25 +40,31 @@ static void altitude_control_update(uint8_t *data, size_t size) {
 
 static void pid_setup(void) {
 	pid_control_init(&g_pid_att_roll);
-	pid_control_set_p_gain(&g_pid_att_roll, ATT_ROLL_P);
-	pid_control_set_d_gain(&g_pid_att_roll, ATT_ROLL_D);
-	pid_control_set_i_gain(&g_pid_att_roll, ATT_ROLL_I, ATT_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_att_roll, ATT_ROLL_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_roll, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
+	pid_control_set_p_gain(&g_pid_att_roll, 4.0);
+	pid_control_set_d_gain(&g_pid_att_roll, 2.0);
+	pid_control_set_i_gain(&g_pid_att_roll, 1.0, 1.0);
+	pid_control_set_i_limit(&g_pid_att_roll, 5.0);
+	pid_control_set_p_limit(&g_pid_att_roll, 1000000.0);
+	pid_control_set_o_limit(&g_pid_att_roll, 1000000.0);
+	pid_control_set_smooth(&g_pid_att_roll, 1.0, 1.0, 1.0);
 
 	pid_control_init(&g_pid_att_pitch);
-	pid_control_set_p_gain(&g_pid_att_pitch, ATT_PITCH_P);
-	pid_control_set_d_gain(&g_pid_att_pitch, ATT_PITCH_D);
-	pid_control_set_i_gain(&g_pid_att_pitch, ATT_PITCH_I, ATT_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_att_pitch, ATT_PITCH_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_pitch, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
+	pid_control_set_p_gain(&g_pid_att_pitch, 4.0);
+	pid_control_set_d_gain(&g_pid_att_pitch, 2.0);
+	pid_control_set_i_gain(&g_pid_att_pitch, 1.0, 1.0);
+	pid_control_set_i_limit(&g_pid_att_pitch, 5.0);
+	pid_control_set_p_limit(&g_pid_att_pitch, 1000000.0);
+	pid_control_set_o_limit(&g_pid_att_pitch, 1000000.0);
+	pid_control_set_smooth(&g_pid_att_pitch, 1.0, 1.0, 1.0);
 
 	pid_control_init(&g_pid_att_yaw);
-	pid_control_set_p_gain(&g_pid_att_yaw, ATT_YAW_P);
-	pid_control_set_d_gain(&g_pid_att_yaw, ATT_YAW_D);
-	pid_control_set_i_gain(&g_pid_att_yaw, ATT_YAW_I, ATT_GAIN_TIME);
-	pid_control_set_i_limit(&g_pid_att_yaw, ATT_YAW_I_LIMIT);
-	pid_control_set_smooth(&g_pid_att_yaw, ATT_SMOOTH_INPUT, ATT_SMOOTH_P_TERM, ATT_SMOOTH_OUTPUT);
+	pid_control_set_p_gain(&g_pid_att_yaw, 10.0);
+	pid_control_set_d_gain(&g_pid_att_yaw, 5.0);
+	pid_control_set_i_gain(&g_pid_att_yaw, 1.0, 1.0);
+	pid_control_set_i_limit(&g_pid_att_yaw, 5.0);
+	pid_control_set_p_limit(&g_pid_att_yaw, 1000000.0);
+	pid_control_set_o_limit(&g_pid_att_yaw, 1000000.0);
+	pid_control_set_smooth(&g_pid_att_yaw, 1.0, 1.0, 1.0);
 }
 
 static void pid_loop(void) {
@@ -132,18 +113,24 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	pid_control_set_d_gain(&g_pid_att_roll, t.att_roll_d);
 	pid_control_set_i_gain(&g_pid_att_roll, t.att_roll_i, t.att_gain_time);
 	pid_control_set_i_limit(&g_pid_att_roll, t.att_roll_i_limit);
+	pid_control_set_p_limit(&g_pid_att_roll, t.att_roll_p_limit);
+	pid_control_set_o_limit(&g_pid_att_roll, t.att_roll_o_limit);
 	pid_control_set_smooth(&g_pid_att_roll, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
 
 	pid_control_set_p_gain(&g_pid_att_pitch, t.att_pitch_p);
 	pid_control_set_d_gain(&g_pid_att_pitch, t.att_pitch_d);
 	pid_control_set_i_gain(&g_pid_att_pitch, t.att_pitch_i, t.att_gain_time);
 	pid_control_set_i_limit(&g_pid_att_pitch, t.att_pitch_i_limit);
+	pid_control_set_p_limit(&g_pid_att_pitch, t.att_pitch_p_limit);
+	pid_control_set_o_limit(&g_pid_att_pitch, t.att_pitch_o_limit);
 	pid_control_set_smooth(&g_pid_att_pitch, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
 
 	pid_control_set_p_gain(&g_pid_att_yaw, t.att_yaw_p);
 	pid_control_set_d_gain(&g_pid_att_yaw, t.att_yaw_d);
 	pid_control_set_i_gain(&g_pid_att_yaw, t.att_yaw_i, t.att_gain_time);
 	pid_control_set_i_limit(&g_pid_att_yaw, t.att_yaw_i_limit);
+	pid_control_set_p_limit(&g_pid_att_yaw, t.att_yaw_p_limit);
+	pid_control_set_o_limit(&g_pid_att_yaw, t.att_yaw_o_limit);
 	pid_control_set_smooth(&g_pid_att_yaw, t.att_smooth_input, t.att_smooth_p_term, t.att_smooth_output);
 }
 
