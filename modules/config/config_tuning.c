@@ -35,6 +35,10 @@ static tuning_params_t g_tuning = {
 	// Servo Bias
 	.servo_bias_1 = 0.0f, .servo_bias_2 = 0.0f,
 	.servo_bias_3 = 0.0f, .servo_bias_4 = 0.0f,
+	// Thrust Linearization
+	.thrust_p1 = 1.0f, .thrust_p2 = 0.0f,
+	// RC Scale
+	.rc_xy_scale = 0.01f, .rc_z_scale = 0.04f, .rc_yaw_scale = -0.5f,
 };
 static uint8_t g_tuning_loaded = 0;
 static uint8_t g_tuning_count = 0;

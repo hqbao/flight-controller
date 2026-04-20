@@ -10,7 +10,7 @@
 #define MIN_LANDING_SPEED 50
 
 /* Control Gains (defaults — overridden by tuning params from flash) */
-static double g_pos_xy_p = 50.0;
+static double g_pos_xy_p = 100.0;
 static double g_pos_z_p = 2000.0;
 static double g_pos_veloc_xy_scale = 50.0;
 static double g_pos_veloc_z_scale = 2000.0;
@@ -246,6 +246,9 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	g_pos_lpf_z_raw = t.pos_lpf_z;
 	g_pos_angle_limit = t.pos_angle_limit;
 	g_rc_deadband = t.pos_rc_deadband;
+	g_rc_xy_scale = t.rc_xy_scale;
+	g_rc_z_scale = t.rc_z_scale;
+	g_rc_yaw_scale = t.rc_yaw_scale;
 }
 
 void position_control_setup(void) {

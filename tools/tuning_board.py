@@ -118,12 +118,19 @@ TUNING_PARAMS = [
     (105, 'servo_bias_2',     'Servo 2 Bias (bicopter R)',  0.0),
     (106, 'servo_bias_3',     'Servo 3 Bias',               0.0),
     (107, 'servo_bias_4',     'Servo 4 Bias',               0.0),
+    # --- Thrust Linearization (IDs 108-109) ---
+    (108, 'thrust_p1',        'Thrust P1 (linear)',          1.0),
+    (109, 'thrust_p2',        'Thrust P2 (quadratic)',       0.0),
+    # --- RC Scale (IDs 110-112) ---
+    (110, 'rc_xy_scale',      'RC XY Scale',                0.01),
+    (111, 'rc_z_scale',       'RC Z Scale',                 0.04),
+    (112, 'rc_yaw_scale',     'RC Yaw Scale',              -0.5),
 ]
 
 CATEGORIES = [
     ('Attitude PID',     [(48,  63)]),
-    ('Position Ctl',     [(64,  71)]),
-    ('Motor/Servo',      [(72,  76), (104, 107)]),
+    ('Position Ctl',     [(64,  71), (110, 112)]),
+    ('Motor/Servo',      [(72,  76), (104, 109)]),
     ('Att Estimation',   [(77,  84)]),
     ('Pos Estimation',   [(85,  95)]),
     ('FFT/Notch',        [(96,  99)]),

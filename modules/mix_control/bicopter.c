@@ -60,6 +60,21 @@ static state_t g_state = DISARMED;
 static rc_att_ctl_t g_rc_att_ctl;
 static uint8_t g_log_class = 0;
 static uint8_t g_log_msg[32]; // 8 floats
+static float g_thrust_p1 = 1.0f;
+static float g_thrust_p2 = 0.0f;
+
+/* Thrust linearization: normalize to [0,1], apply p1*t + p2*t^2, scale back.
+ * Default p1=1, p2=0 is identity (linear passthrough). */
+static double linearize_thrust(double cmd) {
+	if (cmd <= g_min_speed) return g_min_speed;
+	if (cmd >= g_max_speed) return g_max_speed;
+	double range = g_max_speed - g_min_speed;
+	double t = (cmd - g_min_speed) / range;
+	double out = g_thrust_p1 * t + g_thrust_p2 * t * t;
+	if (out < 0.0) out = 0.0;
+	if (out > 1.0) out = 1.0;
+	return g_min_speed + out * range;
+}
 
 static void mix_motors(mix_control_input_t *input) {
 	double base  = g_min_speed + input->altitude;
@@ -77,8 +92,8 @@ static void mix_motors(mix_control_input_t *input) {
 	double s1 = g_servo_center + g_servo_bias_1 + pitch - yaw;   /* left servo  */
 	double s2 = g_servo_center + g_servo_bias_2 - pitch - yaw;   /* right servo (mirrored mount) */
 
-	g_output[0] = LIMIT((int)m1, g_min_speed, g_max_speed);
-	g_output[1] = LIMIT((int)m2, g_min_speed, g_max_speed);
+	g_output[0] = LIMIT((int)linearize_thrust(m1), g_min_speed, g_max_speed);
+	g_output[1] = LIMIT((int)linearize_thrust(m2), g_min_speed, g_max_speed);
 	g_output[2] = 0;
 	g_output[3] = 0;
 	g_output[4] = LIMIT((int)s1, g_servo_min, g_servo_max);
@@ -167,6 +182,8 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	g_servo_center = (int)t.servo_center;
 	g_servo_bias_1 = (int)t.servo_bias_1;
 	g_servo_bias_2 = (int)t.servo_bias_2;
+	g_thrust_p1 = t.thrust_p1;
+	g_thrust_p2 = t.thrust_p2;
 }
 
 void bicopter_setup(void) {

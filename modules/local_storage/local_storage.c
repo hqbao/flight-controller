@@ -120,6 +120,18 @@ static param_storage_t default_storage[] = {
 	{.id=PARAM_ID_DISARM_RANGE,          .value=10.0f},
 	{.id=PARAM_ID_ALLOWED_LANDING_RANGE, .value=500.0f},
 	{.id=PARAM_ID_TOOK_OFF_RANGE,        .value=100.0f},
+	// Servo Bias
+	{.id=PARAM_ID_SERVO_BIAS_1, .value=0.0f},
+	{.id=PARAM_ID_SERVO_BIAS_2, .value=0.0f},
+	{.id=PARAM_ID_SERVO_BIAS_3, .value=0.0f},
+	{.id=PARAM_ID_SERVO_BIAS_4, .value=0.0f},
+	// Thrust Linearization
+	{.id=PARAM_ID_THRUST_P1, .value=1.0f},
+	{.id=PARAM_ID_THRUST_P2, .value=0.0f},
+	// RC Scale
+	{.id=PARAM_ID_RC_XY_SCALE,  .value=0.01f},
+	{.id=PARAM_ID_RC_Z_SCALE,   .value=0.04f},
+	{.id=PARAM_ID_RC_YAW_SCALE, .value=-0.5f},
 };
 
 // CRC32 implementation

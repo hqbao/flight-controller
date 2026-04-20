@@ -44,6 +44,21 @@ static state_t g_state = DISARMED;
 static rc_att_ctl_t g_rc_att_ctl;
 static uint8_t g_log_class = 0;
 static uint8_t g_log_msg[32]; // 8 floats
+static float g_thrust_p1 = 1.0f;
+static float g_thrust_p2 = 0.0f;
+
+/* Thrust linearization: normalize to [0,1], apply p1*t + p2*t^2, scale back.
+ * Default p1=1, p2=0 is identity (linear passthrough). */
+static double linearize_thrust(double cmd) {
+	if (cmd <= g_min_speed) return g_min_speed;
+	if (cmd >= g_max_speed) return g_max_speed;
+	double range = g_max_speed - g_min_speed;
+	double t = (cmd - g_min_speed) / range;  /* normalize to [0,1] */
+	double out = g_thrust_p1 * t + g_thrust_p2 * t * t;
+	if (out < 0.0) out = 0.0;
+	if (out > 1.0) out = 1.0;
+	return g_min_speed + out * range;
+}
 
 static void mix_motors(mix_control_input_t *input) {
 	double base = g_min_speed + input->altitude;
@@ -63,14 +78,14 @@ static void mix_motors(mix_control_input_t *input) {
 	double m7 = base + roll + pitch - yaw;   /* BR2, CCW */
 	double m8 = base - roll + pitch + yaw;   /* BL2, CW  */
 
-	g_output_speed[0] = LIMIT((int)m1, g_min_speed, g_max_speed);
-	g_output_speed[1] = LIMIT((int)m2, g_min_speed, g_max_speed);
-	g_output_speed[2] = LIMIT((int)m3, g_min_speed, g_max_speed);
-	g_output_speed[3] = LIMIT((int)m4, g_min_speed, g_max_speed);
-	g_output_speed[4] = LIMIT((int)m5, g_min_speed, g_max_speed);
-	g_output_speed[5] = LIMIT((int)m6, g_min_speed, g_max_speed);
-	g_output_speed[6] = LIMIT((int)m7, g_min_speed, g_max_speed);
-	g_output_speed[7] = LIMIT((int)m8, g_min_speed, g_max_speed);
+	g_output_speed[0] = LIMIT((int)linearize_thrust(m1), g_min_speed, g_max_speed);
+	g_output_speed[1] = LIMIT((int)linearize_thrust(m2), g_min_speed, g_max_speed);
+	g_output_speed[2] = LIMIT((int)linearize_thrust(m3), g_min_speed, g_max_speed);
+	g_output_speed[3] = LIMIT((int)linearize_thrust(m4), g_min_speed, g_max_speed);
+	g_output_speed[4] = LIMIT((int)linearize_thrust(m5), g_min_speed, g_max_speed);
+	g_output_speed[5] = LIMIT((int)linearize_thrust(m6), g_min_speed, g_max_speed);
+	g_output_speed[6] = LIMIT((int)linearize_thrust(m7), g_min_speed, g_max_speed);
+	g_output_speed[7] = LIMIT((int)linearize_thrust(m8), g_min_speed, g_max_speed);
 }
 
 static void mix_control_input_update(uint8_t *data, size_t size) {
@@ -133,6 +148,8 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	memcpy(&t, data, sizeof(tuning_params_t));
 	g_min_speed = (int)t.motor_min;
 	g_max_speed = (int)t.motor_max;
+	g_thrust_p1 = t.thrust_p1;
+	g_thrust_p2 = t.thrust_p2;
 }
 
 void quadcopter_setup(void) {

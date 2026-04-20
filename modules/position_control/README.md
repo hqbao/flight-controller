@@ -47,6 +47,9 @@ In Mode 2: RC provides rate commands (stick → velocity).
 | `POS_CTL_VELOC_Z_SCALE` | 2000.0 | Z velocity damping |
 | `POS_CTL_ANGLE_LIMIT` | 30.0 | Max tilt output (degrees) |
 | `RC_DEADBAND` | 0.1 | RC stick deadband |
+| `RC_XY_SCALE` | 0.01 | RC stick → XY position target scale |
+| `RC_Z_SCALE` | 0.04 | RC stick → Z position target scale |
+| `RC_YAW_SCALE` | -0.5 | RC stick → yaw velocity scale |
 | `LANDING_RANGE_THRESHOLD` | 2000.0 | Landing auto-speed range (mm) |
 | `MIN_LANDING_SPEED` | 50 | Minimum landing descent speed |
 

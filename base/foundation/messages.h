@@ -127,10 +127,19 @@ typedef enum {
 	PARAM_ID_SERVO_BIAS_3 = 106,
 	PARAM_ID_SERVO_BIAS_4 = 107,
 
+	// Thrust Linearization (2 params)
+	PARAM_ID_THRUST_P1 = 108,
+	PARAM_ID_THRUST_P2 = 109,
+
+	// RC Scale (3 params)
+	PARAM_ID_RC_XY_SCALE  = 110,
+	PARAM_ID_RC_Z_SCALE   = 111,
+	PARAM_ID_RC_YAW_SCALE = 112,
+
 	// Tuning boundary markers
 	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,   // 48
-	PARAM_ID_TUNING_LAST  = PARAM_ID_SERVO_BIAS_4, // 107
-	PARAM_ID_TUNING_COUNT = 60,
+	PARAM_ID_TUNING_LAST  = PARAM_ID_RC_YAW_SCALE, // 112
+	PARAM_ID_TUNING_COUNT = 65,
 
 	PARAM_ID_MAX = 128,
 } param_id_e;
@@ -210,6 +219,13 @@ typedef struct {
 	float servo_bias_2;
 	float servo_bias_3;
 	float servo_bias_4;
+	// Thrust Linearization (2 floats, IDs 108-109)
+	float thrust_p1;
+	float thrust_p2;
+	// RC Scale (3 floats, IDs 110-112)
+	float rc_xy_scale;
+	float rc_z_scale;
+	float rc_yaw_scale;
 } tuning_params_t;
 
 // Calibration data delivery structs (calibration module → sensor modules)

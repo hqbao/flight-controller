@@ -110,6 +110,27 @@ DShot and servo PWM must be on separate timers — all 4 channels of a timer sha
 | `SERVO_MAX` | 2000 | Servo PWM maximum (µs, bicopter only) |
 | `SERVO_CENTER` | 1500 | Servo PWM neutral (µs, bicopter only) |
 
+## Thrust Linearization
+
+Motor thrust is proportional to RPM², but the DShot command is roughly proportional to RPM.
+This means the PID's linear thrust demand maps non-linearly to actual thrust — control authority
+is weak at low throttle and aggressive at high throttle.
+
+Both mixers apply a polynomial correction after mixing and before output clamping:
+
+```
+t = (cmd - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)     // normalize to [0,1]
+cmd_out = MIN_SPEED + (p1*t + p2*t²) * range         // apply polynomial, scale back
+```
+
+Tuning parameters (IDs 108–109, under Motor/Servo):
+- `thrust_p1` (default 1.0) — linear coefficient
+- `thrust_p2` (default 0.0) — quadratic coefficient
+
+With defaults (p1=1, p2=0) the output is identity (no correction). After bench-testing
+with a thrust stand, set coefficients to linearize your specific motor/prop combination.
+The constraint p1 + p2 = 1 preserves full-scale mapping.
+
 ## State Machine Behavior
 
 | Flight State | Quadcopter Output | Bicopter Output |
