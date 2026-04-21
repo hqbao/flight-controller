@@ -73,8 +73,7 @@ TUNING_PARAMS = [
     (67,  'att_smooth_p_term',  'Smooth P Term',       1.0),
     (68,  'att_smooth_output',  'Smooth Output',       1.0),
     (69,  'att_gain_time',      'Gain Ramp Time',      1.0),
-    # --- Position Control (IDs 70-77) ---
-    (70,  'pos_xy_p',           'XY P Gain',          50.0),
+    (70,  'pos_xy_p',           'XY P Gain',         100.0),
     (71,  'pos_z_p',            'Z P Gain',         2000.0),
     (72,  'pos_veloc_xy_s',     'XY Vel Scale',       50.0),
     (73,  'pos_veloc_z_s',      'Z Vel Scale',      2000.0),

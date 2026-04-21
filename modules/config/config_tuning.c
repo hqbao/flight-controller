@@ -11,7 +11,7 @@ static tuning_params_t g_tuning = {
 	.att_yaw_p_limit = 1000000.0f, .att_yaw_o_limit = 1000000.0f,
 	.att_smooth_input = 1.0f, .att_smooth_p_term = 1.0f, .att_smooth_output = 1.0f, .att_gain_time = 1.0f,
 	// Position Control
-	.pos_xy_p = 50.0f, .pos_z_p = 2000.0f,
+	.pos_xy_p = 100.0f, .pos_z_p = 2000.0f,
 	.pos_veloc_xy_scale = 50.0f, .pos_veloc_z_scale = 2000.0f,
 	.pos_lpf_xy = 1.0f, .pos_lpf_z = 5.0f,
 	.pos_angle_limit = 30.0f, .pos_rc_deadband = 0.1f,
