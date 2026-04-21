@@ -40,6 +40,12 @@ Each parameter is 4 bytes (float). Addressed by `param_id × 4`.
 2. Validate CRC32 (polynomial 0xEDB88320)
 3. If invalid → write defaults, recalculate CRC32
 
+## Write Coalescing
+
+Flash writes are **deferred and coalesced** in `loop_flush` (called from `LOOP`). On `LOCAL_STORAGE_SAVE` the module updates the RAM shadow and records a timestamp. The actual sector erase+write only runs **500 ms after the most recent save**, so a burst of rapid saves (e.g. `tuning_board.py` "Upload Defaults" sends 71 params at 50 ms apart) collapses into a single ~1.3 s flash write instead of dozens of back-to-back ones. This keeps `LOOP` responsive — important because FFT spectrum analysis and other diagnostic streams also run from `LOOP`.
+
+Flash writes run in **thread mode** (from `LOOP`), never from a scheduler ISR — a full sector erase on STM32H743 takes ~1.3 s and would freeze all interrupts (PID, UART DMA, sensors) if run from ISR context.
+
 ## PubSub Interface
 
 ### Subscriptions

@@ -89,7 +89,7 @@ static param_storage_t default_storage[] = {
 	{.id=PARAM_ID_ATT_SMOOTH_OUTPUT,   .value=1.0f},
 	{.id=PARAM_ID_ATT_GAIN_TIME,       .value=1.0f},
 	// Position Control
-	{.id=PARAM_ID_POS_XY_P,            .value=50.0f},
+	{.id=PARAM_ID_POS_XY_P,            .value=100.0f},
 	{.id=PARAM_ID_POS_Z_P,             .value=2000.0f},
 	{.id=PARAM_ID_POS_VELOC_XY_SCALE,  .value=50.0f},
 	{.id=PARAM_ID_POS_VELOC_Z_SCALE,   .value=2000.0f},
