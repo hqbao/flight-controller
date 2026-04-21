@@ -14,7 +14,15 @@
 static uint8_t g_local_data[LOCAL_STORAGE_SIZE] = {0}; // data + 4-byte checksum
 static uint8_t g_active_log_class = 0;
 static volatile uint8_t g_dirty = 0;  // deferred flash write flag
+static volatile uint32_t g_dirty_ms = 0;  // timestamp of last save (for coalescing)
 static uint8_t g_storage_page = 0;    // multi-page readback: 0..3
+
+/* Coalesce rapid-fire saves: wait this long after the last save before
+ * actually erasing+writing flash. Upload Defaults sends 71 params at 50 ms
+ * apart (~3.5 s total) — without coalescing each one triggers a ~1.3 s
+ * sector erase, starving the LOOP for tens of seconds and stalling the
+ * FFT spectrum stream which also runs from LOOP. */
+#define FLASH_COALESCE_MS  500
 
 static param_storage_t default_storage[] = {
 	// Magnetometer calibration
@@ -171,10 +179,11 @@ static void local_storage_save(uint8_t *data, size_t size) {
 	// Update the value in g_local_data (RAM only — fast)
 	memcpy(&g_local_data[pos], &param->value, PARAM_SIZE);
 	
-	// Mark dirty — actual flash write deferred to 1 Hz loop
-	// This avoids blocking UART DMA ISR with 13 consecutive flash
-	// erase+write cycles (~1.3s) during calibration uploads.
+	// Mark dirty — actual flash write deferred to LOOP and coalesced.
+	// Bursts of saves (e.g. Upload Defaults: 71 params) collapse into a
+	// single sector erase+write FLASH_COALESCE_MS after the last save.
 	g_dirty = 1;
+	g_dirty_ms = platform_time_ms();
 }
 
 static void local_storage_load(uint8_t *data, size_t size) {
@@ -223,6 +232,9 @@ static void on_notify_log_class(uint8_t *data, size_t size) {
  */
 static void loop_flush(uint8_t *data, size_t size) {
 	if (!g_dirty) return;
+	/* Coalesce: only flush once writes have stopped for FLASH_COALESCE_MS.
+	 * Avoids back-to-back ~1.3 s sector erases starving LOOP. */
+	if ((platform_time_ms() - g_dirty_ms) < FLASH_COALESCE_MS) return;
 	g_dirty = 0;
 	uint32_t checksum = crc32(g_local_data, DATA_STORAGE_SIZE);
 	memcpy(&g_local_data[DATA_STORAGE_SIZE], &checksum, CHECKSUM_SIZE);
