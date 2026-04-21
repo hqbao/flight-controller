@@ -93,6 +93,7 @@ flight-controller/
 │   ├── position_estimation_compare.py  # Fusion5 vs Fusion4 comparison
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
+│   ├── linear_accel_view.py       #   Linear-accel time-series (vibration bias diagnostic)
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -404,6 +405,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_optflow.py` | Optical flow (downward/upward) & altitude sensors (range finder/barometer) time-series |
 | `position_estimation_compare.py` | Fusion5 vs Fusion4 side-by-side comparison (2×3 grid: position + velocity, all axes) |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
+| `linear_accel_view.py` | Linear-acceleration time-series (X/Y/Z) with running mean/std/peak — diagnoses vibration-induced DC bias and accel noise. Reuses `LOG_CLASS_ATTITUDE` / `LOG_CLASS_ATTITUDE_EARTH`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
