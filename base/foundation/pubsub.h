@@ -35,6 +35,7 @@ typedef enum {
 	SENSOR_IMU1_GYRO_UPDATE,
 	SENSOR_IMU1_GYRO_FILTERED_UPDATE,
 	SENSOR_IMU1_ACCEL_UPDATE,
+	SENSOR_IMU1_ACCEL_RAW_UPDATE,  // raw int16 LSB[3] for clip/range diagnostics
 
 	// --- Other sensors ---
 	SENSOR_COMPASS,

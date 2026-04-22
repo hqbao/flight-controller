@@ -413,6 +413,7 @@ typedef struct {
 #define LOG_CLASS_FFT_SPECTRUM_Z       0x1A
 #define LOG_CLASS_RC_RECEIVER          0x1B
 #define LOG_CLASS_POSITION_COMPARE     0x1C  // fusion5 vs fusion4 comparison (12 floats)
+#define LOG_CLASS_TROUBLESHOOT_ACCEL   0x1D  // accel raw LSB min/max/clip-count diagnostic
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03

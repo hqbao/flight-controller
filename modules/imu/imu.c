@@ -113,6 +113,13 @@ static void on_accel_process(uint8_t *data, size_t size) {
 		g_accel_raw[1] = g_imu_data[1];
 		g_accel_raw[2] = g_imu_data[2];
 
+		/* Publish raw accel as int16 LSB for troubleshoot/clip diagnostics */
+		int16_t raw_lsb[3];
+		raw_lsb[0] = (int16_t)g_imu_data[0];
+		raw_lsb[1] = (int16_t)g_imu_data[1];
+		raw_lsb[2] = (int16_t)g_imu_data[2];
+		publish(SENSOR_IMU1_ACCEL_RAW_UPDATE, (uint8_t*)raw_lsb, sizeof(raw_lsb));
+
 		/* Apply accel calibration: V_cal = S * (V_raw - B) */
 		float ax = g_imu_data[0] - g_accel_bias[0];
 		float ay = g_imu_data[1] - g_accel_bias[1];

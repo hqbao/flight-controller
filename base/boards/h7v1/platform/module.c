@@ -21,6 +21,7 @@
 #include <config/config.h>
 #include <fft/fft.h>
 #include <notch_filter/notch_filter.h>
+#include <troubleshoot/troubleshoot.h>
 #include <dblink/dblink.h>
 
 void platform_setup(void) {
@@ -48,4 +49,5 @@ void platform_setup(void) {
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
 	flight_telemetry_setup();
+	troubleshoot_setup();
 }

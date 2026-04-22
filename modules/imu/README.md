@@ -72,6 +72,7 @@ Model: `V_cal = S × (V_raw − B)`
 |-------|------|------|
 | `SENSOR_IMU1_GYRO_UPDATE` | `float[3]` — gx, gy, gz (deg/s) | 1 kHz |
 | `SENSOR_IMU1_ACCEL_UPDATE` | `float[3]` — ax, ay, az (calibrated) | 500 Hz |
+| `SENSOR_IMU1_ACCEL_RAW_UPDATE` | `int16[3]` — raw accel LSB pre-calibration (for clip / FS-range diagnostics) | 500 Hz |
 | `SEND_LOG` | `float[4]` — sensor values + temperature (16 bytes) | 25 Hz |
 
 ## Log Classes

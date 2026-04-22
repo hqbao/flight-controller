@@ -94,6 +94,7 @@ flight-controller/
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
 │   ├── linear_accel_view.py       #   Linear-accel time-series (vibration bias diagnostic)
+│   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -406,6 +407,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_compare.py` | Fusion5 vs Fusion4 side-by-side comparison (2×3 grid: position + velocity, all axes) |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `linear_accel_view.py` | Linear-acceleration time-series (X/Y/Z) with running mean/std/peak — diagnoses vibration-induced DC bias and accel noise. Reuses `LOG_CLASS_ATTITUDE` / `LOG_CLASS_ATTITUDE_EARTH`. |
+| `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
