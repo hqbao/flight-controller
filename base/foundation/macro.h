@@ -24,6 +24,15 @@
 // Math Constants
 #define DEG2RAD (0.01745329251f)
 #define RAD2DEG (57.2957795131f)
-#define MAX_IMU_ACCEL 16384
+// Accelerometer 1g reference in raw LSB units. Used by attitude_estimation as
+// fusion's accel_scale to remove gravity from calibrated accel readings.
+// MUST match the IMU full-scale setting in modules/imu/imu.c:
+//   AFS_2G  -> 16384
+//   AFS_4G  -> 8192
+//   AFS_8G  -> 4096
+//   AFS_16G -> 2048
+// Calibration outputs (S * (raw - B)) preserve raw-LSB scale, so this constant
+// directly determines how fusion converts calibrated accel into g-units.
+#define MAX_IMU_ACCEL 2048
 
 #endif

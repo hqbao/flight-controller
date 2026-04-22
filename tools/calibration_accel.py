@@ -21,8 +21,10 @@ IMU Accelerometer Calibration Tool (6-Position Ellipsoid Fit)
 Computes Bias (B) and Scale (S) matrix for accelerometer calibration
   V_cal = S * (V_raw - B)
 
-The scale matrix maps raw LSB to unit-magnitude gravity (~1.0 in g units).
-At AFS_16G: 1 g = 2048 LSB, so scale diagonals are roughly 1/2048.
+The ellipsoid fit preserves the raw-LSB scale of the input data — calibrated
+output magnitude at rest is approximately the average raw radius (gravity in
+LSB), not unit-g. The firmware multiplies by MAX_IMU_ACCEL (the IMU's LSB/g
+constant) to convert to g internally.
 using axis-aligned ellipsoid fitting.  Temperature compensation is NOT
 needed for accel -- vibration noise during flight is orders of magnitude
 larger than the ICM-42688P thermal drift (~0.15 mg/C).
@@ -594,20 +596,19 @@ def main():
     def default_calibration(event):
         if not g_serial or not g_serial.is_open:
             return
-        # AFS_16G: scale diagonals = 1/2048 to convert raw LSB -> unit-magnitude g.
-        # Makes the drone flyable as a baseline (gravity reads ~1.0 g),
-        # though a real 6-orientation calibration is still recommended.
-        s = 1.0 / 2048.0  # 0.00048828125
+        # Identity calibration: bias = 0, scale = I3.
+        # Calibrated output preserves raw-LSB scale, which is the convention the
+        # firmware expects (fusion uses MAX_IMU_ACCEL to convert to g).
+        # Drone is flyable as a baseline; run 6-orientation for accuracy.
         bias = [0.0, 0.0, 0.0]
-        scale = [[s, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, s]]
+        scale = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         send_calibration_upload(g_serial, bias, scale)
         info_text.set_text(
             f"DEFAULT UPLOADED \u2713\n"
             f"{'=' * 30}\n\n"
-            f"AFS_16G baseline calibration sent:\n"
+            f"Identity calibration sent:\n"
             f"  Bias  = [0, 0, 0]\n"
-            f"  Scale = (1/2048) * Identity\n"
-            f"  -> raw LSB scaled to unit-g\n\n"
+            f"  Scale = Identity 3x3\n\n"
             f"Drone is flyable. Run the\n"
             f"6-orientation procedure for\n"
             f"better accuracy."
