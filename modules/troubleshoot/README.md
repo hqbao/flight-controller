@@ -32,13 +32,13 @@ position estimator to drift on the affected axis.
 3. The window resets after each publish.
 4. Companion viewer: `flight-controller/tools/troubleshoot_accel_clip_view.py`.
 
-### Verdict guide (at AFS_2G; 1 g = 16384 LSB)
+### Verdict guide (at AFS_16G; 1 g = 2048 LSB, rail = ±32767 ≈ ±16 g)
 
 | Condition | Verdict | Action |
 |-----------|---------|--------|
-| `clip_count > 0` on any axis | CLIPPING | Increase FS range (`AFS_8G` or `AFS_16G`), then re-run accel calibration. |
-| `|min|` or `|max| > 30000` | NEAR RAIL | Increase FS range. |
-| `|min|` and `|max| < 25000` | OK | Configured range has comfortable margin. |
+| `clip_count > 0` on any axis | CLIPPING | Already at AFS_16G — investigate mechanical source (bent prop, loose mount, broken bearing). |
+| `\|min\|` or `\|max\| > 30000` | NEAR RAIL | Within ~10% of ±16 g — reduce vibration source. |
+| `\|min\|` and `\|max\| < 25000` | OK | Configured range has comfortable margin. |
 
 ## Files
 

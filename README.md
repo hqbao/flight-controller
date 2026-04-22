@@ -303,8 +303,8 @@ Temperature compensation is **not needed** — ICM-42688P accel thermal drift (~
 5. Click **"Compute"** — red dots = raw, green dots = corrected
 6. Click **"Upload"** — sends bias + scale (12 floats) to FC flash
 7. Click **"Query FC"** — reads back flash to confirm persistence
-8. Click **"View Cal"** — switches to calibrated stream; magnitude should read ~16384 in all orientations
-- **"Default"** uploads identity calibration (zero bias, identity scale) to reset
+8. Click **"View Cal"** — switches to calibrated stream; magnitude should read ~`MAX_IMU_ACCEL` LSB (currently **2048** at AFS_16G) in all orientations
+- **"Default"** uploads identity calibration (zero bias, identity scale) — flyable baseline that leaves raw LSB unchanged so fusion's `accel_scale = MAX_IMU_ACCEL` divides out gravity correctly
 - **"Save CSV"** / **"Load CSV"** persist captured positions to `tools/.calibration_data/` with chip ID in filename
 
 ### Compass (Ellipsoid Fit)

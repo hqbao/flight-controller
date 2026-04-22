@@ -26,7 +26,7 @@ ICM-42688P (I2C/SPI)
 | Sensor | ICM-42688P |
 | Interface | I2C (`I2C_PORT1`) or SPI (`SPI_PORT1`) |
 | Gyro range | ±2000 dps |
-| Accel range | ±2G |
+| Accel range | ±16G (AFS_16G — 2048 LSB/g) |
 | Gyro ODR | 4 kHz (hardware), read at 1 kHz |
 | Accel ODR | 500 Hz |
 | Mode | Low-Noise |
@@ -36,6 +36,7 @@ ICM-42688P (I2C/SPI)
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `SSF_GYRO` | 16.4 | Gyro sensitivity scale factor (LSB/dps at 2000 dps) |
+| `MAX_IMU_ACCEL` | 2048 | Accel LSB/g (matches AFS_16G). Used by `attitude_estimation` as fusion's `accel_scale` to convert calibrated readings into g for gravity removal. **MUST match `AFS_*` setting in `imu.c`.** |
 
 
 ## Calibration
