@@ -40,19 +40,23 @@ static param_storage_t default_storage[] = {
 	{.id=PARAM_ID_MAG_SCALE_21,  .value=0.0f},
 	{.id=PARAM_ID_MAG_SCALE_22,  .value=1.0f},
 	// Accelerometer calibration
+	// Scale diagonals = 1/LSB_PER_G to convert raw LSB -> unit-magnitude g.
+	// At AFS_16G: 1g = 2048 LSB, so default = 1/2048 = 0.00048828125f.
+	// This makes the drone flyable with default storage (gravity reads as 1.0 g),
+	// though a real 6-orientation calibration is still recommended for accuracy.
 	{.id=PARAM_ID_ACCEL_CALIBRATED, .value=0.0f},
 	{.id=PARAM_ID_ACCEL_BIAS_X,  .value=0.0f},
 	{.id=PARAM_ID_ACCEL_BIAS_Y,  .value=0.0f},
 	{.id=PARAM_ID_ACCEL_BIAS_Z,  .value=0.0f},
-	{.id=PARAM_ID_ACCEL_SCALE_00, .value=1.0f},
+	{.id=PARAM_ID_ACCEL_SCALE_00, .value=0.00048828125f},  // 1/2048
 	{.id=PARAM_ID_ACCEL_SCALE_01, .value=0.0f},
 	{.id=PARAM_ID_ACCEL_SCALE_02, .value=0.0f},
 	{.id=PARAM_ID_ACCEL_SCALE_10, .value=0.0f},
-	{.id=PARAM_ID_ACCEL_SCALE_11, .value=1.0f},
+	{.id=PARAM_ID_ACCEL_SCALE_11, .value=0.00048828125f},  // 1/2048
 	{.id=PARAM_ID_ACCEL_SCALE_12, .value=0.0f},
 	{.id=PARAM_ID_ACCEL_SCALE_20, .value=0.0f},
 	{.id=PARAM_ID_ACCEL_SCALE_21, .value=0.0f},
-	{.id=PARAM_ID_ACCEL_SCALE_22, .value=1.0f},
+	{.id=PARAM_ID_ACCEL_SCALE_22, .value=0.00048828125f},  // 1/2048
 	// Gyro temperature compensation (degree-2 polynomial)
 	{.id=PARAM_ID_GYRO_TEMP_CALIBRATED, .value=0.0f},
 	{.id=PARAM_ID_GYRO_TEMP_X_A, .value=0.0f},

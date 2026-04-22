@@ -19,6 +19,10 @@ import subprocess
 IMU Accelerometer Calibration Tool (6-Position Ellipsoid Fit)
 
 Computes Bias (B) and Scale (S) matrix for accelerometer calibration
+  V_cal = S * (V_raw - B)
+
+The scale matrix maps raw LSB to unit-magnitude gravity (~1.0 in g units).
+At AFS_16G: 1 g = 2048 LSB, so scale diagonals are roughly 1/2048.
 using axis-aligned ellipsoid fitting.  Temperature compensation is NOT
 needed for accel -- vibration noise during flight is orders of magnitude
 larger than the ICM-42688P thermal drift (~0.15 mg/C).
@@ -590,16 +594,23 @@ def main():
     def default_calibration(event):
         if not g_serial or not g_serial.is_open:
             return
+        # AFS_16G: scale diagonals = 1/2048 to convert raw LSB -> unit-magnitude g.
+        # Makes the drone flyable as a baseline (gravity reads ~1.0 g),
+        # though a real 6-orientation calibration is still recommended.
+        s = 1.0 / 2048.0  # 0.00048828125
         bias = [0.0, 0.0, 0.0]
-        scale = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        scale = [[s, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, s]]
         send_calibration_upload(g_serial, bias, scale)
         info_text.set_text(
             f"DEFAULT UPLOADED \u2713\n"
             f"{'=' * 30}\n\n"
-            f"Identity calibration sent:\n"
+            f"AFS_16G baseline calibration sent:\n"
             f"  Bias  = [0, 0, 0]\n"
-            f"  Scale = Identity 3x3\n\n"
-            f"Click 'Query FC' to verify."
+            f"  Scale = (1/2048) * Identity\n"
+            f"  -> raw LSB scaled to unit-g\n\n"
+            f"Drone is flyable. Run the\n"
+            f"6-orientation procedure for\n"
+            f"better accuracy."
         )
         plt.draw()
     btn_default.on_clicked(default_calibration)
