@@ -200,8 +200,15 @@ static void on_scheduler_25hz(uint8_t *data, size_t size) {
 /* --- Setup --- */
 
 void imu_setup(void) {
+	/* Accel FS = ±16 g (was ±2 g): drone vibration peaks routinely exceed
+	 * ±2 g, causing INT16 rail clipping → asymmetric data → fusion rectifies
+	 * into a phantom DC linear-accel bias → position estimator drifts in Z
+	 * (manifests as ~10 cm "jump up" symptoms during hover). Confirmed via
+	 * the troubleshoot module clip diagnostic. NOTE: must re-run accel
+	 * calibration after changing FS — the calibration scale matrix absorbs
+	 * the LSB→g sensitivity (was 1/16384, now 1/2048). */
 	icm42688p_init(&g_imu_sensor,
-		AFS_2G, GFS_2000DPS, 
+		AFS_16G, GFS_2000DPS, 
 		AODR_500Hz, GODR_4kHz,
 		accel_mode_LN, gyro_mode_LN);
 	subscribe(GYRO_SCHEDULER, on_gyro_read);

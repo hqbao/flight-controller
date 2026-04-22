@@ -10,7 +10,7 @@
  *   V_cal = S * (V_raw - B)
  *
  * Units:
- *   - bias[3]:      raw LSB values (ICM-42688P at ±2g ≈ 16384 LSB/g)
+ *   - bias[3]:      raw LSB values (ICM-42688P at ±16g ≈ 2048 LSB/g)
  *   - scale[3][3]:  dimensionless (ellipsoid → unit sphere transform)
  *
  * Flash loading and delivery to consumers is handled by the config module.

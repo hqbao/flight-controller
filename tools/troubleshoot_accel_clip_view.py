@@ -22,9 +22,11 @@ being saturated under vibration / maneuvers.
 Verdict guide (when motors are running):
   - clip_count > 0 on any axis  => SENSOR IS CLIPPING. Increase FS range.
   - |min| or |max| > 30000      => Within ~10% of rail. Risky. Increase FS.
-  - |min| or |max| < 25000      => Comfortable margin. AFS_2G is OK.
+  - |min| or |max| < 25000      => Comfortable margin. Configured range OK.
 
-At AFS_2G: 1 g = 16384 LSB. So 32440 LSB ~= 1.98 g.
+NOTE: LSB/g depends on configured FS (AFS_2G=16384, AFS_4G=8192,
+AFS_8G=4096, AFS_16G=2048). Set LSB_PER_G below to match firmware build.
+Default assumes AFS_16G after the post-clip-diagnostic fix.
 
 Usage:
   python3 troubleshoot_accel_clip_view.py
@@ -42,8 +44,8 @@ DB_CMD_RESET                  = 0x07
 
 PAYLOAD_SIZE = 20  # 3*2 (min) + 3*2 (max) + 3*2 (clip) + 2 (samples)
 RAIL = 32767       # INT16 rail
-LSB_PER_G_AT_2G = 16384.0
-WARN_LSB = 30000   # ~1.83 g at AFS_2G
+LSB_PER_G = 2048.0 # AFS_16G (was 16384.0 for AFS_2G)
+WARN_LSB = 30000   # ~14.6 g at AFS_16G
 
 # Colors
 BG_COLOR    = '#1e1e1e'
@@ -176,7 +178,7 @@ def main():
 
     fig = plt.figure(figsize=(13, 8))
     fig.patch.set_facecolor(BG_COLOR)
-    fig.suptitle('Accel Clip Diagnostic \u2014 raw INT16 LSB (AFS_2G \u2192 \u00b132767 = \u00b12 g)',
+    fig.suptitle('Accel Clip Diagnostic \u2014 raw INT16 LSB (AFS_16G \u2192 \u00b132767 = \u00b116 g)',
                  fontsize=12, color=TEXT_COLOR, fontweight='bold', y=0.97)
 
     gs = fig.add_gridspec(2, 1, height_ratios=[1.4, 1.0], hspace=0.35,
@@ -212,7 +214,7 @@ def main():
         range_labels.append(txt)
     ax_range.set_xticks(x_pos)
     ax_range.set_xticklabels(axes_labels, color=TEXT_COLOR, fontsize=10)
-    ax_range.set_ylabel('Raw LSB (1 g \u2248 16384)', color=TEXT_COLOR)
+    ax_range.set_ylabel('Raw LSB (1 g \u2248 2048)', color=TEXT_COLOR)
     ax_range.set_ylim(-RAIL * 1.15, RAIL * 1.15)
     ax_range.legend(loc='lower right', fontsize=8, facecolor=PANEL_COLOR, edgecolor=GRID_COLOR)
 
@@ -323,7 +325,7 @@ def main():
             mid = (mn + mx) / 2
             range_labels[i].set_position((i, mid))
             range_labels[i].set_text(
-                f'min: {mn:+6d}\nmax: {mx:+6d}\n({mn/LSB_PER_G_AT_2G:+.2f} \u2192 {mx/LSB_PER_G_AT_2G:+.2f} g)'
+                f'min: {mn:+6d}\nmax: {mx:+6d}\n({mn/LSB_PER_G:+.2f} \u2192 {mx/LSB_PER_G:+.2f} g)'
             )
             artists.extend([range_bars[i], range_labels[i]])
 
@@ -353,16 +355,16 @@ def main():
         if any_clip:
             verdict = (f'\u2717 CLIPPING DETECTED  X:{state["clips"][0]}  '
                        f'Y:{state["clips"][1]}  Z:{state["clips"][2]}  '
-                       f'(of {smp} samples)  \u2192 raise FS range (AFS_8G or AFS_16G)')
+                       f'(of {smp} samples)  \u2192 raise FS range further')
             color = COLOR_RAIL
         elif any_warn:
-            verdict = (f'\u26a0 NEAR RAIL (>{WARN_LSB} LSB \u2248 1.83 g)  '
+            verdict = (f'\u26a0 NEAR RAIL (>{WARN_LSB} LSB \u2248 {WARN_LSB/LSB_PER_G:.1f} g)  '
                        f'samples={smp}  \u2192 increase FS range recommended')
             color = COLOR_WARN
         else:
             ext = max(max(abs(state['mins'][i]), abs(state['maxs'][i])) for i in range(3))
-            verdict = (f'\u2713 OK  peak |LSB|={ext}  ({ext/LSB_PER_G_AT_2G:.2f} g)  '
-                       f'samples={smp}  \u2192 AFS_2G has comfortable margin')
+            verdict = (f'\u2713 OK  peak |LSB|={ext}  ({ext/LSB_PER_G:.2f} g)  '
+                       f'samples={smp}  \u2192 FS range has comfortable margin')
             color = '#55dd55'
         verdict_text.set_text(verdict)
         verdict_text.set_color(color)
