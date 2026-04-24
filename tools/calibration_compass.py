@@ -402,9 +402,9 @@ def main():
     # Row 1: View buttons (Top, Bottom, Front, Back, Left, Right)
     row1_y = 0.16
     views = {
-        'Top': (90, -90), 'Bottom': (-90, -90),
-        'Front': (0, 90), 'Back': (0, -90),
-        'Left': (0, 180), 'Right': (0, 0)
+        'Top': (90, 180), 'Bottom': (-90, 0),
+        'Front': (0, 0), 'Back': (0, 180),
+        'Left': (0, 90), 'Right': (0, -90)
     }
     view_btns = []
     for i, (label, (elev, azim)) in enumerate(views.items()):
@@ -709,6 +709,7 @@ def main():
     ax.set_xlim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_ylim(-PLOT_LIMIT, PLOT_LIMIT)
     ax.set_zlim(-PLOT_LIMIT, PLOT_LIMIT)
+    ax.invert_yaxis()  # see docs/3D_VIEW_CONVENTION.md
 
     def on_scroll(event):
         if event.inaxes != ax:

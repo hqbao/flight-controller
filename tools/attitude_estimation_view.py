@@ -246,12 +246,13 @@ def main():
     ax.yaxis.pane.set_edgecolor(GRID_COLOR)
     ax.zaxis.pane.set_edgecolor(GRID_COLOR)
 
-    # X reversed for visual clarity (right = right on screen)
-    ax.set_xlim(1.2, -1.2)
+    # Standard 3D view convention (see docs/3D_VIEW_CONVENTION.md)
+    ax.set_xlim(-1.2, 1.2)
     ax.set_ylim(-1.2, 1.2)
     ax.set_zlim(-1.2, 1.2)
-    ax.set_xlabel('Y \u2014 Right (Roll)', fontsize=9, labelpad=6)
-    ax.set_ylabel('X \u2014 Forward (Pitch)', fontsize=9, labelpad=6)
+    ax.invert_yaxis()
+    ax.set_xlabel('X \u2014 Forward (Pitch)', fontsize=9, labelpad=6)
+    ax.set_ylabel('Y \u2014 Right (Roll)', fontsize=9, labelpad=6)
     ax.set_zlabel('\u2013Z (Up)', fontsize=9, labelpad=6)
     ax.tick_params(labelsize=7)
 
@@ -348,11 +349,11 @@ def main():
     # View buttons (below 3D viewport)
     # =========================================================================
     views = {
-        'Top':   (90, 0),
-        'Front': (0, 180),
-        'Back':  (0, 0),
-        'Left':  (0, -90),
-        'Right': (0, 90),
+        'Top':   (90, 180),
+        'Front': (0, 0),
+        'Back':  (0, 180),
+        'Left':  (0, 90),
+        'Right': (0, -90),
     }
 
     view_btns = []
