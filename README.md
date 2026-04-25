@@ -338,9 +338,15 @@ Fits a quadratic polynomial `bias(T) = a·T² + b·T + c` per axis, allowing the
 - Subsequent boots load coefficients from flash and apply temperature compensation automatically
 
 ### GPS (ZED-F9P)
-1. Connect ZED-F9P via USB
-2. Run `python3 tools/gps_config_f9p.py` to configure 10 Hz UBX-only output at 38400 baud
-3. Run `python3 tools/gps_read_ubx.py` to verify output
+1. Connect the ZED-F9P USB port to the host PC.
+2. Run `python3 tools/gps_config_f9p.py` once per receiver. It writes UBX-CFG-VALSET to RAM + BBR + Flash:
+   - 10 Hz measurement rate (`--rate-ms` to override; e.g. `--rate-ms 200` for 5 Hz)
+   - UART1 + UART2 baud = 38400 (matches STM32 USART2/3/4)
+   - UBX-only on UART1 / UART2 / USB (every NMEA standard message + extra UBX-NAV messages disabled)
+   - `UBX-NAV-PVT` enabled on UART1 / UART2 / USB at every nav epoch
+   - Saved to BBR + Flash so the configuration survives power cycles
+3. Wire the F9P TX → any STM32 USART2/3/4 RX (the parser is port-agnostic; both F9P UART1 and UART2 outputs work).
+4. Flash the firmware (`gps_setup()` is enabled on `h7v1`) and run `python3 tools/gps_view.py` for the live dashboard (2-D NED map, altitude bar, velocity time-series, sat-count history, accuracy / pDOP / heading panel).
 
 ## Telemetry & Visualization
 
@@ -391,6 +397,8 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | `position_estimation.c` | Fusion5 vs Fusion4 comparison (12 floats: F5 pos/vel + F4 pos/vel, 25 Hz) |
+| `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
+| `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -416,7 +424,8 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `mix_control_bicopter_test.py` | Bicopter tilt-rotor output visualizer (2 motors + 2 servos) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |
 | `flight_telemetry_bicopter_view.py` | Flight telemetry HUD: 3D bicopter with tilting nacelles, motors/servos, overlays |
-| `gps_read_ubx.py` | GPS satellite/position monitor |
+| `gps_config_f9p.py` | One-shot ZED-F9P configurator (UBX-CFG-VALSET to RAM + BBR + Flash) — disables NMEA + extra UBX, enables NAV-PVT @ 10 Hz on UART1/UART2/USB at 38400 baud |
+| `gps_view.py` | GPS dashboard: 2-D NED position map with trail + velocity arrow, altitude bar with min/max history, NED + ground-speed line charts, sat-count time-series, fix / accuracy / pDOP / heading panel. Uses `LOG_CLASS_GPS` |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
 | `tuning_board.py` | Parameter tuning GUI: 71 flash-persistent params in 7 categories, query/upload/defaults with confirmation |
 

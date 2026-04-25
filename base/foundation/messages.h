@@ -353,10 +353,34 @@ typedef struct {
 // GPS quality data structure
 typedef struct {
 	uint8_t fix_type;   // 0=no fix, 2=2D, 3=3D
-	uint8_t num_sv;     // Number of satellites
-	uint32_t h_acc;     // Horizontal accuracy (mm)
+	uint8_t num_sv;     // Number of satellites used in fix
+	uint32_t h_acc;     // Horizontal accuracy estimate (mm)
+	uint32_t v_acc;     // Vertical accuracy estimate (mm)
+	uint16_t p_dop;     // Position DOP (scaled 0.01)
+	uint8_t flags;      // NAV-PVT flags byte (bit0=gnssFixOK, bit1=diffSoln, ...)
 	uint8_t reliable;   // 1=reliable, 0=not reliable
 } gps_quality_t;
+
+// Packed GPS log frame (48 bytes incl. padding) — streamed via SEND_LOG when
+// LOG_CLASS_GPS is active. Field order is fixed; host-side tools parse it as-is.
+typedef struct {
+	float lat_deg;       // Latitude (degrees)
+	float lon_deg;       // Longitude (degrees)
+	float alt_msl_m;     // Altitude above mean sea level (m)
+	float vel_n_mps;     // North velocity (m/s)
+	float vel_e_mps;     // East velocity (m/s)
+	float vel_d_mps;     // Down velocity (m/s)
+	float g_speed_mps;   // 2-D ground speed (m/s)
+	float head_mot_deg;  // Heading of motion (deg, 0..360)
+	float h_acc_m;       // Horizontal accuracy estimate (m)
+	float v_acc_m;       // Vertical accuracy estimate (m)
+	uint16_t p_dop;      // Position DOP × 100
+	uint8_t  num_sv;     // Number of satellites used
+	uint8_t  fix_type;   // 0=no fix, 2=2D, 3=3D
+	uint8_t  flags;      // NAV-PVT flags byte
+	uint8_t  reliable;   // 1=reliable, 0=not reliable
+	uint16_t _pad;       // tail padding to 48 bytes (host parser reads exactly 48 bytes)
+} gps_log_t;
 
 
 // --- Sensor Health (fault_detector → flight_state) ---
@@ -414,6 +438,7 @@ typedef struct {
 #define LOG_CLASS_RC_RECEIVER          0x1B
 #define LOG_CLASS_POSITION_COMPARE     0x1C  // fusion5 vs fusion4 comparison (12 floats)
 #define LOG_CLASS_TROUBLESHOOT_ACCEL   0x1D  // accel raw LSB min/max/clip-count diagnostic
+#define LOG_CLASS_GPS                  0x1E  // gps_log_t (48 bytes) at GPS update rate
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03
