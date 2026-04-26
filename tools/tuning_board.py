@@ -32,7 +32,7 @@ Usage:
 
 # --- Configuration ---
 SERIAL_PORT = None
-BAUD_RATE = 19200
+BAUD_RATE = 38400
 SEND_LOG_ID = 0x00
 
 LOG_CLASS_HEART_BEAT = 0x09

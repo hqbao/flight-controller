@@ -2,11 +2,11 @@
 
 ## Overview
 
-Centralizes key flight data into a single 66-byte frame sent via `SEND_LOG` at 10 Hz. Designed for real-time dashboard monitoring over the 9600 baud UART link.
+Centralizes key flight data into a single 66-byte frame sent via `SEND_LOG` at 10 Hz. Designed for real-time dashboard monitoring over the 38400 baud UART link.
 
 ## Bandwidth
 
-At 9600 baud (960 bytes/sec): 66 payload + 8 overhead = 74 bytes/frame × 10 Hz = **740 bytes/sec** (77% utilization, leaves margin).
+At 38400 baud (3840 bytes/sec): 66 payload + 8 overhead = 74 bytes/frame × 10 Hz = **740 bytes/sec** (19% utilization, plenty of margin).
 
 ## Frame Layout
 

@@ -113,12 +113,12 @@ Payload: 1 + 52 + 8 = 61 bytes
   to avoid UART buffer corruption — `HAL_UART_Transmit_IT` is non-blocking and
   dblink uses a single shared output buffer.
 
-### Bandwidth Budget (9600 baud = 960 B/s)
+### Bandwidth Budget (38400 baud = 3840 B/s)
 
 | Stream | Frame size | Rate | Throughput |
 |--------|-----------|------|------------|
-| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (33%) |
-| Spectrum + peaks | 61 + 8 = 69 B | ~3.3 Hz | ~228 B/s (24%) |
+| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (8%) |
+| Spectrum + peaks | 61 + 8 = 69 B | ~3.3 Hz | ~228 B/s (6%) |
 
 (8-byte DB frame overhead: 2 header + 1 ID + 1 class + 2 length + 2 checksum)
 

@@ -52,7 +52,7 @@ from matplotlib.widgets import Button  # noqa: E402
 
 # --- Protocol constants --------------------------------------------------
 
-BAUD_RATE       = 19200
+BAUD_RATE       = 38400
 SEND_LOG_ID     = 0x00
 DB_CMD_LOG_CLASS = 0x03
 DB_CMD_RESET    = 0x07

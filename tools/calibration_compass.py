@@ -44,7 +44,7 @@ CSV persistence:
 
 # --- Configuration ---
 SERIAL_PORT = None
-BAUD_RATE = 19200
+BAUD_RATE = 38400
 SEND_LOG_ID = 0x00
 
 # Log class constants (match messages.h)

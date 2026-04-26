@@ -205,7 +205,7 @@ All ports route raw bytes to `dblink`, which auto-detects both **DB** and **UBX*
 
 | UART | Baud | Direction | Notes |
 |------|------|-----------|-------|
-| USART1 | 19200 | TX + RX | Telemetry output + Python tool commands (USB) |
+| USART1 | 38400 | TX + RX | Telemetry output + Python tool commands (USB) |
 | USART2 | 38400 | RX only | General-purpose sensor input |
 | USART3 | 38400 | RX only | General-purpose sensor input |
 | UART4 | 38400 | RX only | General-purpose sensor input |
@@ -241,6 +241,7 @@ idf.py -p /dev/cu.usbmodem* flash monitor
 - **Static variables:** Prefer file-scope `static` over function-scope `static`.
 - **Struct handling:** Use `memset`/`memcpy` for clearing and copying to avoid padding issues.
 - **Byte buffers:** Never cast `uint8_t*` to `float*`/`int32_t*` — use `memcpy`. See [docs/HARDFAULT_ALIGNMENT_BUG.md](docs/HARDFAULT_ALIGNMENT_BUG.md).
+- **Tuning params:** Stale `0.0` values in flash silently break attitude estimation (`v_true` frozen at (0,0,-1)). After any firmware upgrade that changes `tuning_params_t` layout, run **"Upload Defaults"** in `tuning_board.py`. See [docs/TUNING_PARAM_ZERO_BUG.md](docs/TUNING_PARAM_ZERO_BUG.md).
 
 ## Coordinate Frame (NED)
 

@@ -180,20 +180,16 @@ static void accel_update(uint8_t *data, size_t size) {
 
 	// Convert sensor frame to NED body frame (FRD: X=fwd, Y=right, Z=down)
 	// Sensor Y (forward) → body X, Sensor X (right) → body Y, both negated
-	float ax = -raw_ay;
-	float ay = -raw_ax;
-	float az = -raw_az;
-
-	g_raw_accel.x = ax;
-	g_raw_accel.y = ay;
-	g_raw_accel.z = az;
+	g_raw_accel.x = -raw_ay;
+	g_raw_accel.y = -raw_ax;
+	g_raw_accel.z = -raw_az;
 
 #if FUSION_ALGO == 1
-	fusion1_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
+	fusion1_update(&g_f11, g_raw_accel.x, g_raw_accel.y, g_raw_accel.z, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 2
-	fusion2_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
+	fusion2_update(&g_f11, g_raw_accel.x, g_raw_accel.y, g_raw_accel.z, 1.0 / ACCEL_FREQ);
 #elif FUSION_ALGO == 3
-	fusion3_update(&g_f11, ax, ay, az, 1.0 / ACCEL_FREQ);
+	fusion3_update(&g_f11, g_raw_accel.x, g_raw_accel.y, g_raw_accel.z, 1.0 / ACCEL_FREQ);
 #endif
 
 	memcpy(&g_linear_accel_out.body, &g_f11.v_linear_acc, sizeof(vector3d_t));
@@ -308,7 +304,7 @@ void attitude_estimation_setup(void) {
 	subscribe(SENSOR_COMPASS, mag_update);
 
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
-	// 10 Hz: 36-byte payload (9 floats) exceeds 30-byte max at 25 Hz (19200 baud)
+	// 10 Hz: 36-byte payload (9 floats) fits within the 120-byte logger cap (38400 baud budget allows up to ~145 B at 25 Hz)
 	subscribe(SCHEDULER_10HZ, loop_logger);
 	subscribe(TUNING_READY, on_tuning_ready);
 }

@@ -22,7 +22,7 @@ import struct
 import serial
 import serial.tools.list_ports
 
-BAUD_RATE = 19200
+BAUD_RATE = 38400
 
 DB_CMD_LOG_CLASS = 0x03
 DB_CMD_RESET     = 0x07

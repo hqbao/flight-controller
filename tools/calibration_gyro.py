@@ -41,7 +41,7 @@ Usage:
 
 # --- Configuration ---
 SERIAL_PORT = None
-BAUD_RATE = 19200
+BAUD_RATE = 38400
 SEND_LOG_ID = 0x00
 HISTORY_LEN = 200
 WINDOW_SIZE = 50           # Samples per averaging window
