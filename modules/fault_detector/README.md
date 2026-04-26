@@ -66,4 +66,4 @@ typedef struct {
 ## Consumer: flight_state
 
 `flight_state` subscribes to `SENSOR_HEALTH_UPDATE` and uses the bitmask for:
-- **Arming gate** (100 Hz): blocks ARMED transition if calibration incomplete
+- **Arming gate** (100 Hz): blocks ARMED transition unless `optflow_down` AND `downward_range` are healthy (in addition to gyro/accel calibration). `optflow_up` is NOT required — takeoff allowed without upward optical flow.

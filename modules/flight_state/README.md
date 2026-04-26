@@ -52,6 +52,15 @@ Flight state machine. Manages transitions between flight states based on RC inpu
 - **Landing confirmation**: range < 10mm for 50 consecutive iterations (500ms at 100 Hz)
 - **Missing module LED**: flash count indicates missing modules (see fault_handler)
 
+## Arming Gate
+
+DISARMED → ARMED requires ALL of:
+- `g_gyro_calibrated` and `g_accel_calibrated` (compass calibration is currently commented out)
+- `g_sensor_health.optflow_down` (downward optical flow healthy)
+- `g_sensor_health.downward_range` (downward range finder healthy)
+
+**Note:** The upward optical flow (`optflow_up`) is NOT required for arming — it is optional and only used for ceiling/obstacle avoidance during flight. Takeoff is allowed without it.
+
 ## Configuration
 
 | Constant | Value | Description |
