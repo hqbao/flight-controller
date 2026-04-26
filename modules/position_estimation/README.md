@@ -99,7 +99,7 @@ Fusion5 init: X/Y use `(1.0, 1.0, 1.0, 20.0, 0.1)`, Z uses `(1.0, 0.5, 1.0, 20.0
 | Log Class | ID | Data |
 |-----------|----|------|
 | `LOG_CLASS_POSITION` | 0x04 | Position & velocity (6 floats, 24 bytes) |
-| `LOG_CLASS_POSITION_OPTFLOW` | 0x06 | Optical flow, altitude & body accel reference (8 floats, 32 bytes) |
+| `LOG_CLASS_POSITION_OPTFLOW` | 0x06 | Optical flow & altitude (6 floats, 24 bytes) |
 
 Both are runtime-selectable — no recompilation needed.
 
@@ -109,4 +109,4 @@ Both are runtime-selectable — no recompilation needed.
 |------|---------|
 | `position_estimation_2d_and_z.py` | 2D XY map + altitude chart |
 | `position_estimation_chart.py` | Position/velocity time-series (2×2 grid) |
-| `position_estimation_optflow.py` | Optical flow & altitude sensor viewer with **mounting-orientation check** — slide the drone forward / sideways and the tool compares optical-flow signs against an IMU-derived reference velocity per axis (`down-X`, `down-Y`, `up-X`, `up-Y`); a red banner appears if any axis is wired backwards. |
+| `position_estimation_optflow.py` | Optical flow & altitude sensor viewer |

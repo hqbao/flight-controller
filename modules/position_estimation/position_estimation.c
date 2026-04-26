@@ -294,26 +294,6 @@ static void on_notify_log_class(uint8_t *data, size_t size) {
 static void loop_logger(uint8_t *data, size_t size) {
 	if (g_log_class == LOG_CLASS_NONE) return;
 
-	if (g_log_class == LOG_CLASS_POSITION_OPTFLOW) {
-		/* Optical Flow & Altitude + body-frame linear accel reference (8 floats, 32 bytes).
-		 * Body accel X/Y is sent as an independent ground-truth-ish reference so the
-		 * Python tool can integrate it and verify the sign of the optical flow
-		 * matches the actual direction of motion (i.e. the module is mounted
-		 * with the expected orientation). */
-		float val[8];
-		val[0] = g_optflow_down_dx;
-		val[1] = g_optflow_down_dy;
-		val[2] = g_optflow_up_dx;
-		val[3] = g_optflow_up_dy;
-		val[4] = (float)g_range_finder_alt;
-		val[5] = (float)g_air_pressure_alt_raw;
-		val[6] = (float)g_linear_accel.x; /* body-frame, m/s^2, X = forward */
-		val[7] = (float)g_linear_accel.y; /* body-frame, m/s^2, Y = right   */
-		memcpy(g_monitor_msg, val, 32);
-		publish(SEND_LOG, (uint8_t*)g_monitor_msg, 32);
-		return;
-	}
-
 	if (g_log_class == LOG_CLASS_POSITION_COMPARE) {
 		/* Fusion5 vs Fusion4 comparison: 12 floats, 48 bytes */
 		float val[12];
@@ -346,6 +326,14 @@ static void loop_logger(uint8_t *data, size_t size) {
 		val[3] = g_linear_veloc_final.x;
 		val[4] = g_linear_veloc_final.y;
 		val[5] = g_linear_veloc_final.z;
+	} else if (g_log_class == LOG_CLASS_POSITION_OPTFLOW) {
+		// Optical Flow & Altitude (6 floats, 24 bytes)
+		val[0] = g_optflow_down_dx;
+		val[1] = g_optflow_down_dy;
+		val[2] = g_optflow_up_dx;
+		val[3] = g_optflow_up_dy;
+		val[4] = (float)g_range_finder_alt;
+		val[5] = (float)g_air_pressure_alt_raw;
 	}
 
 	memcpy(g_monitor_msg, val, 24);
