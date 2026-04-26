@@ -69,6 +69,20 @@ static void pid_setup(void) {
 
 static void pid_loop(void) {
 	double dt = 1.0 / ATT_CTL_FREQ;
+
+	// Yaw wrap-around handling (g_angular_state.yaw is in ±180°).
+	// 1) Keep setpoint within ±180° of measured yaw → PID error is always the
+	//    short way around, never ~360°.
+	// 2) If yaw just crossed the wrap boundary, snap PID's previous value so
+	//    the derivative term doesn't see a fake 360°/dt spike.
+	double yaw_err = g_set_point_yaw - g_angular_state.yaw;
+	if (yaw_err > 180.0)       g_set_point_yaw -= 360.0;
+	else if (yaw_err < -180.0) g_set_point_yaw += 360.0;
+	if (fabs(g_angular_state.yaw - g_pid_att_yaw.value) > 180.0) {
+		g_pid_att_yaw.value = g_angular_state.yaw;
+		g_pid_att_yaw.value_prev = g_angular_state.yaw;
+	}
+
 	pid_control_update(&g_pid_att_roll, 	g_angular_state.roll, 	g_angular_target.roll, dt);
 	pid_control_update(&g_pid_att_pitch,	g_angular_state.pitch, 	g_angular_target.pitch, dt);
 	pid_control_update(&g_pid_att_yaw, 		g_angular_state.yaw, 	g_set_point_yaw, dt);
@@ -95,6 +109,7 @@ static void reset(void) {
 	pid_control_reset(&g_pid_att_roll, g_angular_state.roll);
 	pid_control_reset(&g_pid_att_pitch, g_angular_state.pitch);
 	pid_control_reset(&g_pid_att_yaw, g_angular_state.yaw);
+	g_set_point_yaw = g_angular_state.yaw;
 }
 
 static void state_update(uint8_t *data, size_t size) {
