@@ -84,7 +84,6 @@ static void on_state_update(uint8_t *data, size_t size) {
 				&& g_accel_calibrated
 				//&& g_mag_calibrated
 				&& g_sensor_health.optflow_down
-				&& g_sensor_health.optflow_up
 				&& g_sensor_health.downward_range) {
 			g_state = ARMED;
 		}
