@@ -80,9 +80,9 @@ static void on_tx_complete(uint8_t *data, size_t size) {
 //   Frame = header(6) + payload(N) + checksum(2) = N + 8 bytes
 //   At 25 Hz: max frame = 3840/25 = 153 bytes -> max payload = 145 bytes
 //   At 10 Hz: max frame = 3840/10 = 384 bytes -> max payload = 376 bytes
-//   (Practical cap below: LOGGER_MAX_PAYLOAD = 120)
+//   (Practical cap below: LOGGER_MAX_PAYLOAD = 240 -> fits FFT dual frame 223 B)
 
-#define LOGGER_MAX_PAYLOAD 120
+#define LOGGER_MAX_PAYLOAD 240
 #define LOGGER_HEADER_SIZE 6
 
 static uint8_t g_log_class = LOG_CLASS_HEART_BEAT;

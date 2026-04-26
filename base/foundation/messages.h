@@ -450,7 +450,9 @@ typedef struct {
 #define DB_CMD_TUNING                   0x0A
 
 // UART frame constants
-#define UART_FRAME_MAX_SIZE 128
+// Sized to fit the largest SEND_LOG payload (FFT dual spectrum = 223 B)
+// plus 6 B header + 2 B checksum = 231 B wire frame, rounded up to 256.
+#define UART_FRAME_MAX_SIZE 256
 
 // Raw UART data (protocol-agnostic)
 typedef struct {
