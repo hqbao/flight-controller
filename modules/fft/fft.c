@@ -18,12 +18,14 @@
  *
  * 1. PEAK DETECTION (always active):
  *    Collects gyro samples in a 256-point ring buffer, runs 256-point
- *    Hanning-windowed FFT at 10 Hz (cycling X→Y→Z), detects top 2 vibration
- *    peaks above 50 Hz (SNR threshold 3×, min separation 40 Hz), applies
- *    EMA smoothing (alpha 0.3), and publishes fft_peaks_t on
- *    FFT_PEAKS_UPDATE. Lock-and-hold: out-of-range peaks keep last valid
- *    frequency. Axis-focused: when streaming spectrum, only the selected
- *    axis runs at 10 Hz; otherwise round-robin ~3.3 Hz per axis.
+ *    Hanning-windowed FFT at 10 Hz (cycling X→Y→Z). Each peak slot scans
+ *    a fixed, NON-OVERLAPPING frequency band (see g_band_min/max_hz) so
+ *    slot identity is stable: slot[0] always tracks the low-band peak,
+ *    slot[1] mid, slot[2] high. EMA-smoothed frequencies are published
+ *    on FFT_PEAKS_UPDATE. Lock-and-hold: when no peak is found in a
+ *    band, the smoother keeps the last valid frequency. Axis-focused:
+ *    when streaming spectrum, only the selected axis runs at 10 Hz;
+ *    otherwise round-robin ~3.3 Hz per axis.
  *
  * 2. LOG STREAMING (when Python tool requests via LOG_CLASS):
  *    - FFT_PEAKS (0x17): 6 floats (3 axes × 2 peaks) at 10 Hz, 24 bytes.
@@ -54,15 +56,19 @@ static uint8_t g_log_spectrum_dual = 0; /* 1-3 = streaming raw + filtered side-b
 
 #define FFT_SIZE            256      /* Must be power of 2 */
 #define FFT_SAMPLE_HZ      ((float)GYRO_FREQ)
-#define FFT_MIN_HZ          50.0f   /* Ignore below (body motion, not vibration) */
-#define FFT_MAX_HZ         400.0f   /* Ignore above (motor vibration range) */
 #define FFT_SPECTRUM_HZ    400.0f   /* Spectrum log: send bins up to this freq */
 #define FREQ_BIN_HZ        (FFT_SAMPLE_HZ / (float)FFT_SIZE)
 #define FFT_SPECTRUM_BINS  ((int)(FFT_SPECTRUM_HZ / FREQ_BIN_HZ) + 1)
-static float g_fft_peak_snr    = 5.0f;
 #define FFT_PEAK_MIN_PWR     1.0f   /* Absolute minimum power threshold */
 static float g_freq_ema_alpha  = 0.15f;
-#define MIN_PEAK_SEP_HZ     40.0f   /* Minimum Hz between two peaks */
+
+/* Banded peak detection — each peak slot scans a fixed, NON-OVERLAPPING
+ * frequency band. Slot[0] = low band, slot[1] = mid, slot[2] = high.
+ * Boundaries fall in valleys between motor harmonics (1st/2nd/3rd) so
+ * a peak never straddles a boundary. With FFT_NUM_PEAKS=3 these cover
+ * fundamentals from ~80 Hz (bigger frame) to ~200 Hz (small bicopter). */
+static const float g_band_min_hz[FFT_NUM_PEAKS] = {  50.0f, 220.0f, 390.0f };
+static const float g_band_max_hz[FFT_NUM_PEAKS] = { 220.0f, 390.0f, 500.0f };
 
 #define FFT_SPECTRUM_FLOOR_DB (-30.0f) /* Absolute dB floor (normalized power) */
 #define FFT_SPECTRUM_RANGE_DB  60.0f   /* dB range (floor+60 → white) */
@@ -83,7 +89,42 @@ static uint8_t g_fft_axis;               /* Current axis (0=X, 1=Y, 2=Z) */
 static float g_smooth_freq[3][FFT_NUM_PEAKS]; /* EMA-smoothed peak frequencies */
 static volatile uint8_t g_fft_pending;   /* Flag: ISR requests FFT run in LOOP */
 
-static fft_peak_config_t g_peak_cfg;
+/* ================================================================
+ *  Helpers
+ * ================================================================ */
+
+/* Convert FFT output bins [0, max_bin) to power spectrum in-place
+ * (matches the normalization fft_find_peaks used to apply, so dB
+ * scaling for the spectrum log frame is unchanged). */
+static void compute_power_spectrum(int max_bin) {
+	float inv_half_n = 2.0f / (float)FFT_SIZE;
+	for (int i = 0; i < max_bin; i++) {
+		float r = g_fft_re[i] * inv_half_n;
+		float m = g_fft_im[i] * inv_half_n;
+		g_fft_re[i] = r * r + m * m;
+	}
+}
+
+/* Find the strongest local-maximum bin within band b on g_fft_re[]
+ * (already in power-spectrum form). Returns frequency in Hz, or 0
+ * if no bin in the band exceeds FFT_PEAK_MIN_PWR. */
+static float find_peak_in_band(int b) {
+	int lo = (int)(g_band_min_hz[b] / FREQ_BIN_HZ);
+	int hi = (int)(g_band_max_hz[b] / FREQ_BIN_HZ);
+	if (lo < 1) lo = 1;
+	if (hi > FFT_SIZE / 2) hi = FFT_SIZE / 2;
+	int best_bin = -1;
+	float best_pwr = FFT_PEAK_MIN_PWR;
+	for (int i = lo; i < hi; i++) {
+		float p = g_fft_re[i];
+		if (p <= best_pwr) continue;
+		if (i > lo     && p <= g_fft_re[i - 1]) continue;
+		if (i < hi - 1 && p <= g_fft_re[i + 1]) continue;
+		best_pwr = p;
+		best_bin = i;
+	}
+	return (best_bin >= 0) ? (float)best_bin * FREQ_BIN_HZ : 0.0f;
+}
 
 /* ================================================================
  *  Callbacks
@@ -187,15 +228,23 @@ static void on_loop(uint8_t *data, size_t size) {
 
 	fft_radix2(g_fft_re, g_fft_im, FFT_SIZE);
 
-	float peak_freq[FFT_NUM_PEAKS];
-	fft_find_peaks(g_fft_re, g_fft_im, &g_peak_cfg, peak_freq);
+	/* Convert to power spectrum (covers both peak detection range and
+	 * spectrum log range — take the larger). */
+	int pwr_max = FFT_SIZE / 2;
+	if (FFT_SPECTRUM_BINS > pwr_max) pwr_max = FFT_SPECTRUM_BINS;
+	compute_power_spectrum(pwr_max);
 
-	/* EMA smoothing — lock-and-hold: keep last valid frequency
-	 * when peak is not detected this frame */
+	/* Banded peak detection: one peak per fixed non-overlapping band,
+	 * giving stable slot identity for EMA + notch tracking. */
+	float peak_freq[FFT_NUM_PEAKS];
+	for (int b = 0; b < FFT_NUM_PEAKS; b++) {
+		peak_freq[b] = find_peak_in_band(b);
+	}
+
+	/* EMA smoothing — lock-and-hold: 0 means "no peak this frame",
+	 * keep last valid frequency. */
 	for (int i = 0; i < FFT_NUM_PEAKS; i++) {
-		if (peak_freq[i] < FFT_MIN_HZ || peak_freq[i] > FFT_MAX_HZ) {
-			continue;
-		}
+		if (peak_freq[i] <= 0.0f) continue;
 
 		if (g_smooth_freq[axis][i] <= 0.0f) {
 			/* First valid peak after reset — snap to it */
@@ -291,8 +340,15 @@ static void on_loop(uint8_t *data, size_t size) {
 		}
 		fft_radix2(g_fft_re, g_fft_im, FFT_SIZE);
 
+		int fpwr_max = FFT_SIZE / 2;
+		if (FFT_SPECTRUM_BINS > fpwr_max) fpwr_max = FFT_SPECTRUM_BINS;
+		compute_power_spectrum(fpwr_max);
+
+		/* Same banded peak detection on the filtered spectrum. */
 		float filt_peak_freq[FFT_NUM_PEAKS];
-		fft_find_peaks(g_fft_re, g_fft_im, &g_peak_cfg, filt_peak_freq);
+		for (int b = 0; b < FFT_NUM_PEAKS; b++) {
+			filt_peak_freq[b] = find_peak_in_band(b);
+		}
 
 		/* Filtered spectrum bytes */
 		for (int i = 0; i < FFT_SPECTRUM_BINS; i++) {
@@ -322,25 +378,13 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 	tuning_params_t tp;
 	memcpy(&tp, data, sizeof(tp));
 
-	g_fft_peak_snr   = tp.fft_peak_snr;
 	g_freq_ema_alpha = tp.fft_freq_alpha;
-	g_peak_cfg.peak_snr = g_fft_peak_snr;
 }
 
 /* --- Setup --- */
 
 void fft_setup(void) {
 	fft_hanning_window(g_window, FFT_SIZE);
-
-	g_peak_cfg.fft_size = FFT_SIZE;
-	g_peak_cfg.sample_hz = FFT_SAMPLE_HZ;
-	g_peak_cfg.min_hz = FFT_MIN_HZ;
-	g_peak_cfg.max_hz = FFT_MAX_HZ;
-	g_peak_cfg.peak_snr = g_fft_peak_snr;
-	g_peak_cfg.peak_min_pwr = FFT_PEAK_MIN_PWR;
-	g_peak_cfg.min_sep_hz = MIN_PEAK_SEP_HZ;
-	g_peak_cfg.num_peaks = FFT_NUM_PEAKS;
-	g_peak_cfg.spectrum_bins = FFT_SPECTRUM_BINS;
 
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, on_gyro_update);

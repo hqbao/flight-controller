@@ -76,13 +76,13 @@ LOG_CLASS_TESTS = [
     (LOG_CLASS_MIX_CONTROL,      "Mix Control",       32, 3.0),
     (LOG_CLASS_FLIGHT_TELEMETRY, "Telemetry",         66, 3.0),
     (LOG_CLASS_RC_RECEIVER,      "RC Receiver",       28, 3.0),
-    (LOG_CLASS_FFT_PEAKS,        "FFT Peaks",         24, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_X,   "FFT Spectrum X",   112, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_Y,   "FFT Spectrum Y",   112, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_Z,   "FFT Spectrum Z",   112, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_DUAL_X, "FFT Dual X",     223, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_DUAL_Y, "FFT Dual Y",     223, 5.0),
-    (LOG_CLASS_FFT_SPECTRUM_DUAL_Z, "FFT Dual Z",     223, 5.0),
+    (LOG_CLASS_FFT_PEAKS,        "FFT Peaks",         36, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_X,   "FFT Spectrum X",   116, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_Y,   "FFT Spectrum Y",   116, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_Z,   "FFT Spectrum Z",   116, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_DUAL_X, "FFT Dual X",     231, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_DUAL_Y, "FFT Dual Y",     231, 5.0),
+    (LOG_CLASS_FFT_SPECTRUM_DUAL_Z, "FFT Dual Z",     231, 5.0),
     (LOG_CLASS_STORAGE,          "Storage",          None, 5.0),  # 4 pages of 104 bytes
 ]
 
@@ -208,12 +208,12 @@ def format_payload(payload, expected_size):
         return (f"att=({att[0]:+.1f},{att[1]:+.1f},{att[2]:+.1f})° "
                 f"pos=({pos[0]:+.2f},{pos[1]:+.2f},{pos[2]:+.2f})m "
                 f"state={state} health=0x{health:02X}")
-    elif expected_size == 112:
-        # FFT spectrum: 1 byte axis + 103 bytes bins + 2 floats peaks
+    elif expected_size == 116:
+        # FFT spectrum: 1 byte axis + 103 bytes bins + 3 floats peaks
         axis = payload[0]
-        peaks = struct.unpack('<2f', payload[104:112])
+        peaks = struct.unpack('<3f', payload[104:116])
         axis_name = {0: 'X', 1: 'Y', 2: 'Z'}.get(axis, '?')
-        return f"axis={axis_name}, peaks=({peaks[0]:.1f},{peaks[1]:.1f})Hz"
+        return f"axis={axis_name}, peaks=({peaks[0]:.1f},{peaks[1]:.1f},{peaks[2]:.1f})Hz"
     elif expected_size is None:
         # Storage: dump size
         return f"{len(payload)} bytes"

@@ -22,9 +22,10 @@ ICM-42688P (1 kHz gyro)
     ├─ LOOP (main thread) runs 256-point Hanning-windowed FFT
     │   (cycles X → Y → Z, so ~3.3 Hz per axis)
     ├─ Normalize: power[i] = (re² + im²) / (N/2)²
-    ├─ Detect top 2 peaks (50-200 Hz, SNR ≥ 8×, min sep 20 Hz)
-    ├─ EMA smooth frequencies (α=0.3) for consecutive in-range peaks
-    ├─ Reset to 0 when peak is out of range or not detected
+    ├─ Banded peak detection — one peak per fixed non-overlapping band
+    │   (50–220 / 220–390 / 390–500 Hz) so slot identity is stable
+    ├─ EMA smooth frequencies (α=0.15) for consecutive valid peaks
+    ├─ Lock-and-hold when a band has no peak this frame
     └─ publish(FFT_PEAKS_UPDATE)  →  notch_filter module
          │
          ▼  (optional, when Python tool requests)
@@ -48,8 +49,10 @@ runs uninterrupted regardless of FFT computation time.
 ```
 fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
                                 ├─ Subscribe SENSOR_IMU1_GYRO_UPDATE
-                                ├─ Update notch center frequencies from peaks
-                                ├─ Apply cascaded biquad notch filters (2 per axis)
+                                ├─ Slot 0 → notch A (low band)
+                                ├─ Slot 1 → notch B (mid band)
+                                ├─ Slot 2 → notch C (high band)
+                                ├─ Apply cascaded biquad notches A→B→C per axis
                                 └─ publish(SENSOR_IMU1_GYRO_FILTERED_UPDATE)
                                      │
                                      ▼
@@ -68,20 +71,35 @@ fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
 | Spectrum display range | 0–400 Hz | 103 bins streamed to host |
 | Update rate | 10 Hz total | Cycles X→Y→Z (~3.3 Hz/axis) when no axis selected; 10 Hz on selected axis when streaming spectrum/dual |
 
-## Peak Detection
+## Peak Detection (Banded)
+
+Peak detection uses **fixed non-overlapping frequency bands**, one peak per band.
+This gives stable slot identity (slot[0] always tracks the low-band peak,
+slot[1] mid, slot[2] high) so the EMA smoother and notch filter never see
+slots swap when peaks have similar magnitudes.
+
+| Slot | Band | Tracks |
+|------|------|--------|
+| 0 | 50–220 Hz | Prop fundamental |
+| 1 | 220–390 Hz | 2nd harmonic |
+| 2 | 390–500 Hz | 3rd harmonic (Nyquist=500) |
+
+Boundaries (220 / 390 Hz) sit in the valleys between motor harmonics so a
+physical peak never straddles a boundary. This works for fundamentals roughly
+80–200 Hz (covers small bicopter ~155 Hz down to bigger frame ~100 Hz).
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Valid range | 50–400 Hz | Peaks outside this range keep the previous value (lock-and-hold) |
-| SNR threshold | 5× mean power (tunable) | Peak must be 5× above average |
-| Min separation | 40 Hz | Between two peaks on same axis |
-| EMA alpha | 0.15 (tunable) | Smooths consecutive in-range peaks |
-| Out-of-range | Reset to 0 | Notch filter disengages immediately |
-| Re-acquisition | Snap to value | First valid peak after reset initializes instantly |
+| Per-bin minimum power | `FFT_PEAK_MIN_PWR = 1.0` | Bin must exceed this to register |
+| Local maximum | required | Bin must be strictly greater than its two neighbours within the band |
+| EMA alpha | 0.15 (tunable via `fft_freq_alpha`) | Smooths consecutive valid peaks per slot |
+| No peak in band | freq = 0, smoother holds last | Notch keeps last valid frequency (lock-and-hold) |
+| Re-acquisition | Snap to value | First valid peak after a smoother reset initializes instantly |
 
 The FFT module always runs peak detection (no log class needed). It publishes
-`fft_peaks_t` on `FFT_PEAKS_UPDATE` at ~3.3 Hz per axis. The notch filter module
-subscribes and dynamically adjusts its center frequencies.
+`fft_peaks_t` on `FFT_PEAKS_UPDATE` at ~3.3 Hz per axis (or 10 Hz on the
+selected axis when streaming spectrum). The notch filter module subscribes
+and dynamically adjusts its three cascade stages.
 
 ## Log Streaming (Optional)
 
@@ -93,8 +111,8 @@ compressed frequency data for visualization. Two modes:
 Streams all smoothed peaks across all 3 axes at 10 Hz:
 
 ```
-Payload: 6 × float32 = 24 bytes
-  [X_peak1] [X_peak2] [Y_peak1] [Y_peak2] [Z_peak1] [Z_peak2]
+Payload: 9 × float32 = 36 bytes
+  [X_p1] [X_p2] [X_p3] [Y_p1] [Y_p2] [Y_p3] [Z_p1] [Z_p2] [Z_p3]
 ```
 
 ### Spectrum + Peaks (LOG_CLASS_FFT_SPECTRUM_X/Y/Z, 0x18–0x1A)
@@ -103,8 +121,8 @@ Streams compressed spectrum bins plus peak frequencies in a **single combined
 frame** for the selected axis, at 10 Hz:
 
 ```
-Payload: 1 + 103 + 8 = 112 bytes
-  [axis (1 byte)] [103 × uint8 dB-scaled bins] [peak1 (float)] [peak2 (float)]
+Payload: 1 + 103 + 12 = 116 bytes
+  [axis (1 byte)] [103 × uint8 dB-scaled bins] [p1 (float)] [p2 (float)] [p3 (float)]
 ```
 
 - **dB scaling**: Absolute, floor = -30 dB, range = 60 dB. Power is normalized
@@ -121,25 +139,25 @@ ring (`SENSOR_IMU1_GYRO_FILTERED_UPDATE`) — and emits one combined frame at
 10 Hz:
 
 ```
-Payload: 1 + 103 + 103 + 8 + 8 = 223 bytes
+Payload: 1 + 103 + 103 + 12 + 12 = 231 bytes
   [axis (1)]
   [raw_bins (103 × uint8)]
   [filt_bins (103 × uint8)]
-  [raw_peak1 (float)] [raw_peak2 (float)]   ← EMA-smoothed (locked)
-  [filt_peak1 (float)] [filt_peak2 (float)] ← raw, un-smoothed
+  [raw_p1] [raw_p2] [raw_p3]      ← EMA-smoothed (locked)
+  [filt_p1] [filt_p2] [filt_p3]   ← per-frame, un-smoothed
 ```
 
-Filtered peaks are **not EMA-smoothed**: a working notch should make them drop
-out / become weak, in which case `fft_find_peaks` returns 0 — useful as a
-visual confirmation that the notch is biting.
+Filtered peaks are **not EMA-smoothed**: a working notch should drive each
+band's peak below `FFT_PEAK_MIN_PWR`, in which case the slot reads 0 — useful
+as a visual confirmation that the notch is biting.
 
 ### Bandwidth Budget (38400 baud ≈ 3840 B/s payload)
 
 | Stream | DB-frame size | Rate | Throughput |
 |--------|---------------|------|------------|
-| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (~8%) |
-| Spectrum + peaks | 112 + 8 = 120 B | 10 Hz | 1200 B/s (~31%) |
-| Dual (raw + filt) | 223 + 8 = 231 B | 10 Hz | 2310 B/s (~60%) |
+| Peaks only | 36 + 8 = 44 B | 10 Hz | 440 B/s (~11%) |
+| Spectrum + peaks | 116 + 8 = 124 B | 10 Hz | 1240 B/s (~32%) |
+| Dual (raw + filt) | 231 + 8 = 239 B | 10 Hz | 2390 B/s (~62%) |
 
 (8-byte DB frame overhead: 2 header + 1 ID + 1 class + 2 length + 2 checksum)
 
@@ -169,8 +187,8 @@ python3 flight-controller/tools/fft_spectrum_dual_view.py
 
 - Bright bands in the raw plot should disappear (or strongly attenuate) in the
   filtered plot at the same frequency
-- P1/P2 readout on the filtered side reads `---` when the notch has driven the
-  peak below the SNR threshold (= notch is working)
+- P1/P2/P3 readouts on the filtered side read `---` when the notch has driven
+  the peak below `FFT_PEAK_MIN_PWR` (= notch is working)
 
 #### Reading the Dual View — Notch Health Check
 
@@ -178,23 +196,23 @@ python3 flight-controller/tools/fft_spectrum_dual_view.py
 |------------------------------------|-----------|--------|
 | Bright bands **gone** at same freq as raw, filt P1/P2 read `---` | Notch is biting cleanly | Done |
 | Bright bands **dimmed but still visible** (raw mag ~150 → filt mag ~120) | Notch is too narrow OR center frequency is lagging the real peak | Lower notch Q (wider bandwidth), and/or raise `fft_freq_alpha` (faster peak tracking) |
-| Bright bands **unchanged**, filt P1/P2 still report the same peaks | Notch barely engaged — peak SNR threshold rejecting valid peaks, or notch coefficients not being updated | Lower `fft_peak_snr` (e.g. 5 → 3), confirm `notch_filter` is consuming `FFT_PEAKS_UPDATE` and recomputing biquad coefficients per update |
-| Filtered plot is **noisier than raw** with wild peak hopping | Notch is moving so much it's injecting transients; smoothing alpha probably set too high or peaks are flickering above/below threshold | Stabilize: lower `fft_freq_alpha` slightly, raise SNR threshold so weak peaks don't flip the notch on/off |
+| Bright bands **unchanged**, filt P1/P2 still report the same peaks | Notch barely engaged — peak power below `FFT_PEAK_MIN_PWR` or notch coefficients not being updated | Confirm `notch_filter` is consuming `FFT_PEAKS_UPDATE` and recomputing biquad coefficients per update; check that detected peak frequency lies inside its band |
+| Filtered plot is **noisier than raw** with wild peak hopping | Notch is moving so much it's injecting transients; smoothing alpha probably set too high or peaks are flickering above/below threshold | Stabilize: lower `fft_freq_alpha` slightly so the smoother responds less to per-frame noise |
 
-The filtered P1/P2 lines are deliberately **not EMA-smoothed** — they show the
-raw output of `fft_find_peaks()` on the post-notch signal. A working notch will
-either drive the peak below the SNR threshold (→ `0` / `---`) or push the
-"loudest" peak to a different, weaker frequency. Either is a good sign.
+The filtered P1/P2/P3 lines are deliberately **not EMA-smoothed** — they are
+the per-frame banded scan results on the post-notch signal. A working notch
+will drive the in-band peak below `FFT_PEAK_MIN_PWR`, returning 0 / `---`.
 
-Tune these via `tuning_board.py` (no firmware rebuild needed). After every
-parameter change, click "Upload Defaults" → reboot, otherwise stale flash
-values can override the runtime params (see `docs/TUNING_PARAM_ZERO_BUG.md`).
+Tune `notch_q` and `fft_freq_alpha` via `tuning_board.py` (no firmware rebuild
+needed). After every parameter change, click "Upload Defaults" → reboot,
+otherwise stale flash values can override the runtime params (see
+`docs/TUNING_PARAM_ZERO_BUG.md`).
 
 | Display Feature | Description |
 |-----------------|-------------|
 | Spectrogram | Scrolling waterfall, ~30s history, inferno colormap |
-| P1/P2 traces | Dynamic notch peak frequencies overlaid on spectrogram |
-| Peak readout | Current P1/P2 frequencies displayed as text |
+| P1/P2/P3 traces | Per-band peak frequencies overlaid on spectrogram |
+| Peak readout | Current P1/P2/P3 frequencies displayed as text |
 
 #### What to Look For
 

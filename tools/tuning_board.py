@@ -108,38 +108,37 @@ TUNING_PARAMS = [
     (99,  'pe_z_s2_corr',       'Z S2 Corr',         10.0),
     (100, 'pe_z_v_fb',          'Z Vel Feedback',      0.1),
     (101, 'pe_optflow_gain',    'OptFlow Gain',        5.0),
-    # --- FFT/Notch (IDs 102-105) ---
+    # --- FFT/Notch (IDs 102-104) ---
     (102, 'notch_q',            'Notch Q Factor',      3.0),
     (103, 'notch_min_hz',       'Notch Min Hz',       50.0),
-    (104, 'fft_peak_snr',       'FFT Peak SNR',        5.0),
-    (105, 'fft_freq_alpha',     'FFT Freq Alpha',     0.15),
-    # --- Flight State (IDs 106-109) ---
-    (106, 'disarm_angle',       'Disarm Angle (deg)',  60.0),
-    (107, 'disarm_range',       'Disarm Range (mm)',   10.0),
-    (108, 'landing_range',      'Landing Range (mm)', 500.0),
-    (109, 'took_off_range',     'Takeoff Range (mm)', 100.0),
-    # --- Servo Bias (IDs 110-113) ---
-    (110, 'servo_bias_1',       'Servo 1 Bias (bicopter L)',  0.0),
-    (111, 'servo_bias_2',       'Servo 2 Bias (bicopter R)',  0.0),
-    (112, 'servo_bias_3',       'Servo 3 Bias',               0.0),
-    (113, 'servo_bias_4',       'Servo 4 Bias',               0.0),
-    # --- Thrust Linearization (IDs 114-115) ---
-    (114, 'thrust_p1',          'Thrust P1 (linear)',          1.0),
-    (115, 'thrust_p2',          'Thrust P2 (quadratic)',       0.0),
-    # --- RC Scale (IDs 116-118) ---
-    (116, 'rc_xy_scale',        'RC XY Scale',                0.01),
-    (117, 'rc_z_scale',         'RC Z Scale',                 0.04),
-    (118, 'rc_yaw_scale',       'RC Yaw Scale',              -0.5),
+    (104, 'fft_freq_alpha',     'FFT Freq Alpha',     0.15),
+    # --- Flight State (IDs 105-108) ---
+    (105, 'disarm_angle',       'Disarm Angle (deg)',  60.0),
+    (106, 'disarm_range',       'Disarm Range (mm)',   10.0),
+    (107, 'landing_range',      'Landing Range (mm)', 500.0),
+    (108, 'took_off_range',     'Takeoff Range (mm)', 100.0),
+    # --- Servo Bias (IDs 109-112) ---
+    (109, 'servo_bias_1',       'Servo 1 Bias (bicopter L)',  0.0),
+    (110, 'servo_bias_2',       'Servo 2 Bias (bicopter R)',  0.0),
+    (111, 'servo_bias_3',       'Servo 3 Bias',               0.0),
+    (112, 'servo_bias_4',       'Servo 4 Bias',               0.0),
+    # --- Thrust Linearization (IDs 113-114) ---
+    (113, 'thrust_p1',          'Thrust P1 (linear)',          1.0),
+    (114, 'thrust_p2',          'Thrust P2 (quadratic)',       0.0),
+    # --- RC Scale (IDs 115-117) ---
+    (115, 'rc_xy_scale',        'RC XY Scale',                0.01),
+    (116, 'rc_z_scale',         'RC Z Scale',                 0.04),
+    (117, 'rc_yaw_scale',       'RC Yaw Scale',              -0.5),
 ]
 
 CATEGORIES = [
     ('Attitude PID',     [(48,  69)]),
-    ('Position Ctl',     [(70,  77), (116, 118)]),
-    ('Motor/Servo',      [(78,  82), (110, 115)]),
+    ('Position Ctl',     [(70,  77), (115, 117)]),
+    ('Motor/Servo',      [(78,  82), (109, 114)]),
     ('Att Estimation',   [(83,  90)]),
     ('Pos Estimation',   [(91, 101)]),
-    ('FFT/Notch',        [(102, 105)]),
-    ('Flight State',     [(106, 109)]),
+    ('FFT/Notch',        [(102, 104)]),
+    ('Flight State',     [(105, 108)]),
 ]
 
 # --- UI Colors ---

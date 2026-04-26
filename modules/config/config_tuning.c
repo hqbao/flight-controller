@@ -31,7 +31,7 @@ static tuning_params_t g_tuning = {
 	.pe_optflow_gain = 5.0f,
 	// FFT/Notch
 	.notch_q = 3.0f, .notch_min_hz = 50.0f,
-	.fft_peak_snr = 5.0f, .fft_freq_alpha = 0.15f,
+	.fft_freq_alpha = 0.15f,
 	// Flight State
 	.disarm_angle = 60.0f, .disarm_range = 10.0f,
 	.allowed_landing_range = 500.0f, .took_off_range = 100.0f,

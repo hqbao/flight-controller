@@ -132,7 +132,6 @@ static param_storage_t default_storage[] = {
 	// FFT/Notch
 	{.id=PARAM_ID_NOTCH_Q,         .value=3.0f},
 	{.id=PARAM_ID_NOTCH_MIN_HZ,    .value=50.0f},
-	{.id=PARAM_ID_FFT_PEAK_SNR,    .value=5.0f},
 	{.id=PARAM_ID_FFT_FREQ_ALPHA,  .value=0.15f},
 	// Flight State
 	{.id=PARAM_ID_DISARM_ANGLE,          .value=60.0f},

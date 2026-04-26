@@ -169,7 +169,7 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 ### LOOP Topic
 The `LOOP` topic fires from `main()` (thread context) and is used by modules that need non-ISR execution:
 - `air_pressure` — DPS310 barometer (I2C polling, ~25 Hz rate-limited)
-- `fft` — 256-point FFT vibration analysis (SNR=3.0, min separation 40 Hz, lock-and-hold EMA, axis-focused streaming); too expensive for ISR — SCHEDULER_10HZ sets a flag, LOOP runs the computation
+- `fft` — 256-point FFT vibration analysis with banded peak detection (3 fixed non-overlapping bands: 50–220 / 220–390 / 390–500 Hz, EMA-smoothed, lock-and-hold per band, axis-focused streaming); too expensive for ISR — SCHEDULER_10HZ sets a flag, LOOP runs the computation
 
 ### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
@@ -390,13 +390,13 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_MIX_CONTROL` | `0x11` | `quadcopter.c` / `bicopter.c` | Motor/servo outputs (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
 | `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
-| `LOG_CLASS_FFT_SPECTRUM_DUAL_X` | `0x14` | `fft.c` | Raw + filtered spectrum side-by-side, X axis (223 bytes: 1 + 2×103 bins + 2×8 peaks, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_DUAL_Y` | `0x15` | `fft.c` | Raw + filtered spectrum side-by-side, Y axis (223 bytes, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_DUAL_Z` | `0x16` | `fft.c` | Raw + filtered spectrum side-by-side, Z axis (223 bytes, 10 Hz) |
-| `LOG_CLASS_FFT_PEAKS` | `0x17` | `fft.c` | Smoothed peak frequencies (6 floats: 3 axes × 2 peaks, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
-| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_X` | `0x14` | `fft.c` | Raw + filtered spectrum side-by-side, X axis (231 bytes: 1 + 2×103 bins + 2×12 peaks, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_Y` | `0x15` | `fft.c` | Raw + filtered spectrum side-by-side, Y axis (231 bytes, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_Z` | `0x16` | `fft.c` | Raw + filtered spectrum side-by-side, Z axis (231 bytes, 10 Hz) |
+| `LOG_CLASS_FFT_PEAKS` | `0x17` | `fft.c` | Smoothed peak frequencies (9 floats: 3 axes × 3 banded peaks, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (116 bytes: 1 + 103 bins + 12 peaks, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (116 bytes: 1 + 103 bins + 12 peaks, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (116 bytes: 1 + 103 bins + 12 peaks, 10 Hz) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | `position_estimation.c` | Fusion5 vs Fusion4 comparison (12 floats: F5 pos/vel + F4 pos/vel, 25 Hz) |
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |

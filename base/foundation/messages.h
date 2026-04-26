@@ -115,37 +115,36 @@ typedef enum {
 	PARAM_ID_PE_Z_V_FB = 100,
 	PARAM_ID_PE_OPTFLOW_GAIN = 101,
 
-	// FFT/Notch Filter (4 params)
+	// FFT/Notch Filter (3 params)
 	PARAM_ID_NOTCH_Q = 102,
 	PARAM_ID_NOTCH_MIN_HZ = 103,
-	PARAM_ID_FFT_PEAK_SNR = 104,
-	PARAM_ID_FFT_FREQ_ALPHA = 105,
+	PARAM_ID_FFT_FREQ_ALPHA = 104,
 
 	// Flight State (4 params)
-	PARAM_ID_DISARM_ANGLE = 106,
-	PARAM_ID_DISARM_RANGE = 107,
-	PARAM_ID_ALLOWED_LANDING_RANGE = 108,
-	PARAM_ID_TOOK_OFF_RANGE = 109,
+	PARAM_ID_DISARM_ANGLE = 105,
+	PARAM_ID_DISARM_RANGE = 106,
+	PARAM_ID_ALLOWED_LANDING_RANGE = 107,
+	PARAM_ID_TOOK_OFF_RANGE = 108,
 
 	// Servo Bias (4 params)
-	PARAM_ID_SERVO_BIAS_1 = 110,
-	PARAM_ID_SERVO_BIAS_2 = 111,
-	PARAM_ID_SERVO_BIAS_3 = 112,
-	PARAM_ID_SERVO_BIAS_4 = 113,
+	PARAM_ID_SERVO_BIAS_1 = 109,
+	PARAM_ID_SERVO_BIAS_2 = 110,
+	PARAM_ID_SERVO_BIAS_3 = 111,
+	PARAM_ID_SERVO_BIAS_4 = 112,
 
 	// Thrust Linearization (2 params)
-	PARAM_ID_THRUST_P1 = 114,
-	PARAM_ID_THRUST_P2 = 115,
+	PARAM_ID_THRUST_P1 = 113,
+	PARAM_ID_THRUST_P2 = 114,
 
 	// RC Scale (3 params)
-	PARAM_ID_RC_XY_SCALE  = 116,
-	PARAM_ID_RC_Z_SCALE   = 117,
-	PARAM_ID_RC_YAW_SCALE = 118,
+	PARAM_ID_RC_XY_SCALE  = 115,
+	PARAM_ID_RC_Z_SCALE   = 116,
+	PARAM_ID_RC_YAW_SCALE = 117,
 
 	// Tuning boundary markers
 	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,     // 48
-	PARAM_ID_TUNING_LAST  = PARAM_ID_RC_YAW_SCALE,   // 118
-	PARAM_ID_TUNING_COUNT = 71,
+	PARAM_ID_TUNING_LAST  = PARAM_ID_RC_YAW_SCALE,   // 117
+	PARAM_ID_TUNING_COUNT = 70,
 
 	PARAM_ID_MAX = 128,
 } param_id_e;
@@ -216,25 +215,24 @@ typedef struct {
 	float pe_z_s2_corr;
 	float pe_z_v_fb;
 	float pe_optflow_gain;
-	// FFT/Notch (4 floats, IDs 102-105)
+	// FFT/Notch (3 floats, IDs 102-104)
 	float notch_q;
 	float notch_min_hz;
-	float fft_peak_snr;
 	float fft_freq_alpha;
-	// Flight State (4 floats, IDs 106-109)
+	// Flight State (4 floats, IDs 105-108)
 	float disarm_angle;
 	float disarm_range;
 	float allowed_landing_range;
 	float took_off_range;
-	// Servo Bias (4 floats, IDs 110-113)
+	// Servo Bias (4 floats, IDs 109-112)
 	float servo_bias_1;
 	float servo_bias_2;
 	float servo_bias_3;
 	float servo_bias_4;
-	// Thrust Linearization (2 floats, IDs 114-115)
+	// Thrust Linearization (2 floats, IDs 113-114)
 	float thrust_p1;
 	float thrust_p2;
-	// RC Scale (3 floats, IDs 116-118)
+	// RC Scale (3 floats, IDs 115-117)
 	float rc_xy_scale;
 	float rc_z_scale;
 	float rc_yaw_scale;
@@ -399,7 +397,7 @@ typedef struct {
 
 // --- FFT Peak Detection (fft module → notch_filter module) ---
 
-#define FFT_NUM_PEAKS  2   /* Top N peaks per axis */
+#define FFT_NUM_PEAKS  3   /* Per-band peak slots (low / mid / high) */
 
 typedef struct {
 	uint8_t axis;                    /* 0=X, 1=Y, 2=Z */

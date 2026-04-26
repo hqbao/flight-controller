@@ -49,7 +49,7 @@ SAMPLE_HZ = 1000.0
 FREQ_BIN_HZ = SAMPLE_HZ / FFT_SIZE        # ~3.906 Hz
 SPECTRUM_MAX_HZ = 400.0
 SPECTRUM_BINS = int(SPECTRUM_MAX_HZ / FREQ_BIN_HZ) + 1  # 52
-NUM_PEAKS = 2
+NUM_PEAKS = 3
 
 SPECTRUM_FRAME_SIZE = 1 + SPECTRUM_BINS + NUM_PEAKS * 4  # 61 bytes: axis + bins + 2 floats
 PEAKS_FRAME_SIZE = 24                      # 6 floats (standalone peaks mode)
@@ -77,7 +77,7 @@ BTN_GREEN     = '#2d5a2d'
 BTN_GREEN_HOV = '#3d7a3d'
 BTN_RED       = '#5a2d2d'
 BTN_RED_HOV   = '#7a3d3d'
-PEAK_COLORS   = ['#ff5555', '#55ff55']
+PEAK_COLORS   = ['#ff5555', '#55ff55', '#5599ff']
 
 # --- Auto-detect serial port ---
 ports = serial.tools.list_ports.comports()

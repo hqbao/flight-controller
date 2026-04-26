@@ -30,8 +30,9 @@ static float g_notch_q         = 3.0f;
 static float g_notch_min_hz    = 50.0f;
 
 /* --- Filter State --- */
-static notch_filter_t g_notch_a[3];  /* Per-axis notch A */
-static notch_filter_t g_notch_b[3];  /* Per-axis notch B */
+static notch_filter_t g_notch_a[3];  /* Per-axis notch A (low band) */
+static notch_filter_t g_notch_b[3];  /* Per-axis notch B (mid band) */
+static notch_filter_t g_notch_c[3];  /* Per-axis notch C (high band) */
 static float g_filtered[3];          /* Output buffer for publish */
 
 /* --- Gyro callback (1 kHz) --- */
@@ -42,10 +43,11 @@ static void on_gyro_update(uint8_t *data, size_t size) {
 	float gyro[3];
 	memcpy(gyro, data, 12);
 
-	/* Cascade: notch_a → notch_b per axis */
+	/* Cascade: notch_a → notch_b → notch_c per axis */
 	for (int i = 0; i < 3; i++) {
 		float v = notch_filter_apply(&g_notch_a[i], gyro[i]);
-		g_filtered[i] = notch_filter_apply(&g_notch_b[i], v);
+		v = notch_filter_apply(&g_notch_b[i], v);
+		g_filtered[i] = notch_filter_apply(&g_notch_c[i], v);
 	}
 
 	publish(SENSOR_IMU1_GYRO_FILTERED_UPDATE,
@@ -61,17 +63,24 @@ static void on_fft_peaks(uint8_t *data, size_t size) {
 
 	if (peaks.axis >= 3) return;
 
+	/* Slot 0 → notch_a, slot 1 → notch_b, slot 2 → notch_c.
+	 * Slots are tied to fixed frequency bands in fft.c, so each cascade
+	 * stage always tracks the same band. Below min_hz → keep last
+	 * valid frequency (lock-and-hold). */
 	if (peaks.freq[0] > g_notch_min_hz) {
 		notch_filter_update(&g_notch_a[peaks.axis],
 			peaks.freq[0], NOTCH_SAMPLE_HZ, g_notch_q);
 	}
-	/* Below min_hz → keep last valid frequency (lock-and-hold) */
 
 	if (FFT_NUM_PEAKS >= 2 && peaks.freq[1] > g_notch_min_hz) {
 		notch_filter_update(&g_notch_b[peaks.axis],
 			peaks.freq[1], NOTCH_SAMPLE_HZ, g_notch_q);
 	}
-	/* Below min_hz → keep last valid frequency (lock-and-hold) */
+
+	if (FFT_NUM_PEAKS >= 3 && peaks.freq[2] > g_notch_min_hz) {
+		notch_filter_update(&g_notch_c[peaks.axis],
+			peaks.freq[2], NOTCH_SAMPLE_HZ, g_notch_q);
+	}
 }
 
 /* --- Tuning --- */
@@ -92,6 +101,8 @@ void notch_filter_setup(void) {
 		notch_filter_init(&g_notch_a[i], 0.0f,
 			NOTCH_SAMPLE_HZ, g_notch_q);
 		notch_filter_init(&g_notch_b[i], 0.0f,
+			NOTCH_SAMPLE_HZ, g_notch_q);
+		notch_filter_init(&g_notch_c[i], 0.0f,
 			NOTCH_SAMPLE_HZ, g_notch_q);
 	}
 
