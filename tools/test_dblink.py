@@ -72,7 +72,7 @@ LOG_CLASS_TESTS = [
     (LOG_CLASS_ATTITUDE_EARTH,   "Attitude Earth",    36, 3.0),
     (LOG_CLASS_ATTITUDE_MAG,     "Attitude Mag",      36, 3.0),
     (LOG_CLASS_POSITION,         "Position",          24, 3.0),
-    (LOG_CLASS_POSITION_OPTFLOW, "Pos OptFlow",       24, 3.0),
+    (LOG_CLASS_POSITION_OPTFLOW, "Pos OptFlow",       32, 3.0),
     (LOG_CLASS_MIX_CONTROL,      "Mix Control",       32, 3.0),
     (LOG_CLASS_FLIGHT_TELEMETRY, "Telemetry",         66, 3.0),
     (LOG_CLASS_RC_RECEIVER,      "RC Receiver",       28, 3.0),

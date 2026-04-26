@@ -376,7 +376,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_ATTITUDE` | `0x03` | `attitude_estimation.c` | Attitude vectors (9 floats) |
 | `LOG_CLASS_POSITION` | `0x04` | `position_estimation.c` | Position & velocity (6 floats) |
 | `LOG_CLASS_FFT_GYRO_Z` | `0x05` | — | *(Removed — was host-side FFT raw gyro streaming)* |
-| `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | `position_estimation.c` | Optical flow & altitude (6 floats) |
+| `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | `position_estimation.c` | Optical flow, altitude & body accel ref (8 floats) |
 | `LOG_CLASS_ATTITUDE_MAG` | `0x07` | `attitude_estimation.c` | Mag debug: raw, earth, attitude (9 floats) |
 | `LOG_CLASS_GYRO_CAL` | `0x08` | — | *(Reserved — gyro calibration moved to Python tool)* |
 | `LOG_CLASS_HEART_BEAT` | `0x09` | `dblink` | Heartbeat counter (1 float, 1 Hz) — active by default on power-up |

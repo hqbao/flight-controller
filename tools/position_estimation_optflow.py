@@ -18,18 +18,27 @@ Optical Flow & Altitude Sensor Viewer
 Real-time visualization of optical flow sensor data and altitude readings
 from the position estimation module.
 
-DATA FORMAT (LOG_CLASS_POSITION_OPTFLOW = 0x06, 24 bytes):
+DATA FORMAT (LOG_CLASS_POSITION_OPTFLOW = 0x06, 32 bytes):
   float[0] = Optical Flow Downward dx (rad)
   float[1] = Optical Flow Downward dy (rad)
-  float[2] = Optical Flow Upward dx (rad)
-  float[3] = Optical Flow Upward dy (rad)
+  float[2] = Optical Flow Upward   dx (rad)
+  float[3] = Optical Flow Upward   dy (rad)
   float[4] = Range Finder Altitude (m)
   float[5] = Air Pressure Altitude (m)
+  float[6] = Body-frame linear accel X (m/s^2, X = Forward)
+  float[7] = Body-frame linear accel Y (m/s^2, Y = Right)
 
 Layout (3 vertically stacked time-series):
-  Top:    Optical Flow \u2014 Downward (dx, dy)
-  Middle: Optical Flow \u2014 Upward (dx, dy)
+  Top:    Optical Flow — Downward (dx, dy)
+  Middle: Optical Flow — Upward (dx, dy)
   Bottom: Altitude Sensors (Range Finder, Air Pressure)
+
+MOUNTING CHECK
+  An IMU-derived reference velocity (leaky-integrated body accel) is compared
+  against the optical flow displacement on a per-axis basis. If the signs
+  disagree consistently while the drone is being moved, a banner appears
+  asking the user to re-mount the optical flow module (likely rotated 90°
+  or mounted upside-down).
 
 Usage:
   python3 position_estimation_optflow.py
@@ -47,7 +56,7 @@ DB_CMD_LOG_CLASS           = 0x03
 DB_CMD_RESET               = 0x07
 DB_CMD_CHIP_ID             = 0x09
 
-OPTFLOW_FRAME_SIZE = 24   # 6 floats
+OPTFLOW_FRAME_SIZE = 32   # 8 floats
 HISTORY_LEN = 300          # ~30s at 10 Hz
 
 # --- UI Colors ---
@@ -190,7 +199,7 @@ def serial_reader():
                 g_chip_id = payload[:8].hex().upper()
                 print(f"  \u2713 Chip ID: {g_chip_id}")
             elif msg_id == SEND_LOG_ID and length >= OPTFLOW_FRAME_SIZE:
-                vals = struct.unpack('<6f', payload[:24])
+                vals = struct.unpack('<8f', payload[:32])
                 data_queue.put(vals)
     except Exception as e:
         print(f"  \u2717 Serial error: {e}")
@@ -287,6 +296,47 @@ def main():
     t0 = [None]
 
     # =========================================================================
+    # Mounting Check state
+    # =========================================================================
+    # Leaky-integrated body-frame velocity (independent reference from accel).
+    # We compare its sign against the sign of the optical flow displacement
+    # to detect a mis-mounted optical flow module.
+    ref_vel  = {'x': 0.0, 'y': 0.0}     # m/s (leaky integral of body accel)
+    last_acc_t = [None]
+    VEL_LEAK_TAU = 1.5                   # s, decay time constant
+    VEL_TRIGGER  = 0.10                  # m/s, ignore micro-motion
+    FLOW_TRIGGER = 0.003                 # rad, ignore noise
+    # Per direction (down/up), per axis (x/y) running counters.
+    # ok = signs agree, bad = signs disagree, while motion exceeds triggers.
+    mismatch = {
+        'down_x': {'ok': 0, 'bad': 0},
+        'down_y': {'ok': 0, 'bad': 0},
+        'up_x'  : {'ok': 0, 'bad': 0},
+        'up_y'  : {'ok': 0, 'bad': 0},
+    }
+    MISMATCH_DECAY = 0.995               # per sample
+    MISMATCH_VERDICT_MIN = 20            # min samples before verdict
+    MISMATCH_VERDICT_RATIO = 3.0         # bad/ok ratio to declare WRONG
+
+    # Mounting status banner (top of figure)
+    status_text = fig.text(
+        0.5, 0.955, '', ha='center', va='center',
+        fontsize=10, fontweight='bold', color=TEXT_COLOR,
+        bbox=dict(boxstyle='round,pad=0.4', facecolor=PANEL_COLOR,
+                  edgecolor=GRID_COLOR, linewidth=1))
+
+    def axis_verdict(key):
+        m = mismatch[key]
+        total = m['ok'] + m['bad']
+        if total < MISMATCH_VERDICT_MIN:
+            return 'idle'
+        if m['bad'] > MISMATCH_VERDICT_RATIO * max(m['ok'], 1e-3):
+            return 'wrong'
+        if m['ok'] > MISMATCH_VERDICT_RATIO * max(m['bad'], 1e-3):
+            return 'ok'
+        return 'idle'
+
+    # =========================================================================
     # Status bar
     # =========================================================================
     chip_id_text = fig.text(0.96, 0.035, 'Chip ID: ---', fontsize=7,
@@ -368,12 +418,80 @@ def main():
         if latest is None:
             return updated
 
-        ddx, ddy, udx, udy, rng, baro = latest
+        ddx, ddy, udx, udy, rng, baro, acc_x, acc_y = latest
 
         now = time.time()
         if t0[0] is None:
             t0[0] = now
         t = now - t0[0]
+
+        # =================================================================
+        # Update reference velocity from body-frame accel (leaky integral)
+        # =================================================================
+        if last_acc_t[0] is None:
+            dt_a = 0.04
+        else:
+            dt_a = max(1e-3, min(0.2, now - last_acc_t[0]))
+        last_acc_t[0] = now
+        decay = np.exp(-dt_a / VEL_LEAK_TAU)
+        ref_vel['x'] = ref_vel['x'] * decay + acc_x * dt_a
+        ref_vel['y'] = ref_vel['y'] * decay + acc_y * dt_a
+
+        # =================================================================
+        # Mounting check: per direction & axis sign comparison
+        #   Body frame: X = Forward (pitch), Y = Right (roll)
+        #   Downward optflow uses dx,  dy  directly (in C: vy = +dy)
+        #   Upward   optflow uses dx, -dy  (in C: vy = -dy due to mirror)
+        # =================================================================
+        flow_signed = {
+            'down_x': ddx,
+            'down_y': ddy,
+            'up_x'  : udx,
+            'up_y'  : -udy,
+        }
+        ref_axis = {'down_x': ref_vel['x'], 'down_y': ref_vel['y'],
+                    'up_x'  : ref_vel['x'], 'up_y'  : ref_vel['y']}
+        for key, fv in flow_signed.items():
+            rv = ref_axis[key]
+            # decay counters every sample so old flights age out
+            mismatch[key]['ok']  *= MISMATCH_DECAY
+            mismatch[key]['bad'] *= MISMATCH_DECAY
+            if abs(fv) >= FLOW_TRIGGER and abs(rv) >= VEL_TRIGGER:
+                if (fv > 0) == (rv > 0):
+                    mismatch[key]['ok'] += 1.0
+                else:
+                    mismatch[key]['bad'] += 1.0
+
+        # =================================================================
+        # Update mounting status banner
+        # =================================================================
+        wrong_axes = []
+        any_active = False
+        for key in flow_signed:
+            v = axis_verdict(key)
+            if v == 'wrong':
+                wrong_axes.append(key.replace('_', '-').upper())
+            if v != 'idle':
+                any_active = True
+        if wrong_axes:
+            status_text.set_text(
+                'MOUNTING WRONG \u2014 re-mount optical flow module: ' +
+                ', '.join(wrong_axes))
+            status_text.set_color('#ffffff')
+            status_text.get_bbox_patch().set_facecolor('#a02020')
+            status_text.get_bbox_patch().set_edgecolor('#ff6060')
+        elif any_active:
+            status_text.set_text('Mounting check: OK \u2014 flow signs match motion')
+            status_text.set_color('#a0e0a0')
+            status_text.get_bbox_patch().set_facecolor('#1e3a1e')
+            status_text.get_bbox_patch().set_edgecolor('#3d7a3d')
+        else:
+            status_text.set_text(
+                'Mounting check: idle \u2014 slide drone forward / sideways to test')
+            status_text.set_color(DIM_TEXT)
+            status_text.get_bbox_patch().set_facecolor(PANEL_COLOR)
+            status_text.get_bbox_patch().set_edgecolor(GRID_COLOR)
+        updated.append(status_text)
 
         hist['t'].append(t)
         hist['ddx'].append(ddx)
@@ -393,7 +511,13 @@ def main():
         # =================================================================
         line_ddx.set_data(ta, hist['ddx'])
         line_ddy.set_data(ta, hist['ddy'])
-        val_text_down.set_text(f'dx:{ddx:+.4f}  dy:{ddy:+.4f}')
+        vdx = axis_verdict('down_x')
+        vdy = axis_verdict('down_y')
+        tag = lambda v: ('OK' if v == 'ok' else
+                         'WRONG' if v == 'wrong' else '\u2014')
+        val_text_down.set_text(
+            f'dx:{ddx:+.4f} [{tag(vdx)}]   dy:{ddy:+.4f} [{tag(vdy)}]   '
+            f'vref x:{ref_vel["x"]:+.2f} y:{ref_vel["y"]:+.2f}')
         if len(ta) > 1:
             ax_down.set_xlim(ta[0], ta[-1] + 0.1)
             d = np.array(hist['ddx'] + hist['ddy'])
@@ -407,7 +531,11 @@ def main():
         # =================================================================
         line_udx.set_data(ta, hist['udx'])
         line_udy.set_data(ta, hist['udy'])
-        val_text_up.set_text(f'dx:{udx:+.4f}  dy:{udy:+.4f}')
+        vux = axis_verdict('up_x')
+        vuy = axis_verdict('up_y')
+        val_text_up.set_text(
+            f'dx:{udx:+.4f} [{tag(vux)}]   dy:{udy:+.4f} [{tag(vuy)}]   '
+            f'vref x:{ref_vel["x"]:+.2f} y:{ref_vel["y"]:+.2f}')
         if len(ta) > 1:
             ax_up.set_xlim(ta[0], ta[-1] + 0.1)
             d = np.array(hist['udx'] + hist['udy'])
