@@ -45,7 +45,8 @@
  * ================================================================ */
 
 static uint8_t g_log_peaks = 0;       /* 1 = streaming smoothed peaks */
-static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z */
+static uint8_t g_log_spectrum = 0;    /* 1-3 = streaming spectrum for axis X/Y/Z (raw only) */
+static uint8_t g_log_spectrum_dual = 0; /* 1-3 = streaming raw + filtered side-by-side */
 
 /* ================================================================
  *  Configuration
@@ -70,8 +71,10 @@ static float g_freq_ema_alpha  = 0.15f;
  *  State
  * ================================================================ */
 
-static float g_ring[3][FFT_SIZE];         /* Per-axis gyro ring buffer */
-static uint16_t g_ring_idx;               /* Write position */
+static float g_ring[3][FFT_SIZE];         /* Per-axis raw gyro ring buffer */
+static float g_ring_filt[3][FFT_SIZE];    /* Per-axis notch-filtered gyro ring buffer */
+static uint16_t g_ring_idx;               /* Write position (raw) */
+static uint16_t g_ring_filt_idx;          /* Write position (filtered) */
 static uint32_t g_sample_count;           /* Saturates at FFT_SIZE */
 static float g_window[FFT_SIZE];          /* Pre-computed Hanning window */
 static float g_fft_re[FFT_SIZE];          /* FFT workspace: real */
@@ -94,18 +97,35 @@ static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (cls == LOG_CLASS_FFT_PEAKS) {
 		g_log_peaks = 1;
 		g_log_spectrum = 0;
+		g_log_spectrum_dual = 0;
 	} else if (cls == LOG_CLASS_FFT_SPECTRUM_X) {
 		g_log_peaks = 0;
 		g_log_spectrum = 1;
+		g_log_spectrum_dual = 0;
 	} else if (cls == LOG_CLASS_FFT_SPECTRUM_Y) {
 		g_log_peaks = 0;
 		g_log_spectrum = 2;
+		g_log_spectrum_dual = 0;
 	} else if (cls == LOG_CLASS_FFT_SPECTRUM_Z) {
 		g_log_peaks = 0;
 		g_log_spectrum = 3;
+		g_log_spectrum_dual = 0;
+	} else if (cls == LOG_CLASS_FFT_SPECTRUM_DUAL_X) {
+		g_log_peaks = 0;
+		g_log_spectrum = 0;
+		g_log_spectrum_dual = 1;
+	} else if (cls == LOG_CLASS_FFT_SPECTRUM_DUAL_Y) {
+		g_log_peaks = 0;
+		g_log_spectrum = 0;
+		g_log_spectrum_dual = 2;
+	} else if (cls == LOG_CLASS_FFT_SPECTRUM_DUAL_Z) {
+		g_log_peaks = 0;
+		g_log_spectrum = 0;
+		g_log_spectrum_dual = 3;
 	} else {
 		g_log_peaks = 0;
 		g_log_spectrum = 0;
+		g_log_spectrum_dual = 0;
 	}
 }
 
@@ -122,6 +142,18 @@ static void on_gyro_update(uint8_t *data, size_t size) {
 	if (g_sample_count < FFT_SIZE) g_sample_count++;
 }
 
+/* Filtered (post-notch) gyro callback (1 kHz): collect parallel ring buffer */
+static void on_gyro_filtered_update(uint8_t *data, size_t size) {
+	if (size < 12) return;
+	float gyro[3];
+	memcpy(gyro, data, sizeof(gyro));
+
+	for (int i = 0; i < 3; i++) {
+		g_ring_filt[i][g_ring_filt_idx] = gyro[i];
+	}
+	g_ring_filt_idx = (g_ring_filt_idx + 1) & (FFT_SIZE - 1);
+}
+
 /* 10 Hz trigger — runs in ISR, just sets flag for LOOP */
 static void on_fft_trigger(uint8_t *data, size_t size) {
 	(void)data; (void)size;
@@ -136,7 +168,9 @@ static void on_loop(uint8_t *data, size_t size) {
 	g_fft_pending = 0;
 
 	uint8_t axis;
-	if (g_log_spectrum) {
+	if (g_log_spectrum_dual) {
+		axis = g_log_spectrum_dual - 1;
+	} else if (g_log_spectrum) {
 		axis = g_log_spectrum - 1;
 	} else {
 		axis = g_fft_axis;
@@ -223,6 +257,62 @@ static void on_loop(uint8_t *data, size_t size) {
 
 		publish(SEND_LOG, spec_buf, sizeof(spec_buf));
 	}
+
+	/* DUAL spectrum: raw + filtered side-by-side for the selected axis.
+	 * Layout: [axis(1)] [raw_bins(103)] [filt_bins(103)] [raw_peak1(4)] [raw_peak2(4)] [filt_peak1(4)] [filt_peak2(4)]
+	 * Total: 1 + 103 + 103 + 16 = 223 bytes per frame at 10 Hz (~58% of 38400 baud bus). */
+	if (g_log_spectrum_dual && axis == (g_log_spectrum_dual - 1)) {
+		uint8_t dual_buf[1 + 2 * FFT_SPECTRUM_BINS + 2 * FFT_NUM_PEAKS * sizeof(float)];
+		dual_buf[0] = axis;
+
+		/* Raw spectrum bytes (from the FFT we just ran on g_ring) */
+		for (int i = 0; i < FFT_SPECTRUM_BINS; i++) {
+			float pwr = g_fft_re[i];
+			if (pwr <= 0.0f) { dual_buf[1 + i] = 0; continue; }
+			float db = 10.0f * log10f(pwr);
+			float norm = (db - FFT_SPECTRUM_FLOOR_DB) / FFT_SPECTRUM_RANGE_DB;
+			if (norm < 0.0f) norm = 0.0f;
+			if (norm > 1.0f) norm = 1.0f;
+			dual_buf[1 + i] = (uint8_t)(norm * 255.0f);
+		}
+
+		/* Save raw peaks before overwriting g_fft_re/g_fft_im */
+		float raw_peaks_f[FFT_NUM_PEAKS];
+		for (int p = 0; p < FFT_NUM_PEAKS; p++) {
+			raw_peaks_f[p] = g_smooth_freq[axis][p];
+		}
+
+		/* Now run FFT on filtered ring for same axis */
+		uint16_t fstart = g_ring_filt_idx;
+		for (int i = 0; i < FFT_SIZE; i++) {
+			int idx = (fstart + i) & (FFT_SIZE - 1);
+			g_fft_re[i] = g_ring_filt[axis][idx] * g_window[i];
+			g_fft_im[i] = 0.0f;
+		}
+		fft_radix2(g_fft_re, g_fft_im, FFT_SIZE);
+
+		float filt_peak_freq[FFT_NUM_PEAKS];
+		fft_find_peaks(g_fft_re, g_fft_im, &g_peak_cfg, filt_peak_freq);
+
+		/* Filtered spectrum bytes */
+		for (int i = 0; i < FFT_SPECTRUM_BINS; i++) {
+			float pwr = g_fft_re[i];
+			if (pwr <= 0.0f) { dual_buf[1 + FFT_SPECTRUM_BINS + i] = 0; continue; }
+			float db = 10.0f * log10f(pwr);
+			float norm = (db - FFT_SPECTRUM_FLOOR_DB) / FFT_SPECTRUM_RANGE_DB;
+			if (norm < 0.0f) norm = 0.0f;
+			if (norm > 1.0f) norm = 1.0f;
+			dual_buf[1 + FFT_SPECTRUM_BINS + i] = (uint8_t)(norm * 255.0f);
+		}
+
+		/* Append raw peaks then filtered peaks (un-smoothed for filtered side) */
+		memcpy(&dual_buf[1 + 2 * FFT_SPECTRUM_BINS],
+		       raw_peaks_f, sizeof(raw_peaks_f));
+		memcpy(&dual_buf[1 + 2 * FFT_SPECTRUM_BINS + FFT_NUM_PEAKS * sizeof(float)],
+		       filt_peak_freq, sizeof(filt_peak_freq));
+
+		publish(SEND_LOG, dual_buf, sizeof(dual_buf));
+	}
 }
 
 /* --- Tuning --- */
@@ -254,6 +344,7 @@ void fft_setup(void) {
 
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SENSOR_IMU1_GYRO_UPDATE, on_gyro_update);
+	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, on_gyro_filtered_update);
 	subscribe(SCHEDULER_10HZ, on_fft_trigger);
 	subscribe(LOOP, on_loop);
 	subscribe(TUNING_READY, on_tuning_ready);

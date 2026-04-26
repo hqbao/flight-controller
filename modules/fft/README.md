@@ -64,18 +64,18 @@ fft.c ──(FFT_PEAKS_UPDATE)──→ notch_filter.c
 | Sample rate | 1000 Hz (`GYRO_FREQ`) | Defined in `macro.h` |
 | Frequency resolution | ~3.91 Hz/bin | 1000/256 |
 | Window | Hanning | Pre-computed at init |
-| Analysis range | 50–200 Hz | Body motion below, motor vibration above |
-| Spectrum display range | 0–200 Hz | 52 bins streamed to host |
-| Update rate | 10 Hz total | Cycles X→Y→Z (~3.3 Hz/axis), runs in LOOP (main thread) |
+| Analysis range | 50–400 Hz | Body motion below, motor vibration above |
+| Spectrum display range | 0–400 Hz | 103 bins streamed to host |
+| Update rate | 10 Hz total | Cycles X→Y→Z (~3.3 Hz/axis) when no axis selected; 10 Hz on selected axis when streaming spectrum/dual |
 
 ## Peak Detection
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Valid range | 50–200 Hz | Peaks outside this range are reset to 0 |
-| SNR threshold | 8× mean power | Peak must be 8× above average |
-| Min separation | 20 Hz | Between two peaks on same axis |
-| EMA alpha | 0.3 | Smooths consecutive in-range peaks |
+| Valid range | 50–400 Hz | Peaks outside this range keep the previous value (lock-and-hold) |
+| SNR threshold | 5× mean power (tunable) | Peak must be 5× above average |
+| Min separation | 40 Hz | Between two peaks on same axis |
+| EMA alpha | 0.15 (tunable) | Smooths consecutive in-range peaks |
 | Out-of-range | Reset to 0 | Notch filter disengages immediately |
 | Re-acquisition | Snap to value | First valid peak after reset initializes instantly |
 
@@ -100,11 +100,11 @@ Payload: 6 × float32 = 24 bytes
 ### Spectrum + Peaks (LOG_CLASS_FFT_SPECTRUM_X/Y/Z, 0x18–0x1A)
 
 Streams compressed spectrum bins plus peak frequencies in a **single combined
-frame** for the selected axis, at ~3.3 Hz:
+frame** for the selected axis, at 10 Hz:
 
 ```
-Payload: 1 + 52 + 8 = 61 bytes
-  [axis (1 byte)] [52 × uint8 dB-scaled bins] [peak1 (float)] [peak2 (float)]
+Payload: 1 + 103 + 8 = 112 bytes
+  [axis (1 byte)] [103 × uint8 dB-scaled bins] [peak1 (float)] [peak2 (float)]
 ```
 
 - **dB scaling**: Absolute, floor = -30 dB, range = 60 dB. Power is normalized
@@ -113,18 +113,39 @@ Payload: 1 + 52 + 8 = 61 bytes
   to avoid UART buffer corruption — `HAL_UART_Transmit_IT` is non-blocking and
   dblink uses a single shared output buffer.
 
-### Bandwidth Budget (38400 baud = 3840 B/s)
+### Dual (Raw + Filtered) Spectrum (LOG_CLASS_FFT_SPECTRUM_DUAL_X/Y/Z, 0x14–0x16)
 
-| Stream | Frame size | Rate | Throughput |
-|--------|-----------|------|------------|
-| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (8%) |
-| Spectrum + peaks | 61 + 8 = 69 B | ~3.3 Hz | ~228 B/s (6%) |
+For verifying notch filter effectiveness. Runs the 256-point FFT **twice** per
+tick on the selected axis — once on the raw gyro ring, once on the post-notch
+ring (`SENSOR_IMU1_GYRO_FILTERED_UPDATE`) — and emits one combined frame at
+10 Hz:
+
+```
+Payload: 1 + 103 + 103 + 8 + 8 = 223 bytes
+  [axis (1)]
+  [raw_bins (103 × uint8)]
+  [filt_bins (103 × uint8)]
+  [raw_peak1 (float)] [raw_peak2 (float)]   ← EMA-smoothed (locked)
+  [filt_peak1 (float)] [filt_peak2 (float)] ← raw, un-smoothed
+```
+
+Filtered peaks are **not EMA-smoothed**: a working notch should make them drop
+out / become weak, in which case `fft_find_peaks` returns 0 — useful as a
+visual confirmation that the notch is biting.
+
+### Bandwidth Budget (38400 baud ≈ 3840 B/s payload)
+
+| Stream | DB-frame size | Rate | Throughput |
+|--------|---------------|------|------------|
+| Peaks only | 24 + 8 = 32 B | 10 Hz | 320 B/s (~8%) |
+| Spectrum + peaks | 112 + 8 = 120 B | 10 Hz | 1200 B/s (~31%) |
+| Dual (raw + filt) | 223 + 8 = 231 B | 10 Hz | 2310 B/s (~60%) |
 
 (8-byte DB frame overhead: 2 header + 1 ID + 1 class + 2 length + 2 checksum)
 
-## Python Tool
+## Python Tools
 
-### fft_spectrum_view.py — Real-Time Spectrogram
+### fft_spectrum_view.py — Real-Time Spectrogram (raw)
 
 Scrolling spectrogram with dynamic notch peak overlay traces:
 
@@ -135,7 +156,21 @@ python3 flight-controller/tools/fft_spectrum_view.py
 - Select axis (X/Y/Z button) to begin spectrum streaming
 - Spectrogram shows frequency content over time (color = magnitude)
 - P1/P2 colored traces show detected peak frequencies
-- "Start Peaks" streams peaks-only mode (no spectrogram)
+
+### fft_spectrum_dual_view.py — Raw vs Post-Notch Side-by-Side
+
+Two stacked spectrograms (raw on top, filtered on bottom) sharing the same time
+and frequency axes — the easiest way to verify the dynamic notch is killing the
+motor harmonics:
+
+```bash
+python3 flight-controller/tools/fft_spectrum_dual_view.py
+```
+
+- Bright bands in the raw plot should disappear (or strongly attenuate) in the
+  filtered plot at the same frequency
+- P1/P2 readout on the filtered side reads `---` when the notch has driven the
+  peak below the SNR threshold (= notch is working)
 
 | Display Feature | Description |
 |-----------------|-------------|

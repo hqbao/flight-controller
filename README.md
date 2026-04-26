@@ -85,6 +85,7 @@ flight-controller/
 │   ├── mix_control_quadcopter_test.py #   Quadcopter motor output visualizer
 │   ├── mix_control_bicopter_test.py #   Bicopter tilt-rotor output visualizer
 │   ├── fft_spectrum_view.py        #   Real-time spectrogram + peak overlay
+│   ├── fft_spectrum_dual_view.py   #   Raw vs post-notch spectrograms (side-by-side)
 │   ├── attitude_estimation_view.py#   Attitude fusion dashboard (3D vectors + data panel)
 │   ├── attitude_estimation_mag_view.py # Magnetometer debug dashboard (3D + heading)
 │   ├── position_estimation_2d_and_z.py # Position dashboard (2D map + altitude + velocity)
@@ -389,9 +390,9 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_MIX_CONTROL` | `0x11` | `quadcopter.c` / `bicopter.c` | Motor/servo outputs (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
 | `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
-| `LOG_CLASS_FFT_GYRO_FILTERED_X` | `0x14` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
-| `LOG_CLASS_FFT_GYRO_FILTERED_Y` | `0x15` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
-| `LOG_CLASS_FFT_GYRO_FILTERED_Z` | `0x16` | — | *(Removed — was host-side FFT filtered gyro streaming)* |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_X` | `0x14` | `fft.c` | Raw + filtered spectrum side-by-side, X axis (223 bytes: 1 + 2×103 bins + 2×8 peaks, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_Y` | `0x15` | `fft.c` | Raw + filtered spectrum side-by-side, Y axis (223 bytes, 10 Hz) |
+| `LOG_CLASS_FFT_SPECTRUM_DUAL_Z` | `0x16` | `fft.c` | Raw + filtered spectrum side-by-side, Z axis (223 bytes, 10 Hz) |
 | `LOG_CLASS_FFT_PEAKS` | `0x17` | `fft.c` | Smoothed peak frequencies (6 floats: 3 axes × 2 peaks, 10 Hz) |
 | `LOG_CLASS_FFT_SPECTRUM_X` | `0x18` | `fft.c` | Spectrum + peaks combined frame, X axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
 | `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (112 bytes: 1 + 103 bins + 8 peak, 10 Hz) |
@@ -415,6 +416,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `position_estimation_optflow.py` | Optical flow (downward/upward) & altitude sensors (range finder/barometer) time-series |
 | `position_estimation_compare.py` | Fusion5 vs Fusion4 side-by-side comparison (2×3 grid: position + velocity, all axes) |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
+| `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `linear_accel_view.py` | Linear-acceleration time-series (X/Y/Z) with running mean/std/peak — diagnoses vibration-induced DC bias and accel noise. Reuses `LOG_CLASS_ATTITUDE` / `LOG_CLASS_ATTITUDE_EARTH`. |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |

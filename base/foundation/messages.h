@@ -428,9 +428,9 @@ typedef struct {
 #define LOG_CLASS_MIX_CONTROL           0x11
 #define LOG_CLASS_FLIGHT_TELEMETRY     0x12
 #define LOG_CLASS_ATTITUDE_EARTH       0x13  // v_pred, v_true, v_linear_acc (earth)
-#define LOG_CLASS_FFT_GYRO_FILTERED_X  0x14  // removed (was host-side FFT)
-#define LOG_CLASS_FFT_GYRO_FILTERED_Y  0x15  // removed (was host-side FFT)
-#define LOG_CLASS_FFT_GYRO_FILTERED_Z  0x16  // removed (was host-side FFT)
+#define LOG_CLASS_FFT_SPECTRUM_DUAL_X  0x14  // raw + filtered spectrum side-by-side, X axis
+#define LOG_CLASS_FFT_SPECTRUM_DUAL_Y  0x15  // raw + filtered spectrum side-by-side, Y axis
+#define LOG_CLASS_FFT_SPECTRUM_DUAL_Z  0x16  // raw + filtered spectrum side-by-side, Z axis
 #define LOG_CLASS_FFT_PEAKS            0x17
 #define LOG_CLASS_FFT_SPECTRUM_X       0x18
 #define LOG_CLASS_FFT_SPECTRUM_Y       0x19
