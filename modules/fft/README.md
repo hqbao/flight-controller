@@ -172,6 +172,24 @@ python3 flight-controller/tools/fft_spectrum_dual_view.py
 - P1/P2 readout on the filtered side reads `---` when the notch has driven the
   peak below the SNR threshold (= notch is working)
 
+#### Reading the Dual View — Notch Health Check
+
+| Bottom (filtered) plot looks like… | Diagnosis | Action |
+|------------------------------------|-----------|--------|
+| Bright bands **gone** at same freq as raw, filt P1/P2 read `---` | Notch is biting cleanly | Done |
+| Bright bands **dimmed but still visible** (raw mag ~150 → filt mag ~120) | Notch is too narrow OR center frequency is lagging the real peak | Lower notch Q (wider bandwidth), and/or raise `fft_freq_alpha` (faster peak tracking) |
+| Bright bands **unchanged**, filt P1/P2 still report the same peaks | Notch barely engaged — peak SNR threshold rejecting valid peaks, or notch coefficients not being updated | Lower `fft_peak_snr` (e.g. 5 → 3), confirm `notch_filter` is consuming `FFT_PEAKS_UPDATE` and recomputing biquad coefficients per update |
+| Filtered plot is **noisier than raw** with wild peak hopping | Notch is moving so much it's injecting transients; smoothing alpha probably set too high or peaks are flickering above/below threshold | Stabilize: lower `fft_freq_alpha` slightly, raise SNR threshold so weak peaks don't flip the notch on/off |
+
+The filtered P1/P2 lines are deliberately **not EMA-smoothed** — they show the
+raw output of `fft_find_peaks()` on the post-notch signal. A working notch will
+either drive the peak below the SNR threshold (→ `0` / `---`) or push the
+"loudest" peak to a different, weaker frequency. Either is a good sign.
+
+Tune these via `tuning_board.py` (no firmware rebuild needed). After every
+parameter change, click "Upload Defaults" → reboot, otherwise stale flash
+values can override the runtime params (see `docs/TUNING_PARAM_ZERO_BUG.md`).
+
 | Display Feature | Description |
 |-----------------|-------------|
 | Spectrogram | Scrolling waterfall, ~30s history, inferno colormap |
@@ -195,5 +213,6 @@ python3 flight-controller/tools/fft_spectrum_dual_view.py
 | `modules/fft/fft.h` | Module header — exposes `fft_setup()` |
 | `modules/fft/fft.c` | 256-point FFT, peak detection, spectrum streaming |
 | `modules/notch_filter/notch_filter.c` | Dynamic notch filter (subscribes FFT_PEAKS_UPDATE) |
-| `tools/fft_spectrum_view.py` | Real-time spectrogram + peak overlay tool |
+| `tools/fft_spectrum_view.py` | Real-time spectrogram + peak overlay tool (single axis, raw) |
+| `tools/fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked — notch effectiveness viewer |
 | `base/foundation/messages.h` | `fft_peaks_t`, `LOG_CLASS_FFT_*` definitions |
