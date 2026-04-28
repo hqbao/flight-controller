@@ -77,6 +77,13 @@ static int32_t  g_gps_lat0_e7    = 0;
 static int32_t  g_gps_lon0_e7    = 0;
 static int32_t  g_gps_alt0_mm    = 0;
 
+/* GPS quality gate — only feed fusion6 when receiver reports a reliable
+ * 3D fix (gnssFixOK + fix_type==3 + num_sv>=6 + h_acc<5m). Set by gps.c
+ * in EXTERNAL_SENSOR_GPS_QUALITY. Default 0 — until quality message
+ * arrives (no receiver attached, or no fix yet), all GPS updates are
+ * dropped. Mirrors gps_navigation's gating pattern. */
+static uint8_t  g_gps_reliable   = 0;
+
 /* Forward decl — defined below; called from on_accel at 500 Hz. */
 static void publish_state(void);
 
@@ -243,9 +250,17 @@ static void on_optflow(uint8_t *data, size_t size) {
 	fusion6_update_optflow(&g_f, flow_x, flow_y, h_agl, msg.clarity);
 }
 
+static void on_gps_quality(uint8_t *data, size_t size) {
+	if (size < sizeof(gps_quality_t)) return;
+	gps_quality_t q;
+	memcpy(&q, data, sizeof(gps_quality_t));
+	g_gps_reliable = q.reliable;
+}
+
 static void on_gps_pos(uint8_t *data, size_t size) {
 	if (size < sizeof(gps_position_t)) return;
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+	if (!g_gps_reliable) return;
 
 	gps_position_t p;
 	memcpy(&p, data, sizeof(gps_position_t));
@@ -265,6 +280,7 @@ static void on_gps_pos(uint8_t *data, size_t size) {
 static void on_gps_vel(uint8_t *data, size_t size) {
 	if (size < sizeof(gps_velocity_t)) return;
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+	if (!g_gps_reliable) return;
 
 	gps_velocity_t v;
 	memcpy(&v, data, sizeof(gps_velocity_t));
@@ -386,6 +402,7 @@ void state_estimation_setup(void) {
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, on_optflow);
 	subscribe(EXTERNAL_SENSOR_GPS, on_gps_pos);
 	subscribe(EXTERNAL_SENSOR_GPS_VELOC, on_gps_vel);
+	subscribe(EXTERNAL_SENSOR_GPS_QUALITY, on_gps_quality);
 	subscribe(TUNING_READY, on_tuning_ready);
 	subscribe(SCHEDULER_25HZ, on_25hz);
 }
