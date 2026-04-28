@@ -42,6 +42,16 @@ static tuning_params_t g_tuning = {
 	.thrust_p1 = 1.0f, .thrust_p2 = 0.0f,
 	// RC Scale
 	.rc_xy_scale = 0.01f, .rc_z_scale = 0.04f, .rc_yaw_scale = -0.5f,
+	// Sensor latency compensation (ms)
+	.est_latency_baro_ms = 30.0f, .est_latency_lidar_ms = 30.0f,
+	.est_latency_optflow_ms = 50.0f, .est_latency_gps_ms = 100.0f,
+	// Sensor health timeouts (ms)
+	.est_timeout_gps_ms = 2000.0f, .est_timeout_optflow_ms = 200.0f,
+	.est_timeout_lidar_ms = 200.0f, .est_timeout_mag_ms = 500.0f,
+	.est_timeout_baro_ms = 500.0f,
+	// Filter divergence + position-loop fade
+	.est_p_runaway_pos_m2 = 100.0f,
+	.ctl_position_loop_fade_s = 3.0f,
 };
 static uint8_t g_tuning_loaded = 0;
 static uint8_t g_tuning_count = 0;

@@ -6,6 +6,13 @@
 
 #define SHOULD_CLEAR_STORAGE 0
 
+/* Bump this constant any time tuning_params_t field IDs change meaning.
+ * On boot, if the stored value at PARAM_ID_TUNING_SCHEMA disagrees, all
+ * tuning slots are forced back to compiled defaults — this eliminates the
+ * "user forgot Upload Defaults after firmware upgrade" footgun. Calibration
+ * params (IDs <48) are never touched by this mechanism. */
+#define TUNING_SCHEMA_VERSION 2
+
 #define DATA_STORAGE_SIZE 	1024  /* 256 params × 4 bytes — over-allocated for future use */
 #define CHECKSUM_SIZE 		4
 #define LOCAL_STORAGE_SIZE 	(DATA_STORAGE_SIZE + CHECKSUM_SIZE)
@@ -150,6 +157,22 @@ static param_storage_t default_storage[] = {
 	{.id=PARAM_ID_RC_XY_SCALE,  .value=0.01f},
 	{.id=PARAM_ID_RC_Z_SCALE,   .value=0.04f},
 	{.id=PARAM_ID_RC_YAW_SCALE, .value=-0.5f},
+	// Sensor latency compensation (ms)
+	{.id=PARAM_ID_EST_LATENCY_BARO_MS,    .value=30.0f},
+	{.id=PARAM_ID_EST_LATENCY_LIDAR_MS,   .value=30.0f},
+	{.id=PARAM_ID_EST_LATENCY_OPTFLOW_MS, .value=50.0f},
+	{.id=PARAM_ID_EST_LATENCY_GPS_MS,     .value=100.0f},
+	// Sensor health timeouts (ms)
+	{.id=PARAM_ID_EST_TIMEOUT_GPS_MS,     .value=2000.0f},
+	{.id=PARAM_ID_EST_TIMEOUT_OPTFLOW_MS, .value=200.0f},
+	{.id=PARAM_ID_EST_TIMEOUT_LIDAR_MS,   .value=200.0f},
+	{.id=PARAM_ID_EST_TIMEOUT_MAG_MS,     .value=500.0f},
+	{.id=PARAM_ID_EST_TIMEOUT_BARO_MS,    .value=500.0f},
+	// Filter divergence + position-loop fade
+	{.id=PARAM_ID_EST_P_RUNAWAY_POS_M2,    .value=100.0f},
+	{.id=PARAM_ID_CTL_POSITION_LOOP_FADE_S, .value=3.0f},
+	// Schema version stamp (must be last so the version check can rely on it).
+	{.id=PARAM_ID_TUNING_SCHEMA, .value=(float)TUNING_SCHEMA_VERSION},
 };
 
 // CRC32 implementation
@@ -245,9 +268,9 @@ static void loop_flush(uint8_t *data, size_t size) {
 	platform_storage_write(0, LOCAL_STORAGE_SIZE, g_local_data);
 }
 
-/* ---- multi-page readback at 1 Hz (streams all 104 params) ------------ */
+/* ---- multi-page readback at 1 Hz (streams all params + schema slot) -- */
 #define LOG_PARAMS_PER_PAGE  26   /* 26 params × 4 bytes = 104 bytes per frame */
-#define LOG_TOTAL_PARAMS    104   /* IDs 0..103 */
+#define LOG_TOTAL_PARAMS    130   /* IDs 0..129 — covers schema (47) + tuning (48..128) */
 #define LOG_TOTAL_PAGES     ((LOG_TOTAL_PARAMS + LOG_PARAMS_PER_PAGE - 1) / LOG_PARAMS_PER_PAGE)
 static void loop_1hz(uint8_t *data, size_t size) {
 	if (g_active_log_class == 0) return;
@@ -296,6 +319,31 @@ static void load_local_data(void) {
 	}
 }
 
+/* Schema-stamp check: if the stored TUNING_SCHEMA_VERSION doesn't match
+ * the compiled-in constant (firmware upgrade with field-layout change), force
+ * compiled defaults for every tuning slot AND the schema slot, then write
+ * back. Calibration params (IDs <48) are preserved. */
+static void check_tuning_schema(void) {
+	uint32_t pos = (uint32_t)PARAM_ID_TUNING_SCHEMA * PARAM_SIZE;
+	float stored = 0.0f;
+	memcpy(&stored, &g_local_data[pos], PARAM_SIZE);
+	if ((uint32_t)stored == (uint32_t)TUNING_SCHEMA_VERSION) return;
+
+	/* Force every tuning + schema default. Iterate the defaults table and
+	 * overwrite only IDs >= TUNING_FIRST and the schema slot. */
+	for (size_t i = 0; i < sizeof(default_storage)/sizeof(default_storage[0]); i++) {
+		param_id_e id = default_storage[i].id;
+		if (id != PARAM_ID_TUNING_SCHEMA &&
+		    (id < PARAM_ID_TUNING_FIRST || id > PARAM_ID_TUNING_LAST)) continue;
+		uint32_t p = (uint32_t)id * PARAM_SIZE;
+		if (p >= DATA_STORAGE_SIZE) continue;
+		memcpy(&g_local_data[p], &default_storage[i].value, PARAM_SIZE);
+	}
+	uint32_t checksum = crc32(g_local_data, DATA_STORAGE_SIZE);
+	memcpy(&g_local_data[DATA_STORAGE_SIZE], &checksum, CHECKSUM_SIZE);
+	platform_storage_write(0, LOCAL_STORAGE_SIZE, g_local_data);
+}
+
 void local_storage_setup(void) {
 #if SHOULD_CLEAR_STORAGE
 	// Clear storage and save defaults
@@ -304,6 +352,11 @@ void local_storage_setup(void) {
 
 	// Load flash memory data once at startup
 	load_local_data();
+
+	// Schema-version check: forces tuning defaults on firmware upgrades that
+	// change tuning_params_t field layout. Runs after load so it can compare
+	// the stored version against TUNING_SCHEMA_VERSION.
+	check_tuning_schema();
 
 	// Subscribe to save/load requests
 	subscribe(LOCAL_STORAGE_SAVE, local_storage_save);

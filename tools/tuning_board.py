@@ -42,11 +42,11 @@ DB_CMD_RESET         = 0x07
 DB_CMD_TUNING        = 0x0A
 
 PARAMS_PER_PAGE = 26
-TOTAL_PARAMS    = 128
-TOTAL_PAGES     = 5
+TOTAL_PARAMS    = 144
+TOTAL_PAGES     = 6
 TUNING_FIRST    = 48
-TUNING_LAST     = 118
-TUNING_COUNT    = 71  # 48..118 contiguous
+TUNING_LAST     = 128
+TUNING_COUNT    = 81  # 48..128 contiguous
 
 # --- Tuning Parameters: (param_id, field_name, display_name, default_value) ---
 TUNING_PARAMS = [
@@ -129,6 +129,20 @@ TUNING_PARAMS = [
     (115, 'rc_xy_scale',        'RC XY Scale',                0.01),
     (116, 'rc_z_scale',         'RC Z Scale',                 0.04),
     (117, 'rc_yaw_scale',       'RC Yaw Scale',              -0.5),
+    # --- Sensor latency compensation (IDs 118-121, ms) ---
+    (118, 'est_latency_baro_ms',     'Latency Baro (ms)',        30.0),
+    (119, 'est_latency_lidar_ms',    'Latency Lidar (ms)',       30.0),
+    (120, 'est_latency_optflow_ms',  'Latency Optflow (ms)',     50.0),
+    (121, 'est_latency_gps_ms',      'Latency GPS (ms)',        100.0),
+    # --- Sensor health timeouts (IDs 122-126, ms) ---
+    (122, 'est_timeout_gps_ms',      'Timeout GPS (ms)',       2000.0),
+    (123, 'est_timeout_optflow_ms',  'Timeout Optflow (ms)',    200.0),
+    (124, 'est_timeout_lidar_ms',    'Timeout Lidar (ms)',      200.0),
+    (125, 'est_timeout_mag_ms',      'Timeout Mag (ms)',        500.0),
+    (126, 'est_timeout_baro_ms',     'Timeout Baro (ms)',       500.0),
+    # --- Filter divergence + control loop fade (IDs 127-128) ---
+    (127, 'est_p_runaway_pos_m2',     'P-pos runaway (m²)',     100.0),
+    (128, 'ctl_position_loop_fade_s', 'Pos loop fade (s)',        3.0),
 ]
 
 CATEGORIES = [
@@ -139,6 +153,8 @@ CATEGORIES = [
     ('Pos Estimation',   [(91, 101)]),
     ('FFT/Notch',        [(102, 104)]),
     ('Flight State',     [(105, 108)]),
+    ('Sensor Latency',   [(118, 121)]),
+    ('Sensor Health',    [(122, 128)]),
 ]
 
 # --- UI Colors ---

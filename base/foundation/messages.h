@@ -49,7 +49,15 @@ typedef enum {
 	PARAM_ID_GYRO_TEMP_Z_B = 38,   // Z: b*T
 	PARAM_ID_GYRO_TEMP_Z_C = 39,   // Z: c
 
-	// === Tuning Parameters (IDs 48-118) ===
+	// Tuning schema version stamp (ID 47).
+	// On boot, local_storage compares the stored value against the compiled-in
+	// TUNING_SCHEMA_VERSION; on mismatch, all tuning slots (IDs 48..TUNING_LAST)
+	// are forced back to compiled defaults and the new version is written.
+	// Bump TUNING_SCHEMA_VERSION (in local_storage.c) any time tuning_params_t
+	// field IDs change meaning. Calibration params (IDs <48) are never touched.
+	PARAM_ID_TUNING_SCHEMA = 47,
+
+	// === Tuning Parameters (IDs 48-128) ===
 
 	// Attitude PID (22 params: 6 per axis + 4 shared)
 	PARAM_ID_ATT_ROLL_P = 48,
@@ -141,12 +149,27 @@ typedef enum {
 	PARAM_ID_RC_Z_SCALE   = 116,
 	PARAM_ID_RC_YAW_SCALE = 117,
 
-	// Tuning boundary markers
-	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,     // 48
-	PARAM_ID_TUNING_LAST  = PARAM_ID_RC_YAW_SCALE,   // 117
-	PARAM_ID_TUNING_COUNT = 70,
+	// Sensor latency compensation for state estimator (4 params, ms)
+	PARAM_ID_EST_LATENCY_BARO_MS    = 118,
+	PARAM_ID_EST_LATENCY_LIDAR_MS   = 119,
+	PARAM_ID_EST_LATENCY_OPTFLOW_MS = 120,
+	PARAM_ID_EST_LATENCY_GPS_MS     = 121,
 
-	PARAM_ID_MAX = 128,
+	// Sensor health timeouts + filter divergence + control loop fade (7 params)
+	PARAM_ID_EST_TIMEOUT_GPS_MS     = 122,
+	PARAM_ID_EST_TIMEOUT_OPTFLOW_MS = 123,
+	PARAM_ID_EST_TIMEOUT_LIDAR_MS   = 124,
+	PARAM_ID_EST_TIMEOUT_MAG_MS     = 125,
+	PARAM_ID_EST_TIMEOUT_BARO_MS    = 126,
+	PARAM_ID_EST_P_RUNAWAY_POS_M2   = 127,
+	PARAM_ID_CTL_POSITION_LOOP_FADE_S = 128,
+
+	// Tuning boundary markers
+	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,                    // 48
+	PARAM_ID_TUNING_LAST  = PARAM_ID_CTL_POSITION_LOOP_FADE_S,      // 128
+	PARAM_ID_TUNING_COUNT = 81,
+
+	PARAM_ID_MAX = 144,
 } param_id_e;
 
 typedef struct {
@@ -236,6 +259,28 @@ typedef struct {
 	float rc_xy_scale;
 	float rc_z_scale;
 	float rc_yaw_scale;
+	// Sensor latency compensation (4 floats, IDs 118-121, milliseconds).
+	// Used by state_estimation to time-align measurements with IMU history
+	// (Stage-2 GPS rewind in fusion6 + first-order lag for the rest).
+	float est_latency_baro_ms;
+	float est_latency_lidar_ms;
+	float est_latency_optflow_ms;
+	float est_latency_gps_ms;
+	// Sensor freshness timeouts (5 floats, IDs 122-126, milliseconds).
+	// fusion6_check_health clears the corresponding *_fresh bit in state_t.flags
+	// when (now - last_update_us) exceeds these.
+	float est_timeout_gps_ms;
+	float est_timeout_optflow_ms;
+	float est_timeout_lidar_ms;
+	float est_timeout_mag_ms;
+	float est_timeout_baro_ms;
+	// Filter divergence threshold (1 float, ID 127, m^2). When trace(P_pos) exceeds
+	// this, position_diverged bit is set in state_t.flags.
+	float est_p_runaway_pos_m2;
+	// Position outer-loop fade-out time (1 float, ID 128, seconds). When the
+	// graceful-degradation contract disengages the position loop, commands ramp
+	// to zero over this duration.
+	float ctl_position_loop_fade_s;
 } tuning_params_t;
 
 // Calibration data delivery structs (calibration module → sensor modules)
