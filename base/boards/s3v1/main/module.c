@@ -39,7 +39,7 @@ void platform_setup(void) {
 	state_control_setup();
 	mix_control_setup();
 	optflow_setup();
-	//gps_setup();
+	gps_setup();
 	//gps_navigation_setup();
 	//gps_denied_navigation_setup();
 	rc_receiver_setup();
