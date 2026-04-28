@@ -50,6 +50,7 @@ typedef enum {
 	ANGULAR_STATE_UPDATE,
 	LINEAR_ACCEL_UPDATE,
 	POSITION_STATE_UPDATE,
+	STATE_UPDATE,            /* nav_state_t — unified ESKF (fusion6) snapshot @ 25 Hz */
 
 	// --- Control ---
 	ANGULAR_TARGET_UPDATE,

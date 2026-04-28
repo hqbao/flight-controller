@@ -440,6 +440,32 @@ typedef struct {
 } sensor_health_t;
 
 
+// --- Unified Navigation State (state_estimation → consumers, @ 25 Hz) ---
+//
+// Snapshot of the full ESKF (fusion6) estimate. NED frame throughout.
+// Published on STATE_UPDATE. All modules that need position / velocity /
+// attitude / bias should subscribe here instead of legacy QUAT/ANGULAR/
+// LINEAR_ACCEL/POSITION_STATE topics. Phase 4 deletes the legacy estimators.
+
+typedef struct {
+	vector3d_t position;       // NED, m  (X=North, Y=East, Z=Down)
+	vector3d_t velocity;       // NED, m/s
+	float      q[4];           // quaternion body→earth, [w,x,y,z]
+	angle3d_t  euler;          // roll/pitch/yaw, degrees
+	vector3d_t accel_body;     // linear acceleration, body frame, m/s² (gravity removed)
+	vector3d_t accel_earth;    // linear acceleration, earth frame, m/s² (positive-up Z)
+	vector3d_t gyro_bias;      // rad/s
+	vector3d_t accel_bias;     // m/s²
+	double     baro_bias;      // m
+	double     trace_P_pos;    // m²
+	double     trace_P_vel;    // (m/s)²
+	double     trace_P_att;    // rad²
+	uint16_t   health_flags;   // FUSION6_HF_* bitmask (mirrored)
+	uint8_t    init_done;      // 1 once static init completed and filter is trustworthy
+	uint8_t    _pad;
+} nav_state_t;
+
+
 // --- FFT Peak Detection (fft module → notch_filter module) ---
 
 #define FFT_NUM_PEAKS  3   /* Per-band peak slots (low / mid / high) */
