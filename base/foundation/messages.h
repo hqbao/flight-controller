@@ -484,11 +484,11 @@ typedef struct {
 #define LOG_CLASS_NONE                  0x00
 #define LOG_CLASS_IMU_ACCEL_RAW         0x01
 #define LOG_CLASS_COMPASS               0x02
-#define LOG_CLASS_ATTITUDE              0x03  // v_pred, v_true, v_linear_acc (body)
-#define LOG_CLASS_POSITION              0x04
+// 0x03 LOG_CLASS_ATTITUDE      — removed (legacy attitude_estimation deleted in Phase 4)
+#define LOG_CLASS_POSITION              0x04  // reserved — will be repurposed for state_estimation
 #define LOG_CLASS_FFT_GYRO_Z            0x05  // removed (was host-side FFT)
-#define LOG_CLASS_POSITION_OPTFLOW      0x06
-#define LOG_CLASS_ATTITUDE_MAG          0x07  // raw mag, earth mag, v_pred
+// 0x06 LOG_CLASS_POSITION_OPTFLOW — removed (legacy position_estimation deleted in Phase 4)
+// 0x07 LOG_CLASS_ATTITUDE_MAG     — removed (legacy attitude_estimation deleted in Phase 4)
 #define LOG_CLASS_GYRO_CAL              0x08
 #define LOG_CLASS_HEART_BEAT            0x09
 #define LOG_CLASS_IMU_ACCEL_CALIB       0x0A
@@ -500,7 +500,7 @@ typedef struct {
 #define LOG_CLASS_STORAGE               0x10
 #define LOG_CLASS_MIX_CONTROL           0x11
 #define LOG_CLASS_FLIGHT_TELEMETRY     0x12
-#define LOG_CLASS_ATTITUDE_EARTH       0x13  // v_pred, v_true, v_linear_acc (earth)
+// 0x13 LOG_CLASS_ATTITUDE_EARTH   — removed (legacy attitude_estimation deleted in Phase 4)
 #define LOG_CLASS_FFT_SPECTRUM_DUAL_X  0x14  // raw + filtered spectrum side-by-side, X axis
 #define LOG_CLASS_FFT_SPECTRUM_DUAL_Y  0x15  // raw + filtered spectrum side-by-side, Y axis
 #define LOG_CLASS_FFT_SPECTRUM_DUAL_Z  0x16  // raw + filtered spectrum side-by-side, Z axis
@@ -509,7 +509,7 @@ typedef struct {
 #define LOG_CLASS_FFT_SPECTRUM_Y       0x19
 #define LOG_CLASS_FFT_SPECTRUM_Z       0x1A
 #define LOG_CLASS_RC_RECEIVER          0x1B
-#define LOG_CLASS_POSITION_COMPARE     0x1C  // fusion5 vs fusion4 comparison (12 floats)
+// 0x1C LOG_CLASS_POSITION_COMPARE — removed (legacy position_estimation deleted in Phase 4)
 #define LOG_CLASS_TROUBLESHOOT_ACCEL   0x1D  // accel raw LSB min/max/clip-count diagnostic
 #define LOG_CLASS_GPS                  0x1E  // gps_log_t (48 bytes) at GPS update rate
 

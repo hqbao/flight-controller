@@ -33,10 +33,6 @@ SEND_LOG_ID = 0x00
 LOG_CLASS_NONE              = 0x00
 LOG_CLASS_IMU_ACCEL_RAW     = 0x01
 LOG_CLASS_COMPASS           = 0x02
-LOG_CLASS_ATTITUDE          = 0x03
-LOG_CLASS_POSITION          = 0x04
-LOG_CLASS_POSITION_OPTFLOW  = 0x06
-LOG_CLASS_ATTITUDE_MAG      = 0x07
 LOG_CLASS_GYRO_CAL          = 0x08
 LOG_CLASS_HEART_BEAT        = 0x09
 LOG_CLASS_IMU_ACCEL_CALIB   = 0x0A
@@ -46,7 +42,6 @@ LOG_CLASS_COMPASS_CALIB     = 0x0D
 LOG_CLASS_STORAGE           = 0x10
 LOG_CLASS_MIX_CONTROL       = 0x11
 LOG_CLASS_FLIGHT_TELEMETRY  = 0x12
-LOG_CLASS_ATTITUDE_EARTH    = 0x13
 LOG_CLASS_FFT_SPECTRUM_DUAL_X = 0x14
 LOG_CLASS_FFT_SPECTRUM_DUAL_Y = 0x15
 LOG_CLASS_FFT_SPECTRUM_DUAL_Z = 0x16
@@ -68,11 +63,6 @@ LOG_CLASS_TESTS = [
     (LOG_CLASS_IMU_GYRO_CALIB,   "IMU Gyro Cal",     16, 3.0),
     (LOG_CLASS_COMPASS,          "Compass Raw",       12, 3.0),
     (LOG_CLASS_COMPASS_CALIB,    "Compass Cal",       12, 3.0),
-    (LOG_CLASS_ATTITUDE,         "Attitude Body",     36, 3.0),
-    (LOG_CLASS_ATTITUDE_EARTH,   "Attitude Earth",    36, 3.0),
-    (LOG_CLASS_ATTITUDE_MAG,     "Attitude Mag",      36, 3.0),
-    (LOG_CLASS_POSITION,         "Position",          24, 3.0),
-    (LOG_CLASS_POSITION_OPTFLOW, "Pos OptFlow",       24, 3.0),
     (LOG_CLASS_MIX_CONTROL,      "Mix Control",       32, 3.0),
     (LOG_CLASS_FLIGHT_TELEMETRY, "Telemetry",         66, 3.0),
     (LOG_CLASS_RC_RECEIVER,      "RC Receiver",       28, 3.0),

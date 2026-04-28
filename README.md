@@ -86,15 +86,8 @@ flight-controller/
 │   ├── mix_control_bicopter_test.py #   Bicopter tilt-rotor output visualizer
 │   ├── fft_spectrum_view.py        #   Real-time spectrogram + peak overlay
 │   ├── fft_spectrum_dual_view.py   #   Raw vs post-notch spectrograms (side-by-side)
-│   ├── attitude_estimation_view.py#   Attitude fusion dashboard (3D vectors + data panel)
-│   ├── attitude_estimation_mag_view.py # Magnetometer debug dashboard (3D + heading)
-│   ├── position_estimation_2d_and_z.py # Position dashboard (2D map + altitude + velocity)
-│   ├── position_estimation_chart.py    # Position/velocity time-series (2×2 grid)
-│   ├── position_estimation_optflow.py  # Optical flow & altitude sensor viewer
-│   ├── position_estimation_compare.py  # Fusion5 vs Fusion4 comparison
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
-│   ├── linear_accel_view.py       #   Linear-accel time-series (vibration bias diagnostic)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
@@ -371,11 +364,11 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_NONE` | `0x00` | — | Stops all logging |
 | `LOG_CLASS_IMU_ACCEL_RAW` | `0x01` | `imu.c` | Raw accelerometer + temperature (4 floats) |
 | `LOG_CLASS_COMPASS` | `0x02` | `compass.c` | Raw magnetometer (3 floats) |
-| `LOG_CLASS_ATTITUDE` | `0x03` | `attitude_estimation.c` | Attitude vectors (9 floats) |
-| `LOG_CLASS_POSITION` | `0x04` | `position_estimation.c` | Position & velocity (6 floats) |
+| `LOG_CLASS_ATTITUDE` | `0x03` | — | *(Removed — `attitude_estimation.c` deleted in Phase 4)* |
+| `LOG_CLASS_POSITION` | `0x04` | — | *(Reserved — was `position_estimation.c`, deleted in Phase 4. Will be repurposed for `state_estimation` output.)* |
 | `LOG_CLASS_FFT_GYRO_Z` | `0x05` | — | *(Removed — was host-side FFT raw gyro streaming)* |
-| `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | `position_estimation.c` | Optical flow & altitude (6 floats) |
-| `LOG_CLASS_ATTITUDE_MAG` | `0x07` | `attitude_estimation.c` | Mag debug: raw, earth, attitude (9 floats) |
+| `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
+| `LOG_CLASS_ATTITUDE_MAG` | `0x07` | — | *(Removed — `attitude_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_GYRO_CAL` | `0x08` | — | *(Reserved — gyro calibration moved to Python tool)* |
 | `LOG_CLASS_HEART_BEAT` | `0x09` | `dblink` | Heartbeat counter (1 float, 1 Hz) — active by default on power-up |
 | `LOG_CLASS_IMU_ACCEL_CALIB` | `0x0A` | `imu.c` | Calibrated accelerometer + temperature (4 floats) |
@@ -387,7 +380,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_STORAGE` | `0x10` | `local_storage.c` | Stored params (104 params in 4 pages: 26 floats × 4, auto-stops) |
 | `LOG_CLASS_MIX_CONTROL` | `0x11` | `quadcopter.c` / `bicopter.c` | Motor/servo outputs (8 floats, 10 Hz) |
 | `LOG_CLASS_FLIGHT_TELEMETRY` | `0x12` | `flight_telemetry.c` | Full telemetry frame (66 bytes, 10 Hz) |
-| `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | `attitude_estimation.c` | Earth-frame attitude vectors (9 floats): v_pred, v_true, v_linear_acc_earth_frame |
+| `LOG_CLASS_ATTITUDE_EARTH` | `0x13` | — | *(Removed — `attitude_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_FFT_SPECTRUM_DUAL_X` | `0x14` | `fft.c` | Raw + filtered spectrum side-by-side, X axis (231 bytes: 1 + 2×103 bins + 2×12 peaks, 10 Hz) |
 | `LOG_CLASS_FFT_SPECTRUM_DUAL_Y` | `0x15` | `fft.c` | Raw + filtered spectrum side-by-side, Y axis (231 bytes, 10 Hz) |
 | `LOG_CLASS_FFT_SPECTRUM_DUAL_Z` | `0x16` | `fft.c` | Raw + filtered spectrum side-by-side, Z axis (231 bytes, 10 Hz) |
@@ -396,7 +389,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_FFT_SPECTRUM_Y` | `0x19` | `fft.c` | Spectrum + peaks combined frame, Y axis (116 bytes: 1 + 103 bins + 12 peaks, 10 Hz) |
 | `LOG_CLASS_FFT_SPECTRUM_Z` | `0x1A` | `fft.c` | Spectrum + peaks combined frame, Z axis (116 bytes: 1 + 103 bins + 12 peaks, 10 Hz) |
 | `LOG_CLASS_RC_RECEIVER` | `0x1B` | `rc_receiver.c` | RC inputs (7 floats: roll, pitch, yaw, alt, state, mode, msg_count, 25 Hz) |
-| `LOG_CLASS_POSITION_COMPARE` | `0x1C` | `position_estimation.c` | Fusion5 vs Fusion4 comparison (12 floats: F5 pos/vel + F4 pos/vel, 25 Hz) |
+| `LOG_CLASS_POSITION_COMPARE` | `0x1C` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
 | `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
 
@@ -407,15 +400,8 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 
 | Tool | Purpose |
 |------|---------|  
-| `attitude_estimation_view.py` | Attitude fusion dashboard: 3D vectors (gyro prediction, fused estimate, linear accel), data panel with error/tilt metrics |
-| `attitude_estimation_mag_view.py` | Magnetometer debug dashboard: 3D vectors (raw mag, tilt-compensated, gravity), heading readout with compass direction |
-| `position_estimation_2d_and_z.py` | Position dashboard: 2D map with trail + velocity arrow, data panel, altitude & velocity charts |
-| `position_estimation_chart.py` | Position/velocity time-series (2×2 grid) with live value annotations |
-| `position_estimation_optflow.py` | Optical flow (downward/upward) & altitude sensors (range finder/barometer) time-series |
-| `position_estimation_compare.py` | Fusion5 vs Fusion4 side-by-side comparison (2×3 grid: position + velocity, all axes) |
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
-| `linear_accel_view.py` | Linear-acceleration time-series (X/Y/Z) with running mean/std/peak — diagnoses vibration-induced DC bias and accel noise. Reuses `LOG_CLASS_ATTITUDE` / `LOG_CLASS_ATTITUDE_EARTH`. |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
