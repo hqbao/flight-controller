@@ -3,15 +3,12 @@
 #include <local_storage/local_storage.h>
 #include <imu/imu.h>
 #include <calibration/calibration.h>
-#include <attitude_estimation/attitude_estimation.h>
 #include <state_estimation/state_estimation.h>
 #include <air_pressure/air_pressure.h>
 #include <compass/compass.h>
-#include <attitude_control/attitude_control.h>
+#include <state_control/state_control.h>
 #include <mix_control/mix_control.h>
 #include <rc_receiver/rc_receiver.h>
-#include <position_estimation/position_estimation.h>
-#include <position_control/position_control.h>
 #include <gps_navigation/gps_navigation.h>
 #include <gps_denied_navigation/gps_denied_navigation.h>
 #include <optflow/optflow.h>
@@ -39,12 +36,9 @@ void platform_setup(void) {
 	air_pressure_setup();
 	compass_setup();
 	fault_detector_setup();
-	attitude_estimation_setup();
 	state_estimation_setup();
-	attitude_control_setup();
+	state_control_setup();
 	mix_control_setup();
-	position_estimation_setup();
-	position_control_setup();
 	optflow_setup();
 	//gps_setup();
 	//gps_navigation_setup();

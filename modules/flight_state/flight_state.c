@@ -158,8 +158,9 @@ static void on_state_update(uint8_t *data, size_t size) {
 }
 
 static void angular_state_update(uint8_t *data, size_t size) {
-	if (size > sizeof(angle3d_t)) size = sizeof(angle3d_t);
-	memcpy(&g_angular_state, data, size);
+	if (size < sizeof(nav_state_t)) return;
+	nav_state_t *s = (nav_state_t *)data;
+	g_angular_state = s->euler;
 }
 
 static void on_tuning_ready(uint8_t *data, size_t size) {
@@ -181,7 +182,7 @@ void flight_state_setup(void) {
 	subscribe(RC_STATE_UPDATE, state_control_update);
 	subscribe(RC_MOVE_IN_UPDATE, move_in_control_update);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, optflow_sensor_update);
-	subscribe(ANGULAR_STATE_UPDATE, angular_state_update);
+	subscribe(STATE_UPDATE, angular_state_update);
 	subscribe(PILOT_CTL_SCHEDULER, on_state_update);
 	subscribe(TUNING_READY, on_tuning_ready);
 }

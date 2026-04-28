@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include <vector3d.h>
+#include <messages.h>
 
 #define WAYPOINT_THRESHOLD 20.0  // cm (local coordinate system)
 #define MAX_WAYPOINTS 10
@@ -25,9 +26,10 @@ static double calculate_distance(vector3d_t *p1, vector3d_t *p2) {
 }
 
 static void position_state_update(uint8_t *data, size_t size) {
-	// Receive current position from position_estimation
-	memcpy(&g_current_position, data, sizeof(vector3d_t));
-	memcpy(&g_current_velocity, &data[sizeof(vector3d_t)], sizeof(vector3d_t));
+	if (size < sizeof(nav_state_t)) return;
+	nav_state_t *s = (nav_state_t *)data;
+	g_current_position = s->position;
+	g_current_velocity = s->velocity;
 }
 
 static void navigation_update(uint8_t *data, size_t size) {
@@ -82,6 +84,6 @@ void gps_denied_navigation_setup(void) {
 	g_current_waypoint_index = 0;
 	g_mission_active = 0;
 	
-	subscribe(POSITION_STATE_UPDATE, position_state_update);
+	subscribe(STATE_UPDATE, position_state_update);
 	subscribe(SCHEDULER_10HZ, navigation_update);
 }

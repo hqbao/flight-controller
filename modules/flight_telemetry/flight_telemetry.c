@@ -43,23 +43,18 @@ static uint8_t g_log_class;
 
 // --- Callbacks ---
 
-static void on_angular_state(uint8_t *data, size_t size) {
-	if (size < sizeof(angle3d_t)) return;
-	angle3d_t *a = (angle3d_t *)data;
-	g_att_roll  = (float)a->roll;
-	g_att_pitch = (float)a->pitch;
-	g_att_yaw   = (float)a->yaw;
-}
-
-static void on_position_state(uint8_t *data, size_t size) {
-	if (size < sizeof(position_state_t)) return;
-	position_state_t *p = (position_state_t *)data;
-	g_pos_x = (float)p->position.x;
-	g_pos_y = (float)p->position.y;
-	g_pos_z = (float)p->position.z;
-	g_vel_x = (float)p->velocity.x;
-	g_vel_y = (float)p->velocity.y;
-	g_vel_z = (float)p->velocity.z;
+static void on_state_update(uint8_t *data, size_t size) {
+	if (size < sizeof(nav_state_t)) return;
+	nav_state_t *s = (nav_state_t *)data;
+	g_att_roll  = (float)s->euler.roll;
+	g_att_pitch = (float)s->euler.pitch;
+	g_att_yaw   = (float)s->euler.yaw;
+	g_pos_x = (float)s->position.x;
+	g_pos_y = (float)s->position.y;
+	g_pos_z = (float)s->position.z;
+	g_vel_x = (float)s->velocity.x;
+	g_vel_y = (float)s->velocity.y;
+	g_vel_z = (float)s->velocity.z;
 }
 
 static void on_speed_control(uint8_t *data, size_t size) {
@@ -142,8 +137,7 @@ static void loop_10hz(uint8_t *data, size_t size) {
 }
 
 void flight_telemetry_setup(void) {
-	subscribe(ANGULAR_STATE_UPDATE, on_angular_state);
-	subscribe(POSITION_STATE_UPDATE, on_position_state);
+	subscribe(STATE_UPDATE, on_state_update);
 	subscribe(SPEED_CONTROL_UPDATE, on_speed_control);
 	subscribe(MIX_CONTROL_UPDATE, on_mix_control);
 	subscribe(FLIGHT_STATE_UPDATE, on_flight_state);

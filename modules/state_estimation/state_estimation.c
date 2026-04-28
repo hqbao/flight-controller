@@ -77,6 +77,9 @@ static int32_t  g_gps_lat0_e7    = 0;
 static int32_t  g_gps_lon0_e7    = 0;
 static int32_t  g_gps_alt0_mm    = 0;
 
+/* Forward decl — defined below; called from on_accel at 500 Hz. */
+static void publish_state(void);
+
 /* ============================================================
  * Helpers
  * ============================================================ */
@@ -158,6 +161,10 @@ static void on_accel(uint8_t *data, size_t size) {
 
 	/* Gravity update at accel rate. */
 	fusion6_update_accel(&g_f, g_last_accel_body);
+
+	/* Publish full state at accel rate (500 Hz) so the inner attitude
+	 * controller reading STATE_UPDATE has fresh attitude. */
+	publish_state();
 }
 
 static void on_compass(uint8_t *data, size_t size) {
@@ -291,19 +298,44 @@ static void on_tuning_ready(uint8_t *data, size_t size) {
 
 	g_cfg.p_runaway_pos_m2 = t.est_p_runaway_pos_m2;
 
+	/* Process noise (Q) */
+	g_cfg.sigma_accel      = t.est_q_accel;
+	g_cfg.sigma_gyro       = t.est_q_gyro;
+	g_cfg.sigma_bias_accel = t.est_q_ba;
+	g_cfg.sigma_bias_gyro  = t.est_q_bg;
+	g_cfg.sigma_bias_baro  = t.est_q_bbaro;
+
+	/* Measurement noise (R) */
+	g_cfg.R_accel       = t.est_r_accel;
+	g_cfg.R_mag_yaw     = t.est_r_mag_yaw;
+	g_cfg.R_baro        = t.est_r_baro;
+	g_cfg.R_lidar       = t.est_r_lidar;
+	g_cfg.R_optflow     = t.est_r_optflow;
+	g_cfg.R_gps_pos_xy  = t.est_r_gps_pos_h;
+	g_cfg.R_gps_vel     = t.est_r_gps_vel;
+
+	/* Innovation gating */
+	g_cfg.accel_mag_gate = t.est_accel_g_tol;
+
 	/* Live-mirror into the running filter so the new values take effect on
-	 * the next call. fusion6 reads these out of f->cfg every step. */
+	 * the next call. fusion6 reads these out of f->cfg every step.
+	 * NOTE: est_chi2_pos/vel and est_gps_lever_x/y/z are reserved tunables;
+	 * fusion6_config_t does not currently expose chi-square gates or GPS
+	 * lever-arm fields, so they stay in tuning_params_t for future use. */
 	memcpy(&g_f.cfg, &g_cfg, sizeof(fusion6_config_t));
 }
 
 /* ============================================================
- * 25 Hz publish + health
+ * Publish helpers
+ *
+ * publish_state() is called at accel rate (500 Hz) from on_accel so that
+ * the inner attitude controller — running at ATT_CTL_SCHEDULER (500 Hz) —
+ * always sees fresh attitude. Health checks still run at 25 Hz from
+ * on_25hz to avoid flooding flight_state with redundant transitions.
  * ============================================================ */
 
-static void on_25hz(uint8_t *data, size_t size) {
+static void publish_state(void) {
 	if (!g_init_started) return;
-
-	fusion6_check_health(&g_f, g_now_us);
 
 	fusion6_state_t s;
 	fusion6_get_state(&g_f, &s);
@@ -331,6 +363,12 @@ static void on_25hz(uint8_t *data, size_t size) {
 	out._pad        = 0;
 
 	publish(STATE_UPDATE, (uint8_t *)&out, sizeof(out));
+}
+
+static void on_25hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (!g_init_started) return;
+	fusion6_check_health(&g_f, g_now_us);
 }
 
 /* ============================================================

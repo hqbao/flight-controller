@@ -59,39 +59,39 @@ typedef enum {
 
 	// === Tuning Parameters (IDs 48-128) ===
 
-	// Attitude PID (22 params: 6 per axis + 4 shared)
-	PARAM_ID_ATT_ROLL_P = 48,
-	PARAM_ID_ATT_ROLL_I = 49,
-	PARAM_ID_ATT_ROLL_D = 50,
-	PARAM_ID_ATT_ROLL_I_LIMIT = 51,
-	PARAM_ID_ATT_ROLL_P_LIMIT = 52,
-	PARAM_ID_ATT_ROLL_O_LIMIT = 53,
-	PARAM_ID_ATT_PITCH_P = 54,
-	PARAM_ID_ATT_PITCH_I = 55,
-	PARAM_ID_ATT_PITCH_D = 56,
-	PARAM_ID_ATT_PITCH_I_LIMIT = 57,
-	PARAM_ID_ATT_PITCH_P_LIMIT = 58,
-	PARAM_ID_ATT_PITCH_O_LIMIT = 59,
-	PARAM_ID_ATT_YAW_P = 60,
-	PARAM_ID_ATT_YAW_I = 61,
-	PARAM_ID_ATT_YAW_D = 62,
-	PARAM_ID_ATT_YAW_I_LIMIT = 63,
-	PARAM_ID_ATT_YAW_P_LIMIT = 64,
-	PARAM_ID_ATT_YAW_O_LIMIT = 65,
-	PARAM_ID_ATT_SMOOTH_INPUT = 66,
-	PARAM_ID_ATT_SMOOTH_P_TERM = 67,
-	PARAM_ID_ATT_SMOOTH_OUTPUT = 68,
-	PARAM_ID_ATT_GAIN_TIME = 69,
+	// Attitude PID (22 params: 6 per axis + 4 shared) — consumed by state_control inner loop
+	PARAM_ID_CTL_ATT_ROLL_P = 48,
+	PARAM_ID_CTL_ATT_ROLL_I = 49,
+	PARAM_ID_CTL_ATT_ROLL_D = 50,
+	PARAM_ID_CTL_ATT_ROLL_I_LIMIT = 51,
+	PARAM_ID_CTL_ATT_ROLL_P_LIMIT = 52,
+	PARAM_ID_CTL_ATT_ROLL_O_LIMIT = 53,
+	PARAM_ID_CTL_ATT_PITCH_P = 54,
+	PARAM_ID_CTL_ATT_PITCH_I = 55,
+	PARAM_ID_CTL_ATT_PITCH_D = 56,
+	PARAM_ID_CTL_ATT_PITCH_I_LIMIT = 57,
+	PARAM_ID_CTL_ATT_PITCH_P_LIMIT = 58,
+	PARAM_ID_CTL_ATT_PITCH_O_LIMIT = 59,
+	PARAM_ID_CTL_ATT_YAW_P = 60,
+	PARAM_ID_CTL_ATT_YAW_I = 61,
+	PARAM_ID_CTL_ATT_YAW_D = 62,
+	PARAM_ID_CTL_ATT_YAW_I_LIMIT = 63,
+	PARAM_ID_CTL_ATT_YAW_P_LIMIT = 64,
+	PARAM_ID_CTL_ATT_YAW_O_LIMIT = 65,
+	PARAM_ID_CTL_ATT_SMOOTH_INPUT = 66,
+	PARAM_ID_CTL_ATT_SMOOTH_P_TERM = 67,
+	PARAM_ID_CTL_ATT_SMOOTH_OUTPUT = 68,
+	PARAM_ID_CTL_ATT_GAIN_TIME = 69,
 
-	// Position Control (8 params)
-	PARAM_ID_POS_XY_P = 70,
-	PARAM_ID_POS_Z_P = 71,
-	PARAM_ID_POS_VELOC_XY_SCALE = 72,
-	PARAM_ID_POS_VELOC_Z_SCALE = 73,
-	PARAM_ID_POS_LPF_XY = 74,
-	PARAM_ID_POS_LPF_Z = 75,
-	PARAM_ID_POS_ANGLE_LIMIT = 76,
-	PARAM_ID_POS_RC_DEADBAND = 77,
+	// Position Control (8 params) — consumed by state_control outer loop
+	PARAM_ID_CTL_POS_XY_P = 70,
+	PARAM_ID_CTL_POS_Z_P = 71,
+	PARAM_ID_CTL_POS_VELOC_XY_SCALE = 72,
+	PARAM_ID_CTL_POS_VELOC_Z_SCALE = 73,
+	PARAM_ID_CTL_POS_LPF_XY = 74,
+	PARAM_ID_CTL_POS_LPF_Z = 75,
+	PARAM_ID_CTL_POS_ANGLE_LIMIT = 76,
+	PARAM_ID_CTL_POS_RC_DEADBAND = 77,
 
 	// Motor/Servo Limits (5 params)
 	PARAM_ID_MOTOR_MIN = 78,
@@ -100,28 +100,31 @@ typedef enum {
 	PARAM_ID_SERVO_MAX = 81,
 	PARAM_ID_SERVO_CENTER = 82,
 
-	// Attitude Estimation (8 params)
-	PARAM_ID_ATT_MAHONY_KP = 83,
-	PARAM_ID_ATT_MAHONY_KI = 84,
-	PARAM_ID_ATT_F3_BETA = 85,
-	PARAM_ID_ATT_F3_ZETA = 86,
-	PARAM_ID_ATT_ACCEL_SMOOTH = 87,
-	PARAM_ID_ATT_LIN_ACC_DECAY = 88,
-	PARAM_ID_ATT_LIN_ACCEL_MIN = 89,
-	PARAM_ID_ATT_LIN_ACCEL_MAX = 90,
+	// Estimator process & measurement noise (8 params, IDs 83-90).
+	// Repurposed from legacy attitude_estimation tuning slots.
+	// Wired into fusion6_config_t inside state_estimation.
+	PARAM_ID_EST_Q_ACCEL = 83,    // sigma_accel  (m/s² /√Hz)
+	PARAM_ID_EST_Q_GYRO  = 84,    // sigma_gyro   (rad/s /√Hz)
+	PARAM_ID_EST_Q_BA    = 85,    // sigma_bias_accel  (m/s³ /√Hz)
+	PARAM_ID_EST_Q_BG    = 86,    // sigma_bias_gyro   (rad/s² /√Hz)
+	PARAM_ID_EST_Q_BBARO = 87,    // sigma_bias_baro   (m/s /√Hz)
+	PARAM_ID_EST_R_ACCEL    = 88, // gravity-vector measurement std (m/s²)
+	PARAM_ID_EST_R_MAG_YAW  = 89, // mag yaw measurement std (rad)
+	PARAM_ID_EST_R_BARO     = 90, // baro altitude measurement std (m)
 
-	// Position Estimation (11 params)
-	PARAM_ID_PE_XY_S1_INTEG = 91,
-	PARAM_ID_PE_XY_S1_CORR = 92,
-	PARAM_ID_PE_XY_S2_INTEG = 93,
-	PARAM_ID_PE_XY_S2_CORR = 94,
-	PARAM_ID_PE_XY_V_FB = 95,
-	PARAM_ID_PE_Z_S1_INTEG = 96,
-	PARAM_ID_PE_Z_S1_CORR = 97,
-	PARAM_ID_PE_Z_S2_INTEG = 98,
-	PARAM_ID_PE_Z_S2_CORR = 99,
-	PARAM_ID_PE_Z_V_FB = 100,
-	PARAM_ID_PE_OPTFLOW_GAIN = 101,
+	// Estimator R-values for aiding sensors + gating + lever arms (11 params, IDs 91-101).
+	// Repurposed from legacy position_estimation tuning slots.
+	PARAM_ID_EST_R_LIDAR      = 91,  // lidar range std (m)
+	PARAM_ID_EST_R_OPTFLOW    = 92,  // optflow rate std (rad/s)
+	PARAM_ID_EST_R_GPS_POS_H  = 93,  // GPS horizontal position std (m)
+	PARAM_ID_EST_R_GPS_POS_V  = 94,  // GPS vertical position std (m)
+	PARAM_ID_EST_R_GPS_VEL    = 95,  // GPS velocity std (m/s)
+	PARAM_ID_EST_CHI2_POS     = 96,  // χ² gate threshold for position updates
+	PARAM_ID_EST_CHI2_VEL     = 97,  // χ² gate threshold for velocity updates
+	PARAM_ID_EST_ACCEL_G_TOL  = 98,  // |‖a‖−g| reject threshold (m/s²)
+	PARAM_ID_EST_GPS_LEVER_X  = 99,  // GPS antenna offset from IMU, body-X (m)
+	PARAM_ID_EST_GPS_LEVER_Y  = 100, // GPS antenna offset from IMU, body-Y (m)
+	PARAM_ID_EST_GPS_LEVER_Z  = 101, // GPS antenna offset from IMU, body-Z (m)
 
 	// FFT/Notch Filter (3 params)
 	PARAM_ID_NOTCH_Q = 102,
@@ -165,7 +168,7 @@ typedef enum {
 	PARAM_ID_CTL_POSITION_LOOP_FADE_S = 128,
 
 	// Tuning boundary markers
-	PARAM_ID_TUNING_FIRST = PARAM_ID_ATT_ROLL_P,                    // 48
+	PARAM_ID_TUNING_FIRST = PARAM_ID_CTL_ATT_ROLL_P,                // 48
 	PARAM_ID_TUNING_LAST  = PARAM_ID_CTL_POSITION_LOOP_FADE_S,      // 128
 	PARAM_ID_TUNING_COUNT = 81,
 
@@ -177,67 +180,68 @@ typedef struct {
 	float value;
 } param_storage_t;
 
-// Tuning parameters struct — fields are in 1:1 sequential order with PARAM_IDs 48-118
+// Tuning parameters struct — fields are in 1:1 sequential order with PARAM_IDs 48-128
 typedef struct {
-	// Attitude PID (22 floats, IDs 48-69)
-	float att_roll_p;
-	float att_roll_i;
-	float att_roll_d;
-	float att_roll_i_limit;
-	float att_roll_p_limit;
-	float att_roll_o_limit;
-	float att_pitch_p;
-	float att_pitch_i;
-	float att_pitch_d;
-	float att_pitch_i_limit;
-	float att_pitch_p_limit;
-	float att_pitch_o_limit;
-	float att_yaw_p;
-	float att_yaw_i;
-	float att_yaw_d;
-	float att_yaw_i_limit;
-	float att_yaw_p_limit;
-	float att_yaw_o_limit;
-	float att_smooth_input;
-	float att_smooth_p_term;
-	float att_smooth_output;
-	float att_gain_time;
-	// Position Control (8 floats, IDs 70-77)
-	float pos_xy_p;
-	float pos_z_p;
-	float pos_veloc_xy_scale;
-	float pos_veloc_z_scale;
-	float pos_lpf_xy;
-	float pos_lpf_z;
-	float pos_angle_limit;
-	float pos_rc_deadband;
+	// Attitude PID (22 floats, IDs 48-69) — state_control inner loop
+	float ctl_att_roll_p;
+	float ctl_att_roll_i;
+	float ctl_att_roll_d;
+	float ctl_att_roll_i_limit;
+	float ctl_att_roll_p_limit;
+	float ctl_att_roll_o_limit;
+	float ctl_att_pitch_p;
+	float ctl_att_pitch_i;
+	float ctl_att_pitch_d;
+	float ctl_att_pitch_i_limit;
+	float ctl_att_pitch_p_limit;
+	float ctl_att_pitch_o_limit;
+	float ctl_att_yaw_p;
+	float ctl_att_yaw_i;
+	float ctl_att_yaw_d;
+	float ctl_att_yaw_i_limit;
+	float ctl_att_yaw_p_limit;
+	float ctl_att_yaw_o_limit;
+	float ctl_att_smooth_input;
+	float ctl_att_smooth_p_term;
+	float ctl_att_smooth_output;
+	float ctl_att_gain_time;
+	// Position Control (8 floats, IDs 70-77) — state_control outer loop
+	float ctl_pos_xy_p;
+	float ctl_pos_z_p;
+	float ctl_pos_veloc_xy_scale;
+	float ctl_pos_veloc_z_scale;
+	float ctl_pos_lpf_xy;
+	float ctl_pos_lpf_z;
+	float ctl_pos_angle_limit;
+	float ctl_pos_rc_deadband;
 	// Motor/Servo (5 floats, IDs 78-82)
 	float motor_min;
 	float motor_max;
 	float servo_min;
 	float servo_max;
 	float servo_center;
-	// Attitude Estimation (8 floats, IDs 83-90)
-	float att_mahony_kp;
-	float att_mahony_ki;
-	float att_f3_beta;
-	float att_f3_zeta;
-	float att_accel_smooth;
-	float att_lin_acc_decay;
-	float att_lin_accel_min;
-	float att_lin_accel_max;
-	// Position Estimation (11 floats, IDs 91-101)
-	float pe_xy_s1_integ;
-	float pe_xy_s1_corr;
-	float pe_xy_s2_integ;
-	float pe_xy_s2_corr;
-	float pe_xy_v_fb;
-	float pe_z_s1_integ;
-	float pe_z_s1_corr;
-	float pe_z_s2_integ;
-	float pe_z_s2_corr;
-	float pe_z_v_fb;
-	float pe_optflow_gain;
+	// Estimator process & measurement noise (8 floats, IDs 83-90).
+	// Mirrored into fusion6_config_t at TUNING_READY by state_estimation.
+	float est_q_accel;       // sigma_accel  (m/s² /√Hz)
+	float est_q_gyro;        // sigma_gyro   (rad/s /√Hz)
+	float est_q_ba;          // sigma_bias_accel (m/s³ /√Hz)
+	float est_q_bg;          // sigma_bias_gyro  (rad/s² /√Hz)
+	float est_q_bbaro;       // sigma_bias_baro  (m/s /√Hz)
+	float est_r_accel;       // R_accel (m/s²)
+	float est_r_mag_yaw;     // R_mag_yaw (rad)
+	float est_r_baro;        // R_baro (m)
+	// Estimator R-values for aiding sensors + gating + lever arms (11 floats, IDs 91-101).
+	float est_r_lidar;       // R_lidar (m)
+	float est_r_optflow;     // R_optflow (rad/s)
+	float est_r_gps_pos_h;   // R_gps_pos horizontal (m)
+	float est_r_gps_pos_v;   // R_gps_pos vertical   (m)
+	float est_r_gps_vel;     // R_gps_vel (m/s)
+	float est_chi2_pos;      // χ² gate threshold for position updates
+	float est_chi2_vel;      // χ² gate threshold for velocity updates
+	float est_accel_g_tol;   // accel gravity-magnitude tolerance (m/s²)
+	float est_gps_lever_x;   // GPS antenna lever arm body-X (m)
+	float est_gps_lever_y;   // GPS antenna lever arm body-Y (m)
+	float est_gps_lever_z;   // GPS antenna lever arm body-Z (m)
 	// FFT/Notch (3 floats, IDs 102-104)
 	float notch_q;
 	float notch_min_hz;

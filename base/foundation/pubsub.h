@@ -46,16 +46,10 @@ typedef enum {
 	EXTERNAL_SENSOR_OPTFLOW,
 
 	// --- Estimation / fusion ---
-	QUAT_STATE_UPDATE,
-	ANGULAR_STATE_UPDATE,
-	LINEAR_ACCEL_UPDATE,
-	POSITION_STATE_UPDATE,
-	STATE_UPDATE,            /* nav_state_t — unified ESKF (fusion6) snapshot @ 25 Hz */
+	STATE_UPDATE,            /* nav_state_t — unified ESKF (fusion6) snapshot @ 500 Hz */
 
 	// --- Control ---
-	ANGULAR_TARGET_UPDATE,
 	POSITION_TARGET_UPDATE,
-	ALTITUDE_CONTROL_UPDATE,
 	MIX_CONTROL_UPDATE,
 	SPEED_CONTROL_SETUP,
 	SPEED_CONTROL_UPDATE,

@@ -175,9 +175,7 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
 - `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
 - `SENSOR_COMPASS` — Calibrated compass vector
-- `ANGULAR_STATE_UPDATE` — Estimated attitude (roll, pitch, yaw)
-- `LINEAR_ACCEL_UPDATE` — Gravity-removed acceleration, body + earth frame (from fusion)
-- `POSITION_STATE_UPDATE` — Estimated position and velocity
+- `STATE_UPDATE` — Unified ESKF (fusion6) `nav_state_t` snapshot @ 500 Hz: position, velocity, quaternion, euler, body+earth linear accel, biases, P-trace, health
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
 - `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → dblink)
 - `UART_RAW_RECEIVED` — Raw UART DMA bytes (from platform_uart → dblink)
@@ -260,7 +258,7 @@ The robotkit fusion library outputs `v_linear_acc` with **positive = direction o
 - **Move right then stop** → Y goes positive then negative
 - **Move up then stop** → Z goes positive then negative
 
-Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithms (fusion1–3). Consumers receive it directly via `LINEAR_ACCEL_UPDATE` — no manual negation needed.
+Z is positive-up (opposite to NED Z-down). This convention is applied inside the fusion algorithms. Consumers read `nav_state_t.accel_body` / `accel_earth` from `STATE_UPDATE` directly — no manual negation needed.
 
 ### Position Estimation Frames
 - **X/Y (horizontal)**: Uses **body-frame** linear acceleration (`la.body.x/y`) — matches optical flow sensor which measures in the body frame
