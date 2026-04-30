@@ -18,7 +18,7 @@ If a sensor disconnects, its stale value keeps getting pushed → the window fil
 |--------|-------------|---------------|
 | Gyro | 3-axis float | gx, gy, gz (rad/s) |
 | Accel | 3-axis float | ax, ay, az (m/s²) |
-| Compass | 3-axis float | mx, my, mz (µT) |
+| Compass | 3-axis float | mx, my, mz (calibrated sensor-frame unit vector) |
 | Barometer | 1-axis double | pressure (Pa) |
 | Optflow down | 1-axis double | clarity (0–100+) |
 | Optflow up | 1-axis double | clarity (0–100+) |
@@ -41,7 +41,7 @@ If a sensor disconnects, its stale value keeps getting pushed → the window fil
 | `SENSOR_HEALTH_REQUEST` | Subscribes | — | Re-publishes current health on demand |
 | `SENSOR_IMU1_GYRO_UPDATE` | Subscribes | 3×float | Gyro data |
 | `SENSOR_IMU1_ACCEL_UPDATE` | Subscribes | 3×float | Accel data |
-| `SENSOR_COMPASS` | Subscribes | `vector3d_t` | Compass data |
+| `SENSOR_COMPASS` | Subscribes | `vector3d_t` | Calibrated sensor-frame compass unit vector |
 | `SENSOR_AIR_PRESSURE` | Subscribes | double | Barometer data |
 | `EXTERNAL_SENSOR_OPTFLOW` | Subscribes | `optflow_data_t` | Optflow data (down + up) |
 | `EXTERNAL_SENSOR_GPS_QUALITY` | Subscribes | `gps_quality_t` | GPS quality data |

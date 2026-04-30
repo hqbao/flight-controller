@@ -1,18 +1,21 @@
 /**
- * STATE_ESTIMATION — simplified glue around fusion6 (gyro + accel only).
+ * STATE_ESTIMATION — simplified glue around fusion6 (gyro + accel + mag).
  *
  * Sensor flow:
  *   IMU gyro  (1 kHz, post-notch) → on_gyro  → fusion6_predict
  *   IMU accel (500 Hz)           → on_accel → fusion6_update_accel
  *                                            → publish STATE_UPDATE @ 500 Hz
+ *   Compass   (25 Hz, unit vec)  → on_compass → mag_axis_map
+ *                                             → fusion6_update_mag
  *
- * Other sensors (compass, baro, optflow, GPS) are intentionally NOT wired
- * here — they will be reintroduced once the core attitude/inertial path is
- * proven on hardware.
+ * Other sensors (baro, optflow, GPS) are intentionally NOT wired here yet —
+ * they will be reintroduced once the core attitude/inertial path is proven on
+ * hardware.
  *
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
+ *   LOG_CLASS_MAG_FUSION  (25 Hz, 11×float)    — tools/mag_fusion_view.py
  */
 
 #include "state_estimation.h"
@@ -81,6 +84,10 @@ static inline void map_accel(const float raw_lsb[3], double out_body_mps2[3]) {
 	imu_axis_map_accel(ax, ay, az, out_body_mps2);
 }
 
+static inline void map_mag(const vector3d_t *sensor_unit, double out_body_unit[3]) {
+	mag_axis_map(sensor_unit->x, sensor_unit->y, sensor_unit->z, out_body_unit);
+}
+
 static void static_init_step(void) {
 	fusion6_static_init_sample(&g_f, g_last_accel_body, g_last_gyro_body);
 	g_static_count++;
@@ -138,9 +145,7 @@ static void on_accel(uint8_t *data, size_t size) {
 static void on_compass(uint8_t *data, size_t size) {
 	if (size < sizeof(vector3d_t)) return;
 	vector3d_t *m = (vector3d_t *)data;
-	g_last_mag_meas[0] = m->x;
-	g_last_mag_meas[1] = m->y;
-	g_last_mag_meas[2] = m->z;
+	map_mag(m, g_last_mag_meas);
 	g_have_mag = 1;
 
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;

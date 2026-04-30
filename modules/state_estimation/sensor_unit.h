@@ -29,7 +29,7 @@
  *   baro_alt    m      pos-up     rises when going up            0 at boot
  *   lidar_range m      body Z dn  always positive when valid     n/a
  *   optflow     rad/s  body XY    per optflow_direction_t        (0,0) static
- *   mag         T/uT   body NED   raw post-axis-map              n/a
+ *   mag         unit   sensor     calibrated/normalized; mapped to body here n/a
  *   gps_pos     m      NED, local origin, (0,0,0) at first fix   n/a
  *   gps_vel     m/s    NED absolute                              (0,0,0) rest
  */

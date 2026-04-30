@@ -2,7 +2,7 @@
 
 ## Overview
 
-Reads the **BMM350** 3-axis magnetometer at 25 Hz, applies hard/soft iron calibration, normalizes the result to a unit vector, converts to NED body frame, and publishes for use by the attitude estimation module.
+Reads the **BMM350** 3-axis magnetometer at 25 Hz, applies hard/soft iron calibration, normalizes the result to a unit vector, and publishes the calibrated sensor-frame vector. `state_estimation.c` performs the final sensor-to-body mapping before fusion.
 
 ## Data Flow
 
@@ -13,9 +13,9 @@ BMM350 (I2C_PORT2 = I2C3)
   bmm350_get_compensated_mag_xyz_temp_data()
     │
     ▼  V_cal = S × (V_raw − B)
-    ▼  normalize → Z-axis flip (sensor UP → NED DOWN)
+    ▼  normalize → calibrated sensor-frame unit vector
     │
-    ├─► SENSOR_COMPASS  (vector3d_t, NED unit vector, 25 Hz)
+    ├─► SENSOR_COMPASS  (vector3d_t, calibrated sensor-frame unit vector, 25 Hz)
     └─► SEND_LOG        (float[3], 12 bytes, 25 Hz when logging active)
 ```
 
@@ -46,7 +46,13 @@ Calibration model: `V_cal = S × (V_raw − B)`, normalized to unit vector.
 
 ## Axis Mapping
 
-The BMM350 on the PCB has sensor X=Right, Y=Forward, Z=Down — the same X/Y orientation as the ICM-42688P. After normalization, axes are swapped to NED body frame: `body_x = sensor_y`, `body_y = -sensor_x`, `body_z = sensor_z`.
+The compass module does **not** apply the board/body axis mapping. It publishes the calibrated sensor-frame unit vector so the estimator owns all sensor-to-body conversions in one place. `state_estimation.c` maps the BMM350 via `mag_axis_map()` in `sensor_unit.h`:
+
+```c
+body_x =  sensor_y;
+body_y = -sensor_x;
+body_z =  sensor_z;
+```
 
 ## PubSub Interface
 
@@ -62,7 +68,7 @@ The BMM350 on the PCB has sensor X=Right, Y=Forward, Z=Down — the same X/Y ori
 ### Publications
 | Topic | Type | Rate | Notes |
 |-------|------|------|-------|
-| `SENSOR_COMPASS`          | `vector3d_t` | 25 Hz | Calibrated NED unit vector |
+| `SENSOR_COMPASS`          | `vector3d_t` | 25 Hz | Calibrated sensor-frame unit vector |
 | `CALIBRATION_MAG_REQUEST` | —            | 1 Hz  | Requests mag calibration from flash (until loaded) |
 | `SEND_LOG`                | `float[3]`   | 25 Hz | 12 bytes; raw or calibrated (see log class) |
 
@@ -71,4 +77,4 @@ The BMM350 on the PCB has sensor X=Right, Y=Forward, Z=Down — the same X/Y ori
 | Class | Content |
 |-------|---------|
 | `LOG_CLASS_COMPASS`       | Raw µT values — used by calibration tool |
-| `LOG_CLASS_COMPASS_CALIB` | Calibrated NED unit vector |
+| `LOG_CLASS_COMPASS_CALIB` | Calibrated sensor-frame unit vector |

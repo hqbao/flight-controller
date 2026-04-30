@@ -6,21 +6,19 @@
  *
  * Unified ESKF (fusion6) navigation estimator. Replaces the legacy
  * attitude_estimation + position_estimation modules. Publishes nav_state_t
- * on STATE_UPDATE @ 25 Hz.
+ * on STATE_UPDATE @ 500 Hz after accel correction.
  *
  * Subscribes:
  *   SENSOR_IMU1_GYRO_FILTERED_UPDATE (1 kHz, post-notch, deg/s float[3])
  *   SENSOR_IMU1_ACCEL_UPDATE         (500 Hz, raw LSB float[3])
- *   SENSOR_COMPASS                   (vector3d_t, body-frame unit vector)
- *   SENSOR_AIR_PRESSURE              (double, mm)
- *   EXTERNAL_SENSOR_OPTFLOW          (optflow_data_t)
- *   EXTERNAL_SENSOR_GPS              (gps_position_t)
- *   EXTERNAL_SENSOR_GPS_VELOC        (gps_velocity_t)
- *   TUNING_READY                     (tuning_params_t — latency/timeout/etc.)
- *   SCHEDULER_25HZ                   (health check + publish snapshot)
+ *   SENSOR_COMPASS                   (vector3d_t, calibrated sensor-frame unit vector)
+ *   NOTIFY_LOG_CLASS                 (uint8_t log class selector)
+ *   SCHEDULER_50HZ                   (attitude diagnostic log)
+ *   SCHEDULER_25HZ                   (mag-fusion diagnostic log)
  *
  * Publishes:
- *   STATE_UPDATE                     (nav_state_t @ 25 Hz)
+ *   STATE_UPDATE                     (nav_state_t @ 500 Hz)
+ *   SEND_LOG                         (attitude/mag diagnostic payloads)
  *
  * All sensor unit/axis conversions go through sensor_unit.h.
  */

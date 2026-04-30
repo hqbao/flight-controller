@@ -13,7 +13,8 @@
  *
  * Reads raw magnetic field data from the Bosch BMM350 magnetometer at 25 Hz,
  * applies hard/soft iron calibration, normalizes the result to a unit vector,
- * corrects the sensor axis mapping to NED body frame, and publishes via PubSub.
+ * and publishes the calibrated sensor-frame vector via PubSub. State estimation
+ * owns the final sensor-to-body mapping via sensor_unit.h.
  *
  * Calibration model:  V_cal = S × (V_raw − B)
  *   B = hard iron bias vector   (3-element, double)
@@ -37,7 +38,7 @@ struct bmm350_dev         BMMdev       = {0};
 struct bmm350_mag_temp_data mag_temp_data;
 
 static vector3d_t g_compass_raw = {0};   /* µT, sensor frame */
-static vector3d_t g_compass_cal = {0};   /* unit vector, NED body frame */
+static vector3d_t g_compass_cal = {0};   /* unit vector, calibrated sensor frame */
 
 static double g_mag_offset[3]      = {0};
 static double g_mag_scale[3][3]    = {{1,0,0},{0,1,0},{0,0,1}};
@@ -112,20 +113,8 @@ static void loop_25hz(uint8_t *data, size_t size) {
 	/* Normalize to unit vector */
 	vector3d_normalize(&mag_vec, &mag_vec);
 
-	/* Sensor-to-body axis mapping (BMM350):
-	 * BMM350 on PCB: sensor X=Right, sensor Y=Forward, sensor Z=Down
-	 * Body frame:    X=Forward, Y=Right, Z=Down
-	 * Mapping: body_x = sensor_y, body_y = -sensor_x, body_z = sensor_z */
-	// FC2
-	double tmp = mag_vec.x;
-	mag_vec.x = mag_vec.y;
-	mag_vec.y = -tmp;
-
-	// FC1
-	// double tmp = mag_vec.x;
-	// mag_vec.x = -mag_vec.y;
-	// mag_vec.y = -tmp;
-	// mag_vec.z = -mag_vec.z;
+	/* Publish calibrated sensor-frame unit vector. The final BMM350 sensor-to-body
+	 * mapping belongs in state_estimation.c with the other sensor_unit.h maps. */
 
 	g_compass_cal = mag_vec;
 	publish(SENSOR_COMPASS, (uint8_t *)&mag_vec, sizeof(vector3d_t));
@@ -145,7 +134,7 @@ static void loop_logger(uint8_t *data, size_t size) {
 	if (g_active_log_class == 0) return;
 
 	/* LOG_CLASS_COMPASS      → raw µT values (for calibration tool)
-	 * LOG_CLASS_COMPASS_CALIB → calibrated NED unit vector */
+	 * LOG_CLASS_COMPASS_CALIB → calibrated sensor-frame unit vector */
 	vector3d_t *src = (g_active_log_class == LOG_CLASS_COMPASS)
 	                  ? &g_compass_raw : &g_compass_cal;
 

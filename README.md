@@ -166,7 +166,7 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 ### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
 - `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
-- `SENSOR_COMPASS` — Calibrated compass vector
+- `SENSOR_COMPASS` — Calibrated sensor-frame compass unit vector; `state_estimation` maps it to body NED via `sensor_unit.h`
 - `STATE_UPDATE` — Unified ESKF (fusion6) `nav_state_t` snapshot @ 500 Hz: position, velocity, quaternion, euler, body+earth linear accel, biases, P-trace, health
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
 - `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → dblink)
@@ -250,24 +250,24 @@ Z is positive-up (opposite to NED Z-down). This convention is applied inside the
 - **Axis mapping**: X = Forward (Pitch correction), Y = Right (Roll correction)
 
 ### Sensor-to-Body Axis Mapping (ICM-42688P)
-IMU sensor axes (X=right, Y=forward on PCB) differ from body frame. The mapping in `attitude_estimation.c`:
+IMU sensor axes (X=right, Y=forward on PCB) differ from body frame. The mapping in `modules/state_estimation/sensor_unit.h`:
 ```c
 body_gx = -raw_gy;  body_gy = -raw_gx;  body_gz = -raw_gz;
 body_ax = -raw_ay;  body_ay = -raw_ax;  body_az = -raw_az;
 ```
 
 ### Sensor-to-Body Axis Mapping (BMM350)
-Magnetometer axis mapping in `compass.c` after calibration:
+The compass module publishes calibrated/normalized BMM350 data in the sensor frame. `state_estimation.c` applies the board/body mapping through `mag_axis_map()` in `modules/state_estimation/sensor_unit.h` before calling `fusion6_update_mag()`:
 - BMM350 on PCB: sensor X=Right, sensor Y=Forward, sensor Z=Down (same X/Y orientation as ICM-42688P)
 - Mapping: `body_x = sensor_y`, `body_y = -sensor_x`, `body_z = sensor_z`
 ```c
-double tmp = mag_vec.x;
-mag_vec.x = mag_vec.y;
-mag_vec.y = -tmp;
+out_body[0] =  sensor_y;
+out_body[1] = -sensor_x;
+out_body[2] =  sensor_z;
 ```
 
 ### Magnetometer Fusion and Heading Diagnostics
-`state_estimation.c` feeds the calibrated BMM350 unit vector into `fusion6_update_mag()`. The update uses a configured local geomagnetic reference:
+`state_estimation.c` maps the calibrated BMM350 unit vector into body NED and feeds that body-frame vector into `fusion6_update_mag()`. The update uses a configured local geomagnetic reference:
 ```c
 m_ned_unit = (cos(incl) * cos(decl), cos(incl) * sin(decl), sin(incl));
 ```
@@ -279,7 +279,7 @@ For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `too
 - a magnetic inclination chart comparing measured `asin((R·m_meas).z / |R·m_meas|)` against the configured local inclination
 - status-bar NIS / adaptive `R` inflation summary for the mag update
 
-Because this is a full 3-axis vector update, the vertical magnetic component can influence roll/pitch if compass calibration or axis mapping is wrong. On a level desk in Hà Nội, calibrated compass should satisfy approximately:
+Because this is a full 3-axis vector update, the vertical magnetic component can influence roll/pitch if compass calibration or axis mapping is wrong. On a level desk in Hà Nội, the body-mapped compass vector should satisfy approximately:
 - `m_body.z ≈ sin(27.5°) ≈ +0.46`
 - `sqrt(m_body.x² + m_body.y²) ≈ cos(27.5°) ≈ 0.89`
 If `R·m_meas` overlaps `m_ned` but roll/pitch drift away from level, inspect the calibrated mag vector Z component and BMM350 axis mapping before changing ESKF gains. In the viewer, large yaw/field errors (for example >30°) mean the compass heading should not be trusted yet; measured inclination far below +27.5° usually points to vertical scale/soft-iron calibration, axis mapping, or local magnetic disturbance.
@@ -376,7 +376,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_IMU_ACCEL_CALIB` | `0x0A` | `imu.c` | Calibrated accelerometer + temperature (4 floats) |
 | `LOG_CLASS_IMU_GYRO_RAW` | `0x0B` | `imu.c` | Raw gyroscope + temperature (4 floats, LSB + °C) |
 | `LOG_CLASS_IMU_GYRO_CALIB` | `0x0C` | `imu.c` | Calibrated gyroscope + temperature (4 floats, °/s + °C) |
-| `LOG_CLASS_COMPASS_CALIB` | `0x0D` | `compass.c` | Calibrated magnetometer (3 floats) |
+| `LOG_CLASS_COMPASS_CALIB` | `0x0D` | `compass.c` | Calibrated sensor-frame magnetometer unit vector (3 floats) |
 | `LOG_CLASS_FFT_GYRO_X` | `0x0E` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_FFT_GYRO_Y` | `0x0F` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_STORAGE` | `0x10` | `local_storage.c` | Stored params (104 params in 4 pages: 26 floats × 4, auto-stops) |
