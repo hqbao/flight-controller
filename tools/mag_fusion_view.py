@@ -1,0 +1,604 @@
+"""
+Mag Fusion Viewer
+=================
+
+Visualises the 3-axis magnetometer update inside fusion6. Reads
+LOG_CLASS_MAG_FUSION (0x1F) from state_estimation @ 25 Hz.
+
+Wire format (11 floats = 44 B):
+  [0..2]  m_meas  (body NED, unit vector, post hard/soft iron)
+  [3..5]  m_pred  = R(q)^T \u00b7 m_ned_unit  (body NED, unit)
+  [6]     NIS  (after R inflation)
+  [7]     r_scale  (1.0 = no inflation)
+    [8..10] roll, pitch, yaw  (deg)
+
+Panels:
+    1. 3D diagnostic scene
+         - Blue   : body forward axis in earth frame (R(q) \u00b7 [1,0,0])
+         - Purple : attitude/predicted accel vector reconstructed as
+                  R(q)^T \u00b7 [0,0,-1], matching attitude_view.py's
+                  quat_to_accel(q,g)/g convention
+         - Red    : measured mag rotated to earth (R(q) \u00b7 m_meas)
+         - Orange : measured mag horizontal projection in earth frame
+         - Green  : configured reference m_ned_unit
+     Healthy = red overlays green. Purple matches attitude_view.py.
+  2. Innovation y = m_meas - m_pred (body, time series, 30 s)
+  3. NIS vs \u03c7\u00b2_{3,0.99} threshold + r_scale (twin axis)
+  4. yaw_est vs yaw_meas (mag tilt-comp heading, deg, time series, 30 s)
+
+Status bar: RX Hz / Draw Hz, mean |y|, mean NIS, inflation %, decl/incl.
+"""
+
+import math
+import queue
+import struct
+import sys
+import threading
+import time
+from collections import deque
+
+import matplotlib
+import numpy as np
+import serial
+import serial.tools.list_ports
+
+matplotlib.use("macosx" if sys.platform == "darwin" else "TkAgg")
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.animation import FuncAnimation  # noqa: E402
+from matplotlib.widgets import Button  # noqa: E402
+
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
+
+# --- Wire protocol ---
+BAUD_RATE = 38400
+SEND_LOG_ID = 0x00
+DB_CMD_LOG_CLASS = 0x03
+DB_CMD_RESET = 0x07
+DB_CMD_CHIP_ID = 0x09
+
+LOG_CLASS_NONE = 0x00
+LOG_CLASS_HEART_BEAT = 0x09
+LOG_CLASS_MAG_FUSION = 0x1F
+
+MAG_FRAME_SIZE = 44   # 11 floats
+
+# --- Reference field (must match firmware fusion6 config) ---
+DECL_DEG = -0.6
+INCL_DEG = 27.5
+
+# --- UI palette ---
+BG_COLOR = "#1e1e1e"
+PANEL_COLOR = "#252526"
+TEXT_COLOR = "#cccccc"
+DIM_TEXT = "#888888"
+GRID_COLOR = "#3c3c3c"
+ACCENT_BLUE = "#5599ff"
+ACCENT_GREEN = "#55cc55"
+ACCENT_RED = "#ff5555"
+ACCENT_ORANGE = "#ff9955"
+ACCENT_YELLOW = "#ffdd55"
+BTN_GREEN = "#2d5a2d"
+BTN_GREEN_HOV = "#3d7a3d"
+BTN_RED = "#5a2d2d"
+BTN_RED_HOV = "#7a3d3d"
+BTN_COLOR = "#333333"
+BTN_HOVER = "#444444"
+
+NIS_THRESH_3D = 11.345
+
+# --- Serial autodetect ---
+SERIAL_PORT = None
+print("Scanning for serial ports...")
+for port, desc, _ in sorted(serial.tools.list_ports.comports()):
+    if any(x in port for x in ("usbmodem", "usbserial", "SLAB_USBtoUART",
+                               "ttyACM", "ttyUSB", "COM")):
+        SERIAL_PORT = port
+        print(f"  \u2713 Auto-selected: {port} ({desc})")
+        break
+    else:
+        print(f"  \u00b7 Skipped: {port} ({desc})")
+if not SERIAL_PORT:
+    print("  \u2717 No compatible serial port found.")
+
+# --- Globals ---
+data_queue = queue.Queue(maxsize=1)
+g_serial = None
+g_logging_active = False
+g_chip_id = None
+g_rx_frame_count = 0
+
+
+def push_latest_sample(vals):
+    try:
+        data_queue.get_nowait()
+    except queue.Empty:
+        pass
+    try:
+        data_queue.put_nowait(vals)
+    except queue.Full:
+        pass
+
+
+def _send_db(ser, msg_id, payload_byte):
+    msg_class = 0x00
+    length = 1
+    payload = bytes([payload_byte])
+    header = struct.pack("<2sBBH", b"db", msg_id, msg_class, length)
+    cs = (msg_id + msg_class + (length & 0xFF) + ((length >> 8) & 0xFF)
+          + payload_byte) & 0xFFFF
+    ser.write(header + payload + struct.pack("<H", cs))
+    ser.flush()
+
+
+def send_log_class_command(ser, log_class):
+    _send_db(ser, DB_CMD_LOG_CLASS, log_class)
+    names = {0x00: "NONE", 0x09: "HEART_BEAT", 0x1F: "MAG_FUSION"}
+    print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
+
+
+def send_reset_command(ser):
+    _send_db(ser, DB_CMD_RESET, 0x00)
+    print("  \u2192 Reset command sent")
+
+
+def send_chip_id_request(ser):
+    _send_db(ser, DB_CMD_CHIP_ID, 0x00)
+    print("  \u2192 Chip ID request sent")
+
+
+def serial_reader():
+    global g_serial, g_chip_id, g_rx_frame_count
+    if not SERIAL_PORT:
+        return
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        time.sleep(0.2)
+        ser.reset_input_buffer()
+        ser.write(b"\x00" * 32)
+        ser.flush()
+        time.sleep(0.05)
+        g_serial = ser
+        print(f"  \u2713 Connected to {SERIAL_PORT}")
+        send_chip_id_request(ser)
+        send_log_class_command(ser, LOG_CLASS_HEART_BEAT)
+
+        while True:
+            b1 = ser.read(1)
+            if not b1 or b1[0] not in (0x62, 0x64):
+                continue
+            b2 = ser.read(1)
+            if not b2:
+                continue
+            if not ((b1[0] == 0x64 and b2[0] == 0x62)
+                    or (b1[0] == 0x62 and b2[0] == 0x64)):
+                continue
+
+            id_byte = ser.read(1)
+            class_byte = ser.read(1)
+            len_bytes = ser.read(2)
+            if not (id_byte and class_byte and len(len_bytes) == 2):
+                continue
+            msg_id = id_byte[0]
+            length = int.from_bytes(len_bytes, "little")
+            if length > 1024:
+                continue
+            payload = ser.read(length)
+            if len(payload) != length:
+                continue
+            _ = ser.read(2)  # checksum (not validated)
+
+            if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
+                g_chip_id = payload[:8].hex().upper()
+                print(f"  \u2713 Chip ID: {g_chip_id}")
+            elif msg_id == SEND_LOG_ID and length == MAG_FRAME_SIZE:
+                vals = struct.unpack("<11f", payload)
+                if all(math.isfinite(v) for v in vals):
+                    g_rx_frame_count += 1
+                    push_latest_sample(vals)
+    except Exception as e:
+        print(f"  \u2717 Serial error: {e}")
+    finally:
+        if g_serial and g_serial.is_open:
+            g_serial.close()
+
+
+# --- Math helpers ---
+
+def rot_zyx(roll, pitch, yaw):
+    """Body-to-earth rotation matrix. Inputs in radians, Tait-Bryan ZYX."""
+    cr, sr = math.cos(roll),  math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw),   math.sin(yaw)
+    return np.array([
+        [cy*cp,  cy*sp*sr - sy*cr,  cy*sp*cr + sy*sr],
+        [sy*cp,  sy*sp*sr + cy*cr,  sy*sp*cr - cy*sr],
+        [-sp,    cp*sr,             cp*cr],
+    ])
+
+
+def rot_zyx_no_yaw(roll, pitch):
+    return rot_zyx(roll, pitch, 0.0)
+
+
+def main():
+    threading.Thread(target=serial_reader, daemon=True).start()
+
+    plt.style.use("dark_background")
+    plt.rcParams.update({
+        "figure.facecolor": BG_COLOR,
+        "axes.facecolor": BG_COLOR,
+        "axes.edgecolor": GRID_COLOR,
+        "axes.labelcolor": TEXT_COLOR,
+        "text.color": TEXT_COLOR,
+        "xtick.color": DIM_TEXT,
+        "ytick.color": DIM_TEXT,
+        "grid.color": GRID_COLOR,
+    })
+
+    fig = plt.figure(figsize=screen_fit_figsize(16, 9))
+    fig.patch.set_facecolor(BG_COLOR)
+    fig.canvas.manager.set_window_title("Mag Fusion Viewer")
+    fig.suptitle("State Estimation \u2014 Magnetometer Fusion",
+                 fontsize=14, color=TEXT_COLOR, fontweight="bold", y=0.99)
+
+    # --- Reference NED unit vector from configured decl/incl ---
+    decl = math.radians(DECL_DEG)
+    incl = math.radians(INCL_DEG)
+    m_ned_unit = np.array([math.cos(incl)*math.cos(decl),
+                            math.cos(incl)*math.sin(decl),
+                            math.sin(incl)])
+
+    # --- Panel 1: 3D earth-frame scene (top-left, square) ---
+    ax3d = fig.add_axes([0.02, 0.45, 0.46, 0.50], projection="3d")
+    ax3d.set_facecolor(BG_COLOR)
+    ax3d.set_box_aspect((1, 1, 1))
+    for pane in (ax3d.xaxis.pane, ax3d.yaxis.pane, ax3d.zaxis.pane):
+        pane.fill = False
+        pane.set_edgecolor(GRID_COLOR)
+    ax3d.set_xlim(-1.2, 1.2)
+    ax3d.set_ylim(-1.2, 1.2)
+    ax3d.set_zlim(-1.2, 1.2)
+    ax3d.invert_yaxis()
+    ax3d.set_xlabel("X \u2014 North", fontsize=8, labelpad=4)
+    ax3d.set_ylabel("Y \u2014 East", fontsize=8, labelpad=4)
+    ax3d.set_zlabel("\u2013Z (Up)", fontsize=8, labelpad=4)
+    ax3d.view_init(elev=0, azim=180)
+    ax3d.tick_params(labelsize=6)
+
+    # Reference unit sphere
+    u = np.linspace(0, 2*np.pi, 24)
+    v = np.linspace(0, np.pi, 12)
+    xs = np.outer(np.cos(u), np.sin(v))
+    ys = np.outer(np.sin(u), np.sin(v))
+    zs = np.outer(np.ones_like(u), np.cos(v))
+    ax3d.plot_wireframe(xs, ys, zs, color=GRID_COLOR, alpha=0.08, linewidth=0.3)
+    g = 1.1
+    ax3d.plot([-g, g], [0, 0], [0, 0], color=GRID_COLOR, lw=0.5, alpha=0.3)
+    ax3d.plot([0, 0], [-g, g], [0, 0], color=GRID_COLOR, lw=0.5, alpha=0.3)
+    ax3d.plot([0, 0], [0, 0], [-g, g], color=GRID_COLOR, lw=0.5, alpha=0.3)
+
+    # Static reference field (green, configured WMM)
+    ax3d.plot([0, m_ned_unit[0]], [0, m_ned_unit[1]], [0, m_ned_unit[2]],
+              color=ACCENT_GREEN, lw=2.5, label="m_ned (ref)")
+    ax3d.scatter([m_ned_unit[0]], [m_ned_unit[1]], [m_ned_unit[2]],
+                 color=ACCENT_GREEN, s=40)
+
+    line_nose, = ax3d.plot([0, 1], [0, 0], [0, 0],
+                            color=ACCENT_BLUE, lw=2.5, label="Nose (body X)")
+    head_nose, = ax3d.plot([1], [0], [0], color=ACCENT_BLUE, marker="o", ms=6)
+
+    # Attitude vector = reconstructed quat_to_accel(q, g)/g, matching
+    # attitude_view.py's "Attitude (pred g)" convention.
+    line_att, = ax3d.plot([0, 0], [0, 0], [0, -1],
+                          color="#aa66ff", lw=2.5, label="Attitude (pred g)")
+    head_att, = ax3d.plot([0], [0], [-1], color="#aa66ff", marker="o", ms=6)
+
+    line_mag, = ax3d.plot([0, 0], [0, 0], [0, 0],
+                          color=ACCENT_RED, lw=2.5, label="R\u00b7m_meas")
+    head_mag, = ax3d.plot([0], [0], [0], color=ACCENT_RED, marker="o", ms=6)
+
+    line_tilt, = ax3d.plot([0, 0], [0, 0], [0, 0],
+                           color=ACCENT_ORANGE, lw=2.0, ls="--",
+                           label="tilt-comp mag")
+    head_tilt, = ax3d.plot([0], [0], [0], color=ACCENT_ORANGE, marker="o", ms=5)
+
+    ax3d.legend(loc="upper left", fontsize=7, framealpha=0.3,
+                facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
+
+    # --- View buttons (face views) ---
+    views = {"Top": (90, 180), "Front": (0, 0), "Back": (0, 180),
+             "Left": (0, 90), "Right": (0, -90), "Iso": (18, -60)}
+    view_btns = []
+    for i, (label, (elev, azim)) in enumerate(views.items()):
+        bx = fig.add_axes([0.02 + i * 0.055, 0.42, 0.05, 0.025])
+        b = Button(bx, label, color=BTN_COLOR, hovercolor=BTN_HOVER)
+        b.label.set_color(TEXT_COLOR)
+        b.label.set_fontsize(7)
+        b.on_clicked(lambda event, e=elev, a=azim: ax3d.view_init(elev=e, azim=a))
+        view_btns.append(b)
+
+    # --- Panel 2: Innovation y over time (top-right) ---
+    ax_y = fig.add_axes([0.55, 0.55, 0.42, 0.38])
+    ax_y.set_facecolor(BG_COLOR)
+    ax_y.set_title("Innovation y = m_meas \u2212 m_pred (body)",
+                   fontsize=10, color=TEXT_COLOR, pad=4)
+    ax_y.set_xlim(-30, 0)
+    ax_y.set_ylim(-0.5, 0.5)
+    ax_y.set_xlabel("seconds (rolling)", fontsize=8)
+    ax_y.grid(True, alpha=0.2)
+    ax_y.axhline(0, color=GRID_COLOR, lw=0.5)
+    yx_line, = ax_y.plot([], [], color=ACCENT_RED,    lw=1.2, label="y.x")
+    yy_line, = ax_y.plot([], [], color=ACCENT_GREEN,  lw=1.2, label="y.y")
+    yz_line, = ax_y.plot([], [], color=ACCENT_BLUE,   lw=1.2, label="y.z")
+    ax_y.legend(loc="upper right", fontsize=7, framealpha=0.4,
+                facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
+
+    # --- Panel 3: NIS + r_scale (bottom-left) ---
+    ax_nis = fig.add_axes([0.05, 0.10, 0.42, 0.30])
+    ax_nis.set_facecolor(BG_COLOR)
+    ax_nis.set_title("NIS (with adaptive R inflation)",
+                     fontsize=10, color=TEXT_COLOR, pad=4)
+    ax_nis.set_xlim(-30, 0)
+    ax_nis.set_ylim(0, max(NIS_THRESH_3D * 2, 25))
+    ax_nis.set_xlabel("seconds (rolling)", fontsize=8)
+    ax_nis.set_ylabel("NIS", fontsize=8, color=ACCENT_YELLOW)
+    ax_nis.tick_params(axis="y", labelcolor=ACCENT_YELLOW)
+    ax_nis.grid(True, alpha=0.2)
+    ax_nis.axhline(NIS_THRESH_3D, color=ACCENT_RED, lw=0.8, ls="--",
+                   label=f"\u03c7\u00b2_3,0.99 = {NIS_THRESH_3D}")
+    nis_line, = ax_nis.plot([], [], color=ACCENT_YELLOW, lw=1.2, label="NIS")
+    ax_nis.legend(loc="upper left", fontsize=7, framealpha=0.4,
+                  facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
+    ax_rs = ax_nis.twinx()
+    ax_rs.set_ylim(0.5, 10)
+    ax_rs.set_yscale("log")
+    ax_rs.set_ylabel("r_scale", fontsize=8, color=ACCENT_ORANGE)
+    ax_rs.tick_params(axis="y", labelcolor=ACCENT_ORANGE)
+    rs_line, = ax_rs.plot([], [], color=ACCENT_ORANGE, lw=1.0,
+                           alpha=0.8, label="r_scale")
+
+    # --- Panel 4: yaw tracking (bottom-right) ---
+    ax_yaw = fig.add_axes([0.55, 0.10, 0.42, 0.30])
+    ax_yaw.set_facecolor(BG_COLOR)
+    ax_yaw.set_title("Yaw: estimated vs mag tilt-comp",
+                     fontsize=10, color=TEXT_COLOR, pad=4)
+    ax_yaw.set_xlim(-30, 0)
+    ax_yaw.set_ylim(-200, 200)
+    ax_yaw.set_xlabel("seconds (rolling)", fontsize=8)
+    ax_yaw.set_ylabel("yaw (deg)", fontsize=8)
+    ax_yaw.grid(True, alpha=0.2)
+    yaw_est_line,  = ax_yaw.plot([], [], color=ACCENT_BLUE, lw=1.4,
+                                  label="yaw_est (fusion6)")
+    yaw_meas_line, = ax_yaw.plot([], [], color=ACCENT_ORANGE, lw=1.0,
+                                  alpha=0.85, label="yaw_meas (mag)")
+    ax_yaw.legend(loc="upper right", fontsize=7, framealpha=0.4,
+                  facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
+
+    # --- Status bar ---
+    chip_text = fig.text(0.02, 0.025,
+                         f"decl={DECL_DEG:+.1f}\u00b0  incl={INCL_DEG:+.1f}\u00b0",
+                         fontsize=8, ha="left", color=DIM_TEXT)
+    stats_text = fig.text(0.50, 0.025, "",
+                          fontsize=8, ha="center", color=DIM_TEXT)
+    fps_text = fig.text(0.74, 0.025, "", fontsize=8, ha="right", color=DIM_TEXT)
+
+    # --- Buttons ---
+    ax_toggle = fig.add_axes([0.76, 0.018, 0.10, 0.035])
+    btn_toggle = Button(ax_toggle, "Start Log",
+                        color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_toggle.label.set_color(TEXT_COLOR)
+    btn_toggle.label.set_fontsize(8)
+
+    def on_toggle(event):
+        global g_logging_active
+        if not (g_serial and g_serial.is_open):
+            return
+        if g_logging_active:
+            send_log_class_command(g_serial, LOG_CLASS_NONE)
+            g_logging_active = False
+            btn_toggle.label.set_text("Start Log")
+            btn_toggle.color = BTN_GREEN
+            btn_toggle.hovercolor = BTN_GREEN_HOV
+            ax_toggle.set_facecolor(BTN_GREEN)
+        else:
+            send_log_class_command(g_serial, LOG_CLASS_MAG_FUSION)
+            g_logging_active = True
+            btn_toggle.label.set_text("Stop Log")
+            btn_toggle.color = BTN_RED
+            btn_toggle.hovercolor = BTN_RED_HOV
+            ax_toggle.set_facecolor(BTN_RED)
+
+    btn_toggle.on_clicked(on_toggle)
+
+    ax_reset = fig.add_axes([0.87, 0.018, 0.10, 0.035])
+    btn_reset = Button(ax_reset, "Reset FC",
+                       color=BTN_RED, hovercolor=BTN_RED_HOV)
+    btn_reset.label.set_color(TEXT_COLOR)
+    btn_reset.label.set_fontsize(8)
+
+    def on_reset(event):
+        global g_logging_active
+        if not (g_serial and g_serial.is_open):
+            return
+        send_reset_command(g_serial)
+        g_logging_active = False
+        btn_toggle.label.set_text("Start Log")
+        btn_toggle.color = BTN_GREEN
+        btn_toggle.hovercolor = BTN_GREEN_HOV
+        ax_toggle.set_facecolor(BTN_GREEN)
+
+        def _after():
+            time.sleep(2.0)
+            if g_serial and g_serial.is_open:
+                g_serial.reset_input_buffer()
+                send_log_class_command(g_serial, LOG_CLASS_HEART_BEAT)
+
+        threading.Thread(target=_after, daemon=True).start()
+
+    btn_reset.on_clicked(on_reset)
+
+    # --- Rolling buffers (30 s @ 25 Hz = 750 samples) ---
+    BUF_LEN = 1000
+    t_buf  = deque(maxlen=BUF_LEN)
+    yx_buf = deque(maxlen=BUF_LEN)
+    yy_buf = deque(maxlen=BUF_LEN)
+    yz_buf = deque(maxlen=BUF_LEN)
+    nis_buf = deque(maxlen=BUF_LEN)
+    rs_buf  = deque(maxlen=BUF_LEN)
+    ye_buf  = deque(maxlen=BUF_LEN)
+    ym_buf  = deque(maxlen=BUF_LEN)
+
+    t_start = time.time()
+    draw_count = [0]
+    last_rx_count = [0]
+    last_fps = [time.time()]
+
+    def update(_):
+        latest = None
+        while True:
+            try:
+                latest = data_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        now = time.time()
+        if latest is not None:
+            m_meas = np.array(latest[0:3])
+            m_pred = np.array(latest[3:6])
+            nis    = float(latest[6])
+            rscale = float(latest[7])
+            roll   = math.radians(latest[8])
+            pitch  = math.radians(latest[9])
+            yaw    = math.radians(latest[10])
+
+            # 3D scene vectors. Mag/nose are earth-frame diagnostics. The
+            # attitude vector reconstructs attitude_view.py's pred-g vector:
+            # quat_to_accel(q,g)/g = R(q)^T · [0,0,-1].
+            R = rot_zyx(roll, pitch, yaw)
+            R_lvl = rot_zyx_no_yaw(roll, pitch)
+            nose = R @ np.array([1.0, 0.0, 0.0])
+            att = R.T @ np.array([0.0, 0.0, -1.0])
+            mag_e = R @ m_meas
+            # Visualization tilt-comp = horizontal projection of mag_e in earth
+            # frame (rotates with body so it lines up with the m_ned reference
+            # arrow only when yaw is correct).
+            mag_lvl = mag_e.copy()
+            mag_lvl[2] = 0.0
+            n = np.linalg.norm(mag_lvl)
+            if n > 1e-6:
+                mag_lvl = mag_lvl / n
+            # Body-level frame mag (yaw stripped) — used for the yaw_meas
+            # heading calculation below.
+            mag_body_lvl = R_lvl @ m_meas
+
+            line_nose.set_data([0, nose[0]], [0, nose[1]])
+            line_nose.set_3d_properties([0, nose[2]])
+            head_nose.set_data([nose[0]], [nose[1]])
+            head_nose.set_3d_properties([nose[2]])
+
+            line_att.set_data([0, att[0]], [0, att[1]])
+            line_att.set_3d_properties([0, att[2]])
+            head_att.set_data([att[0]], [att[1]])
+            head_att.set_3d_properties([att[2]])
+
+            line_mag.set_data([0, mag_e[0]], [0, mag_e[1]])
+            line_mag.set_3d_properties([0, mag_e[2]])
+            head_mag.set_data([mag_e[0]], [mag_e[1]])
+            head_mag.set_3d_properties([mag_e[2]])
+
+            line_tilt.set_data([0, mag_lvl[0]], [0, mag_lvl[1]])
+            line_tilt.set_3d_properties([0, mag_lvl[2]])
+            head_tilt.set_data([mag_lvl[0]], [mag_lvl[1]])
+            head_tilt.set_3d_properties([mag_lvl[2]])
+
+            # Time-series buffers
+            t_rel = now - t_start
+            t_buf.append(t_rel)
+            y = m_meas - m_pred
+            yx_buf.append(y[0]); yy_buf.append(y[1]); yz_buf.append(y[2])
+            nis_buf.append(nis); rs_buf.append(rscale)
+
+            # Yaw: estimated comes from frame; measured = level-frame mag yaw
+            #   yaw_meas = atan2(-mag_body_lvl.y, mag_body_lvl.x) - declination
+            yaw_meas = math.atan2(-mag_body_lvl[1], mag_body_lvl[0]) - decl
+            yaw_meas_deg = math.degrees(math.atan2(math.sin(yaw_meas),
+                                                    math.cos(yaw_meas)))
+            ye_buf.append(latest[10])  # already deg
+            ym_buf.append(yaw_meas_deg)
+
+        # Always re-draw the time-series with the rolling window relative to now.
+        if t_buf:
+            t_arr = np.array(t_buf) - (now - t_start)
+            # Trim to last 30 s for display only.
+            mask = t_arr >= -30.0
+            t_v = t_arr[mask]
+            yx_line.set_data(t_v, np.array(yx_buf)[mask])
+            yy_line.set_data(t_v, np.array(yy_buf)[mask])
+            yz_line.set_data(t_v, np.array(yz_buf)[mask])
+            nis_line.set_data(t_v, np.array(nis_buf)[mask])
+            rs_line.set_data(t_v, np.array(rs_buf)[mask])
+            yaw_est_line.set_data(t_v, np.array(ye_buf)[mask])
+            yaw_meas_line.set_data(t_v, np.array(ym_buf)[mask])
+
+            # Stats on last 5 s
+            mask5 = t_arr >= -5.0
+            if mask5.any():
+                yarr = np.stack([np.array(yx_buf)[mask5],
+                                 np.array(yy_buf)[mask5],
+                                 np.array(yz_buf)[mask5]], axis=1)
+                mag_y = float(np.mean(np.linalg.norm(yarr, axis=1)))
+                mean_nis = float(np.mean(np.array(nis_buf)[mask5]))
+                rs5 = np.array(rs_buf)[mask5]
+                infl_pct = float(np.mean(rs5 > 1.001) * 100.0)
+                if latest is not None:
+                    stats_text.set_text(
+                        f"|y|={mag_y:.3f}  NIS={mean_nis:.2f}  infl={infl_pct:.0f}%  "
+                        f"r={latest[8]:+.1f}\u00b0 p={latest[9]:+.1f}\u00b0 y={latest[10]:+.1f}\u00b0")
+                else:
+                    stats_text.set_text(
+                        f"|y|={mag_y:.3f}  NIS={mean_nis:.2f}  infl={infl_pct:.0f}%")
+
+        if g_chip_id is not None:
+            chip_text.set_text(
+                f"Chip {g_chip_id}  decl={DECL_DEG:+.1f}\u00b0  incl={INCL_DEG:+.1f}\u00b0")
+
+        draw_count[0] += 1
+        if now - last_fps[0] >= 1.0:
+            elapsed = now - last_fps[0]
+            rx_count = g_rx_frame_count
+            rx_hz = (rx_count - last_rx_count[0]) / elapsed
+            draw_hz = draw_count[0] / elapsed
+            fps_text.set_text(f"RX {rx_hz:.0f} Hz | Draw {draw_hz:.0f} Hz")
+            last_rx_count[0] = rx_count
+            draw_count[0] = 0
+            last_fps[0] = now
+
+        return ()
+
+    _anim = FuncAnimation(fig, update, interval=40, blit=False,
+                          cache_frame_data=False)
+
+    def on_close(_):
+        if g_serial and g_serial.is_open:
+            try:
+                send_log_class_command(g_serial, LOG_CLASS_NONE)
+            except Exception:
+                pass
+
+    fig.canvas.mpl_connect("close_event", on_close)
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()

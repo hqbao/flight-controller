@@ -52,6 +52,13 @@ static double   g_last_accel_body[3] = {0, 0, 0};
 static int      g_have_gyro  = 0;
 static int      g_have_accel = 0;
 
+/* Latest mag-update diagnostics for the LOG_CLASS_MAG_FUSION stream. */
+static double   g_last_mag_meas[3] = {0, 0, 0};
+static double   g_last_mag_pred[3] = {0, 0, 0};
+static double   g_last_mag_nis     = 0.0;
+static double   g_last_mag_rscale  = 1.0;
+static int      g_have_mag         = 0;
+
 static uint8_t  g_log_class      = 0;
 
 static void publish_state(void);
@@ -126,6 +133,27 @@ static void on_accel(uint8_t *data, size_t size) {
 
 	fusion6_update_accel(&g_f, g_last_accel_body);
 	publish_state();
+}
+
+static void on_compass(uint8_t *data, size_t size) {
+	if (size < sizeof(vector3d_t)) return;
+	vector3d_t *m = (vector3d_t *)data;
+	g_last_mag_meas[0] = m->x;
+	g_last_mag_meas[1] = m->y;
+	g_last_mag_meas[2] = m->z;
+	g_have_mag = 1;
+
+	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+
+	double m_pred[3], y_unused[3];
+	double nis = 0.0, r_scale = 1.0;
+	(void)fusion6_update_mag(&g_f, g_last_mag_meas,
+	                         m_pred, y_unused, &nis, &r_scale);
+	g_last_mag_pred[0] = m_pred[0];
+	g_last_mag_pred[1] = m_pred[1];
+	g_last_mag_pred[2] = m_pred[2];
+	g_last_mag_nis     = nis;
+	g_last_mag_rscale  = r_scale;
 }
 
 /* ============================================================
@@ -210,15 +238,60 @@ static void on_attitude_log_50hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * Mag-fusion debug log stream (LOG_CLASS_MAG_FUSION = 0x1F)
+ *
+ * 11-float / 44-byte payload @ 25 Hz, consumed by tools/mag_fusion_view.py.
+ *   float[0..2]  = m_meas (body NED, unit)
+ *   float[3..5]  = m_pred = R(q)^T · m_ned_unit (body NED, unit)
+ *   float[6]     = NIS (after R inflation)
+ *   float[7]     = r_scale (1.0 = no inflation)
+ *   float[8]     = roll  (deg)
+ *   float[9]     = pitch (deg)
+ *   float[10]    = yaw   (deg)
+ * ============================================================ */
+static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_MAG_FUSION) return;
+	if (!g_init_started) return;
+	if (!g_have_mag) return;
+
+	fusion6_state_t s;
+	fusion6_get_state(&g_f, &s);
+
+	float payload[11];
+	payload[0]  = (float)g_last_mag_meas[0];
+	payload[1]  = (float)g_last_mag_meas[1];
+	payload[2]  = (float)g_last_mag_meas[2];
+	payload[3]  = (float)g_last_mag_pred[0];
+	payload[4]  = (float)g_last_mag_pred[1];
+	payload[5]  = (float)g_last_mag_pred[2];
+	payload[6]  = (float)g_last_mag_nis;
+	payload[7]  = (float)g_last_mag_rscale;
+	payload[8]  = (float)(s.euler.x * (double)RAD2DEG);
+	payload[9]  = (float)(s.euler.y * (double)RAD2DEG);
+	payload[10] = (float)(s.euler.z * (double)RAD2DEG);
+
+	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
+}
+
+/* ============================================================
  * Setup
  * ============================================================ */
 
 void state_estimation_setup(void) {
 	fusion6_config_default(&g_cfg);
+	/* Local geomagnetic field (Hà Nội, ~21°N 105.8°E, WMM-2025):
+	 *   declination ≈ -0.6°  (essentially zero)
+	 *   inclination ≈ +27.5° (positive = field tips down, northern hemisphere)
+	 * Override per launch site if needed. */
+	g_cfg.mag_declination = -0.6  * (double)DEG2RAD;
+	g_cfg.mag_inclination =  27.5 * (double)DEG2RAD;
 	fusion6_init(&g_f, &g_cfg);
 
 	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, on_gyro);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, on_accel);
+	subscribe(SENSOR_COMPASS, on_compass);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
+	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
 }

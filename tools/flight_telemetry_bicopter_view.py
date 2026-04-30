@@ -596,6 +596,21 @@ def main():
     btn_toggle.on_clicked(on_toggle)
 
     # =========================================================================
+    # 3D Face-View Buttons
+    # =========================================================================
+    _views_ft = {'Top': (90, 180), 'Front': (0, 0), 'Back': (0, 180),
+                 'Left': (0, 90), 'Right': (0, -90)}
+    _view_btns_ft = []
+    for _i_ft, (_lbl_ft, (_e_ft, _a_ft)) in enumerate(_views_ft.items()):
+        _bx_ft = fig.add_axes([0.18 + _i_ft * 0.06, 0.005, 0.055, 0.04])
+        _b_ft = Button(_bx_ft, _lbl_ft, color=BTN_COLOR, hovercolor=BTN_HOVER)
+        _b_ft.label.set_color(TEXT_COLOR)
+        _b_ft.label.set_fontsize(7)
+        _b_ft.on_clicked(lambda event, e=_e_ft, a=_a_ft:
+                          (ax_bic.view_init(elev=e, azim=a), plt.draw()))
+        _view_btns_ft.append(_b_ft)
+
+    # =========================================================================
     # Reset FC Button
     # =========================================================================
     ax_reset = fig.add_axes([0.09, 0.005, 0.08, 0.04])

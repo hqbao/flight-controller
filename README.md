@@ -87,6 +87,7 @@ flight-controller/
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
+│   ├── mag_fusion_view.py        #   Fusion6 magnetometer update diagnostics
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -265,12 +266,21 @@ mag_vec.x = mag_vec.y;
 mag_vec.y = -tmp;
 ```
 
-### Tilt-Compensated Heading
-Magnetometer heading uses tilt compensation in `attitude_estimation.c`:
-1. Extract roll/pitch from attitude quaternion
-2. Build tilt-only quaternion: `quat_from_euler(roll, pitch, 0)` — removes tilt, preserves nose direction
-3. Rotate body-frame mag vector to level frame: `quat_rotate_vector(&mag_earth, &q_tilt, &mag_body)`
-4. Compute heading: `atan2(-mag_earth.y, mag_earth.x)` — angle of nose relative to North
+### Magnetometer Fusion and Heading Diagnostics
+`state_estimation.c` feeds the calibrated BMM350 unit vector into `fusion6_update_mag()`. The update uses a configured local geomagnetic reference:
+```c
+m_ned_unit = (cos(incl) * cos(decl), cos(incl) * sin(decl), sin(incl));
+```
+For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `tools/mag_fusion_view.py` diagnostic stream (`LOG_CLASS_MAG_FUSION`) shows:
+- `m_meas` and `m_pred = R(q)^T · m_ned_unit` in body frame
+- `R(q) · m_meas` vs the configured `m_ned_unit` reference in earth frame
+- NIS / adaptive `R` inflation for the mag update
+- `yaw_est` vs a tilt-compensated display heading
+
+Because this is a full 3-axis vector update, the vertical magnetic component can influence roll/pitch if compass calibration or axis mapping is wrong. On a level desk in Hà Nội, calibrated compass should satisfy approximately:
+- `m_body.z ≈ sin(27.5°) ≈ +0.46`
+- `sqrt(m_body.x² + m_body.y²) ≈ cos(27.5°) ≈ 0.89`
+If `R·m_meas` overlaps `m_ned` but roll/pitch drift away from level, inspect the calibrated mag vector Z component and BMM350 axis mapping before changing ESKF gains.
 
 ## Sensor Calibration
 
@@ -382,6 +392,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
 | `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
+| `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Fusion6 mag update diagnostics (11 floats / 44 B): measured/predicted unit mag, NIS, R-scale, roll/pitch/yaw |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -393,6 +404,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
+| `mag_fusion_view.py` | Fusion6 magnetometer diagnostic: 3D reference/measured mag vectors, attitude-vector overlay matching `attitude_view.py`, innovation, NIS/R-scale, and yaw_est vs tilt-comp mag heading. Uses `LOG_CLASS_MAG_FUSION`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
