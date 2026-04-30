@@ -6,25 +6,25 @@ Visualises the 3-axis magnetometer update inside fusion6. Reads
 LOG_CLASS_MAG_FUSION (0x1F) from state_estimation @ 25 Hz.
 
 Wire format (11 floats = 44 B):
-  [0..2]  m_meas  (body NED, unit vector, post hard/soft iron)
-  [3..5]  m_pred  = R(q)^T \u00b7 m_ned_unit  (body NED, unit)
-  [6]     NIS  (after R inflation)
-  [7]     r_scale  (1.0 = no inflation)
-    [8..10] roll, pitch, yaw  (deg)
+    [0..2]   m_meas  (body NED, unit vector, post hard/soft iron)
+    [3..5]   m_pred  = R(q)^T \u00b7 m_ned_unit  (body NED, unit)
+    [6]      NIS  (after R inflation)
+    [7]      r_scale  (1.0 = no inflation)
+    [8..10]  roll, pitch, yaw  (deg)
 
 Panels:
     1. 3D diagnostic scene
-         - Blue   : body forward axis in earth frame (R(q) \u00b7 [1,0,0])
-         - Purple : attitude/predicted accel vector reconstructed as
-                  R(q)^T \u00b7 [0,0,-1], matching attitude_view.py's
-                  quat_to_accel(q,g)/g convention
-         - Red    : measured mag rotated to earth (R(q) \u00b7 m_meas)
-         - Orange : measured mag horizontal projection in earth frame
-         - Green  : configured reference m_ned_unit
-     Healthy = red overlays green. Purple matches attitude_view.py.
-  2. Innovation y = m_meas - m_pred (body, time series, 30 s)
-  3. NIS vs \u03c7\u00b2_{3,0.99} threshold + r_scale (twin axis)
-  4. yaw_est vs yaw_meas (mag tilt-comp heading, deg, time series, 30 s)
+             - Blue   : body forward axis in earth frame (R(q) \u00b7 [1,0,0])
+             - Purple : attitude/predicted accel vector reconstructed as
+                                    R(q)^T \u00b7 [0,0,-1], matching attitude_view.py's
+                                    quat_to_accel(q,g)/g convention
+             - Red    : measured mag rotated to earth (R(q) \u00b7 m_meas)
+             - Orange : measured mag horizontal projection in earth frame
+             - Green  : configured reference m_ned_unit
+         Healthy = red overlays green. Purple matches attitude_view.py.
+    2. Yaw lock / field-vector angular error in degrees
+    3. Measured magnetic inclination vs configured reference
+    4. Quaternion/local-frame 3D view: earth axes expressed in local body frame
 
 Status bar: RX Hz / Draw Hz, mean |y|, mean NIS, inflation %, decl/incl.
 """
@@ -259,8 +259,8 @@ def main():
                             math.cos(incl)*math.sin(decl),
                             math.sin(incl)])
 
-    # --- Panel 1: 3D earth-frame scene (top-left, square) ---
-    ax3d = fig.add_axes([0.02, 0.45, 0.46, 0.50], projection="3d")
+    # --- Panel 1: 3D mag scene (top-left) ---
+    ax3d = fig.add_axes([0.03, 0.53, 0.44, 0.40], projection="3d")
     ax3d.set_facecolor(BG_COLOR)
     ax3d.set_box_aspect((1, 1, 1))
     for pane in (ax3d.xaxis.pane, ax3d.yaxis.pane, ax3d.zaxis.pane):
@@ -317,73 +317,108 @@ def main():
                 facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
 
     # --- View buttons (face views) ---
+    view_axes = [ax3d]
+
+    def set_3d_view(elev, azim):
+        for ax_view in view_axes:
+            ax_view.view_init(elev=elev, azim=azim)
+        fig.canvas.draw_idle()
+
     views = {"Top": (90, 180), "Front": (0, 0), "Back": (0, 180),
              "Left": (0, 90), "Right": (0, -90), "Iso": (18, -60)}
     view_btns = []
     for i, (label, (elev, azim)) in enumerate(views.items()):
-        bx = fig.add_axes([0.02 + i * 0.055, 0.42, 0.05, 0.025])
+        bx = fig.add_axes([0.03 + i * 0.055, 0.485, 0.05, 0.025])
         b = Button(bx, label, color=BTN_COLOR, hovercolor=BTN_HOVER)
         b.label.set_color(TEXT_COLOR)
         b.label.set_fontsize(7)
-        b.on_clicked(lambda event, e=elev, a=azim: ax3d.view_init(elev=e, azim=a))
+        b.on_clicked(lambda event, e=elev, a=azim: set_3d_view(e, a))
         view_btns.append(b)
 
-    # --- Panel 2: Innovation y over time (top-right) ---
-    ax_y = fig.add_axes([0.55, 0.55, 0.42, 0.38])
-    ax_y.set_facecolor(BG_COLOR)
-    ax_y.set_title("Innovation y = m_meas \u2212 m_pred (body)",
+    # --- Panel 2: yaw lock + field-vector angular error (bottom-left) ---
+    ax_err = fig.add_axes([0.05, 0.10, 0.42, 0.30])
+    ax_err.set_facecolor(BG_COLOR)
+    ax_err.set_title("Yaw lock / magnetic field angle error",
                    fontsize=10, color=TEXT_COLOR, pad=4)
-    ax_y.set_xlim(-30, 0)
-    ax_y.set_ylim(-0.5, 0.5)
-    ax_y.set_xlabel("seconds (rolling)", fontsize=8)
-    ax_y.grid(True, alpha=0.2)
-    ax_y.axhline(0, color=GRID_COLOR, lw=0.5)
-    yx_line, = ax_y.plot([], [], color=ACCENT_RED,    lw=1.2, label="y.x")
-    yy_line, = ax_y.plot([], [], color=ACCENT_GREEN,  lw=1.2, label="y.y")
-    yz_line, = ax_y.plot([], [], color=ACCENT_BLUE,   lw=1.2, label="y.z")
-    ax_y.legend(loc="upper right", fontsize=7, framealpha=0.4,
+    ax_err.set_xlim(-30, 0)
+    ax_err.set_ylim(-180, 180)
+    ax_err.set_xlabel("seconds (rolling)", fontsize=8)
+    ax_err.set_ylabel("degrees", fontsize=8)
+    ax_err.grid(True, alpha=0.2)
+    ax_err.axhline(0, color=GRID_COLOR, lw=0.6)
+    ax_err.axhline(10, color=GRID_COLOR, lw=0.5, ls="--", alpha=0.45)
+    ax_err.axhline(-10, color=GRID_COLOR, lw=0.5, ls="--", alpha=0.45)
+    ax_err.axhline(90, color=GRID_COLOR, lw=0.5, ls=":", alpha=0.35)
+    ax_err.axhline(-90, color=GRID_COLOR, lw=0.5, ls=":", alpha=0.35)
+    yaw_err_line, = ax_err.plot([], [], color=ACCENT_BLUE, lw=1.3,
+                                label="yaw_est - mag yaw")
+    field_err_line, = ax_err.plot([], [], color=ACCENT_RED, lw=1.1,
+                                  label="angle(R·m, m_ref)")
+    ax_err.legend(loc="upper right", fontsize=7, framealpha=0.4,
                 facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
 
-    # --- Panel 3: NIS + r_scale (bottom-left) ---
-    ax_nis = fig.add_axes([0.05, 0.10, 0.42, 0.30])
-    ax_nis.set_facecolor(BG_COLOR)
-    ax_nis.set_title("NIS (with adaptive R inflation)",
+    # --- Panel 3: magnetic inclination check (bottom-right) ---
+    ax_incl = fig.add_axes([0.55, 0.10, 0.42, 0.30])
+    ax_incl.set_facecolor(BG_COLOR)
+    ax_incl.set_title("Magnetic inclination check",
                      fontsize=10, color=TEXT_COLOR, pad=4)
-    ax_nis.set_xlim(-30, 0)
-    ax_nis.set_ylim(0, max(NIS_THRESH_3D * 2, 25))
-    ax_nis.set_xlabel("seconds (rolling)", fontsize=8)
-    ax_nis.set_ylabel("NIS", fontsize=8, color=ACCENT_YELLOW)
-    ax_nis.tick_params(axis="y", labelcolor=ACCENT_YELLOW)
-    ax_nis.grid(True, alpha=0.2)
-    ax_nis.axhline(NIS_THRESH_3D, color=ACCENT_RED, lw=0.8, ls="--",
-                   label=f"\u03c7\u00b2_3,0.99 = {NIS_THRESH_3D}")
-    nis_line, = ax_nis.plot([], [], color=ACCENT_YELLOW, lw=1.2, label="NIS")
-    ax_nis.legend(loc="upper left", fontsize=7, framealpha=0.4,
-                  facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
-    ax_rs = ax_nis.twinx()
-    ax_rs.set_ylim(0.5, 10)
-    ax_rs.set_yscale("log")
-    ax_rs.set_ylabel("r_scale", fontsize=8, color=ACCENT_ORANGE)
-    ax_rs.tick_params(axis="y", labelcolor=ACCENT_ORANGE)
-    rs_line, = ax_rs.plot([], [], color=ACCENT_ORANGE, lw=1.0,
-                           alpha=0.8, label="r_scale")
+    ax_incl.set_xlim(-30, 0)
+    ax_incl.set_ylim(-90, 90)
+    ax_incl.set_xlabel("seconds (rolling)", fontsize=8)
+    ax_incl.set_ylabel("inclination (deg, +down)", fontsize=8, color=ACCENT_YELLOW)
+    ax_incl.tick_params(axis="y", labelcolor=ACCENT_YELLOW)
+    ax_incl.grid(True, alpha=0.2)
+    ax_incl.axhline(INCL_DEG, color=ACCENT_GREEN, lw=1.0, ls="--",
+                   label=f"ref {INCL_DEG:+.1f}\u00b0")
+    ax_incl.axhline(0, color=GRID_COLOR, lw=0.5)
+    incl_line, = ax_incl.plot([], [], color=ACCENT_YELLOW, lw=1.2,
+                              label="measured R·m inclination")
+    ax_incl.legend(loc="upper left", fontsize=7, framealpha=0.4,
+                   facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
 
-    # --- Panel 4: yaw tracking (bottom-right) ---
-    ax_yaw = fig.add_axes([0.55, 0.10, 0.42, 0.30])
-    ax_yaw.set_facecolor(BG_COLOR)
-    ax_yaw.set_title("Yaw: estimated vs mag tilt-comp",
-                     fontsize=10, color=TEXT_COLOR, pad=4)
-    ax_yaw.set_xlim(-30, 0)
-    ax_yaw.set_ylim(-200, 200)
-    ax_yaw.set_xlabel("seconds (rolling)", fontsize=8)
-    ax_yaw.set_ylabel("yaw (deg)", fontsize=8)
-    ax_yaw.grid(True, alpha=0.2)
-    yaw_est_line,  = ax_yaw.plot([], [], color=ACCENT_BLUE, lw=1.4,
-                                  label="yaw_est (fusion6)")
-    yaw_meas_line, = ax_yaw.plot([], [], color=ACCENT_ORANGE, lw=1.0,
-                                  alpha=0.85, label="yaw_meas (mag)")
-    ax_yaw.legend(loc="upper right", fontsize=7, framealpha=0.4,
-                  facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
+    # --- Panel 4: Quaternion/local frame view (top-right) ---
+    ax_q = fig.add_axes([0.53, 0.53, 0.44, 0.40], projection="3d")
+    view_axes.append(ax_q)
+    ax_q.set_facecolor(BG_COLOR)
+    ax_q.set_title("Quaternion view: earth frame in local/body axes",
+                   fontsize=10, color=TEXT_COLOR, pad=4)
+    ax_q.set_box_aspect((1, 1, 1))
+    for pane in (ax_q.xaxis.pane, ax_q.yaxis.pane, ax_q.zaxis.pane):
+        pane.fill = False
+        pane.set_edgecolor(GRID_COLOR)
+    ax_q.set_xlim(-1.2, 1.2)
+    ax_q.set_ylim(-1.2, 1.2)
+    ax_q.set_zlim(-1.2, 1.2)
+    ax_q.invert_yaxis()
+    ax_q.set_xlabel("X — Forward", fontsize=8, labelpad=4)
+    ax_q.set_ylabel("Y — Right", fontsize=8, labelpad=4)
+    ax_q.set_zlabel("–Z (Up)", fontsize=8, labelpad=4)
+    ax_q.view_init(elev=0, azim=180)
+    ax_q.tick_params(labelsize=6)
+
+    # Fixed local/body reference axes.
+    ax_q.plot([0, 1], [0, 0], [0, 0], color=ACCENT_BLUE, lw=1.2,
+              alpha=0.45, label="Body X/Fwd")
+    ax_q.plot([0, 0], [0, 1], [0, 0], color="#aa66ff", lw=1.2,
+              alpha=0.45, label="Body Y/Right")
+    ax_q.plot([0, 0], [0, 0], [0, -1], color=GRID_COLOR, lw=1.2,
+              alpha=0.75, label="Body Up (-Z)")
+
+    # Earth frame axes rotated into the local/body frame. Earth Up is the same
+    # vector as attitude_view.py's predicted accelerometer direction.
+    q_north_line, = ax_q.plot([0, 1], [0, 0], [0, 0], color=ACCENT_GREEN,
+                               lw=2.3, label="Earth N")
+    q_north_head, = ax_q.plot([1], [0], [0], color=ACCENT_GREEN, marker="o", ms=5)
+    q_east_line, = ax_q.plot([0, 0], [0, 1], [0, 0], color=ACCENT_ORANGE,
+                              lw=2.0, label="Earth E")
+    q_east_head, = ax_q.plot([0], [1], [0], color=ACCENT_ORANGE, marker="o", ms=4)
+    q_up_line, = ax_q.plot([0, 0], [0, 0], [0, -1], color="#cccccc",
+                            lw=2.2, label="Earth Up / pred g")
+    q_up_head, = ax_q.plot([0], [0], [-1], color="#cccccc", marker="o", ms=4)
+    q_text = ax_q.text2D(0.02, 0.92, "", transform=ax_q.transAxes,
+                         fontsize=8, color=DIM_TEXT)
+    ax_q.legend(loc="upper right", fontsize=6, framealpha=0.35,
+                facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
 
     # --- Status bar ---
     chip_text = fig.text(0.02, 0.025,
@@ -451,13 +486,12 @@ def main():
     # --- Rolling buffers (30 s @ 25 Hz = 750 samples) ---
     BUF_LEN = 1000
     t_buf  = deque(maxlen=BUF_LEN)
-    yx_buf = deque(maxlen=BUF_LEN)
-    yy_buf = deque(maxlen=BUF_LEN)
-    yz_buf = deque(maxlen=BUF_LEN)
+    yaw_err_buf = deque(maxlen=BUF_LEN)
+    field_err_buf = deque(maxlen=BUF_LEN)
+    incl_buf = deque(maxlen=BUF_LEN)
+    y_norm_buf = deque(maxlen=BUF_LEN)
     nis_buf = deque(maxlen=BUF_LEN)
     rs_buf  = deque(maxlen=BUF_LEN)
-    ye_buf  = deque(maxlen=BUF_LEN)
-    ym_buf  = deque(maxlen=BUF_LEN)
 
     t_start = time.time()
     draw_count = [0]
@@ -489,6 +523,8 @@ def main():
             R_lvl = rot_zyx_no_yaw(roll, pitch)
             nose = R @ np.array([1.0, 0.0, 0.0])
             att = R.T @ np.array([0.0, 0.0, -1.0])
+            earth_n_body = R.T @ np.array([1.0, 0.0, 0.0])
+            earth_e_body = R.T @ np.array([0.0, 1.0, 0.0])
             mag_e = R @ m_meas
             # Visualization tilt-comp = horizontal projection of mag_e in earth
             # frame (rotates with body so it lines up with the m_ned reference
@@ -522,20 +558,48 @@ def main():
             head_tilt.set_data([mag_lvl[0]], [mag_lvl[1]])
             head_tilt.set_3d_properties([mag_lvl[2]])
 
+            q_north_line.set_data([0, earth_n_body[0]], [0, earth_n_body[1]])
+            q_north_line.set_3d_properties([0, earth_n_body[2]])
+            q_north_head.set_data([earth_n_body[0]], [earth_n_body[1]])
+            q_north_head.set_3d_properties([earth_n_body[2]])
+
+            q_east_line.set_data([0, earth_e_body[0]], [0, earth_e_body[1]])
+            q_east_line.set_3d_properties([0, earth_e_body[2]])
+            q_east_head.set_data([earth_e_body[0]], [earth_e_body[1]])
+            q_east_head.set_3d_properties([earth_e_body[2]])
+
+            q_up_line.set_data([0, att[0]], [0, att[1]])
+            q_up_line.set_3d_properties([0, att[2]])
+            q_up_head.set_data([att[0]], [att[1]])
+            q_up_head.set_3d_properties([att[2]])
+
             # Time-series buffers
             t_rel = now - t_start
             t_buf.append(t_rel)
             y = m_meas - m_pred
-            yx_buf.append(y[0]); yy_buf.append(y[1]); yz_buf.append(y[2])
-            nis_buf.append(nis); rs_buf.append(rscale)
 
             # Yaw: estimated comes from frame; measured = level-frame mag yaw
             #   yaw_meas = atan2(-mag_body_lvl.y, mag_body_lvl.x) - declination
             yaw_meas = math.atan2(-mag_body_lvl[1], mag_body_lvl[0]) - decl
             yaw_meas_deg = math.degrees(math.atan2(math.sin(yaw_meas),
                                                     math.cos(yaw_meas)))
-            ye_buf.append(latest[10])  # already deg
-            ym_buf.append(yaw_meas_deg)
+            yaw_err = math.degrees(math.atan2(math.sin(yaw - yaw_meas),
+                                              math.cos(yaw - yaw_meas)))
+            mag_e_norm = max(float(np.linalg.norm(mag_e)), 1e-9)
+            field_dot = float(np.clip(np.dot(mag_e, m_ned_unit) / mag_e_norm,
+                                      -1.0, 1.0))
+            field_err = math.degrees(math.acos(field_dot))
+            incl_meas = math.degrees(math.asin(float(np.clip(mag_e[2] / mag_e_norm,
+                                                           -1.0, 1.0))))
+
+            y_norm_buf.append(float(np.linalg.norm(y)))
+            yaw_err_buf.append(yaw_err)
+            field_err_buf.append(field_err)
+            incl_buf.append(incl_meas)
+            nis_buf.append(nis); rs_buf.append(rscale)
+
+            q_text.set_text(
+                f"yaw={latest[10]:+.1f}\u00b0  mag={yaw_meas_deg:+.1f}\u00b0  err={yaw_err:+.1f}\u00b0")
 
         # Always re-draw the time-series with the rolling window relative to now.
         if t_buf:
@@ -543,31 +607,26 @@ def main():
             # Trim to last 30 s for display only.
             mask = t_arr >= -30.0
             t_v = t_arr[mask]
-            yx_line.set_data(t_v, np.array(yx_buf)[mask])
-            yy_line.set_data(t_v, np.array(yy_buf)[mask])
-            yz_line.set_data(t_v, np.array(yz_buf)[mask])
-            nis_line.set_data(t_v, np.array(nis_buf)[mask])
-            rs_line.set_data(t_v, np.array(rs_buf)[mask])
-            yaw_est_line.set_data(t_v, np.array(ye_buf)[mask])
-            yaw_meas_line.set_data(t_v, np.array(ym_buf)[mask])
+            yaw_err_line.set_data(t_v, np.array(yaw_err_buf)[mask])
+            field_err_line.set_data(t_v, np.array(field_err_buf)[mask])
+            incl_line.set_data(t_v, np.array(incl_buf)[mask])
 
             # Stats on last 5 s
             mask5 = t_arr >= -5.0
             if mask5.any():
-                yarr = np.stack([np.array(yx_buf)[mask5],
-                                 np.array(yy_buf)[mask5],
-                                 np.array(yz_buf)[mask5]], axis=1)
-                mag_y = float(np.mean(np.linalg.norm(yarr, axis=1)))
+                mag_y = float(np.mean(np.array(y_norm_buf)[mask5]))
                 mean_nis = float(np.mean(np.array(nis_buf)[mask5]))
+                mean_yaw_err = float(np.mean(np.abs(np.array(yaw_err_buf)[mask5])))
                 rs5 = np.array(rs_buf)[mask5]
                 infl_pct = float(np.mean(rs5 > 1.001) * 100.0)
                 if latest is not None:
                     stats_text.set_text(
-                        f"|y|={mag_y:.3f}  NIS={mean_nis:.2f}  infl={infl_pct:.0f}%  "
+                        f"|y|={mag_y:.3f}  yaw_err={mean_yaw_err:.1f}\u00b0  NIS={mean_nis:.2f}  "
                         f"r={latest[8]:+.1f}\u00b0 p={latest[9]:+.1f}\u00b0 y={latest[10]:+.1f}\u00b0")
                 else:
                     stats_text.set_text(
-                        f"|y|={mag_y:.3f}  NIS={mean_nis:.2f}  infl={infl_pct:.0f}%")
+                        f"|y|={mag_y:.3f}  yaw_err={mean_yaw_err:.1f}\u00b0  "
+                        f"NIS={mean_nis:.2f}  infl={infl_pct:.0f}%")
 
         if g_chip_id is not None:
             chip_text.set_text(
