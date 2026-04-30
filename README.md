@@ -275,7 +275,7 @@ For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `too
 - `m_meas` and `m_pred = R(q)^T · m_ned_unit` in body frame
 - a top-left earth-frame 3D mag scene: nose axis, attitude/predicted-g overlay matching `attitude_view.py`, `R(q) · m_meas`, tilt-compensated horizontal mag projection, and configured `m_ned_unit`
 - a top-right local/body-frame 3D scene: fixed body axes plus Earth North/East/Up rotated into the local frame, so yaw drift is visible as Earth North moving around the body frame
-- a yaw/field agreement chart with `yaw_est - mag yaw` and `angle(R·m_meas, m_ned_unit)` over a full ±180° range
+- a yaw/field chart with `yaw_est`, tilt-compensated `mag yaw`, and `angle(R·m_meas, m_ned_unit)` over a full ±180° range
 - a magnetic inclination chart comparing measured `asin((R·m_meas).z / |R·m_meas|)` against the configured local inclination
 - status-bar NIS / adaptive `R` inflation summary for the mag update
 
@@ -406,7 +406,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
-| `mag_fusion_view.py` | Fusion6 magnetometer diagnostic: side-by-side 3D mag and local/body-frame views, attitude-vector overlay matching `attitude_view.py`, yaw/field angular error chart, measured inclination vs local reference, and status-bar NIS/R-scale. Uses `LOG_CLASS_MAG_FUSION`. |
+| `mag_fusion_view.py` | Fusion6 magnetometer diagnostic: side-by-side 3D mag and local/body-frame views, attitude-vector overlay matching `attitude_view.py`, yaw_est vs mag-yaw tracking plus field-angle chart, measured inclination vs local reference, and status-bar NIS/R-scale. Uses `LOG_CLASS_MAG_FUSION`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |

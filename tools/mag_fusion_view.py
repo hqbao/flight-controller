@@ -22,7 +22,7 @@ Panels:
              - Orange : measured mag horizontal projection in earth frame
              - Green  : configured reference m_ned_unit
          Healthy = red overlays green. Purple matches attitude_view.py.
-    2. Yaw lock / field-vector angular error in degrees
+    2. yaw_est, mag yaw, and field-vector angular error in degrees
     3. Measured magnetic inclination vs configured reference
     4. Quaternion/local-frame 3D view: earth axes expressed in local body frame
 
@@ -335,10 +335,10 @@ def main():
         b.on_clicked(lambda event, e=elev, a=azim: set_3d_view(e, a))
         view_btns.append(b)
 
-    # --- Panel 2: yaw lock + field-vector angular error (bottom-left) ---
+    # --- Panel 2: yaw tracking + field-vector angular error (bottom-left) ---
     ax_err = fig.add_axes([0.05, 0.10, 0.42, 0.30])
     ax_err.set_facecolor(BG_COLOR)
-    ax_err.set_title("Yaw lock / magnetic field angle error",
+    ax_err.set_title("Yaw tracking / magnetic field angle error",
                    fontsize=10, color=TEXT_COLOR, pad=4)
     ax_err.set_xlim(-30, 0)
     ax_err.set_ylim(-180, 180)
@@ -350,9 +350,11 @@ def main():
     ax_err.axhline(-10, color=GRID_COLOR, lw=0.5, ls="--", alpha=0.45)
     ax_err.axhline(90, color=GRID_COLOR, lw=0.5, ls=":", alpha=0.35)
     ax_err.axhline(-90, color=GRID_COLOR, lw=0.5, ls=":", alpha=0.35)
-    yaw_err_line, = ax_err.plot([], [], color=ACCENT_BLUE, lw=1.3,
-                                label="yaw_est - mag yaw")
-    field_err_line, = ax_err.plot([], [], color=ACCENT_RED, lw=1.1,
+    yaw_est_line, = ax_err.plot([], [], color=ACCENT_BLUE, lw=1.3,
+                                label="yaw_est")
+    mag_yaw_line, = ax_err.plot([], [], color=ACCENT_ORANGE, lw=1.1,
+                                label="mag yaw")
+    field_err_line, = ax_err.plot([], [], color=ACCENT_RED, lw=1.0, alpha=0.85,
                                   label="angle(R·m, m_ref)")
     ax_err.legend(loc="upper right", fontsize=7, framealpha=0.4,
                 facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
@@ -486,6 +488,8 @@ def main():
     # --- Rolling buffers (30 s @ 25 Hz = 750 samples) ---
     BUF_LEN = 1000
     t_buf  = deque(maxlen=BUF_LEN)
+    yaw_est_buf = deque(maxlen=BUF_LEN)
+    mag_yaw_buf = deque(maxlen=BUF_LEN)
     yaw_err_buf = deque(maxlen=BUF_LEN)
     field_err_buf = deque(maxlen=BUF_LEN)
     incl_buf = deque(maxlen=BUF_LEN)
@@ -593,6 +597,8 @@ def main():
                                                            -1.0, 1.0))))
 
             y_norm_buf.append(float(np.linalg.norm(y)))
+            yaw_est_buf.append(latest[10])
+            mag_yaw_buf.append(yaw_meas_deg)
             yaw_err_buf.append(yaw_err)
             field_err_buf.append(field_err)
             incl_buf.append(incl_meas)
@@ -607,7 +613,8 @@ def main():
             # Trim to last 30 s for display only.
             mask = t_arr >= -30.0
             t_v = t_arr[mask]
-            yaw_err_line.set_data(t_v, np.array(yaw_err_buf)[mask])
+            yaw_est_line.set_data(t_v, np.array(yaw_est_buf)[mask])
+            mag_yaw_line.set_data(t_v, np.array(mag_yaw_buf)[mask])
             field_err_line.set_data(t_v, np.array(field_err_buf)[mask])
             incl_line.set_data(t_v, np.array(incl_buf)[mask])
 
