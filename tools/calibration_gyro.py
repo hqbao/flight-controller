@@ -15,6 +15,18 @@ import csv
 import os
 import subprocess
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 Gyroscope Temperature Calibration Tool — Flight Controller
 
@@ -291,7 +303,7 @@ def main():
         'grid.color': GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=screen_fit_figsize(15, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('Gyroscope Temperature Calibration', fontsize=14, color=TEXT_COLOR)
     plt.subplots_adjust(left=0.07, right=0.70, bottom=0.22, top=0.92, hspace=0.35)

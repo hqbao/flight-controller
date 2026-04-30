@@ -48,6 +48,9 @@ void quat_to_euler(vector3d_t* euler, const quaternion_t* q);
 /** Predict accelerometer reading from quaternion (NED: v_pred = -R(q)*[0,0,1]*g) */
 void quat_to_accel(vector3d_t *a, const quaternion_t *q, float g);
 
+/** Create quaternion from rotation vector φ (axis * angle, radians). */
+void quat_from_rotation_vector(quaternion_t *q, double phi_x, double phi_y, double phi_z);
+
 /** Compute rotation quaternion from vector u to vector v */
 void quat_from_two_vectors(quaternion_t* q, const vector3d_t* u, const vector3d_t* v);
 

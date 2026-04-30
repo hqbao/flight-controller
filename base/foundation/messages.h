@@ -484,7 +484,11 @@ typedef struct {
 #define LOG_CLASS_NONE                  0x00
 #define LOG_CLASS_IMU_ACCEL_RAW         0x01
 #define LOG_CLASS_COMPASS               0x02
-// 0x03 LOG_CLASS_ATTITUDE      — removed (legacy attitude_estimation deleted in Phase 4)
+// 0x03: state_estimation attitude-debug 9-float frame.
+//   float[0..2] accel_meas_body  (m/s², latest accel sample, body NED, includes gravity)
+//   float[3..5] gravity_pred_body (m/s², expected accel from current quaternion)
+//   float[6..8] accel_linear_body (m/s², gravity-removed linear acceleration)
+#define LOG_CLASS_ATTITUDE              0x03
 #define LOG_CLASS_POSITION              0x04  // reserved — will be repurposed for state_estimation
 #define LOG_CLASS_FFT_GYRO_Z            0x05  // removed (was host-side FFT)
 // 0x06 LOG_CLASS_POSITION_OPTFLOW — removed (legacy position_estimation deleted in Phase 4)

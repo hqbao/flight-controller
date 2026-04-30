@@ -50,6 +50,18 @@ from matplotlib.animation import FuncAnimation  # noqa: E402
 from matplotlib.widgets import Button  # noqa: E402
 
 
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
+
 # --- Protocol constants --------------------------------------------------
 
 BAUD_RATE       = 38400
@@ -221,7 +233,7 @@ def main() -> None:
         "grid.color":       GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(15, 9))
+    fig = plt.figure(figsize=screen_fit_figsize(15, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle("GPS Dashboard — ZED-F9P (LOG_CLASS_GPS = 0x1E)",
                  fontsize=15, color=TEXT_COLOR, fontweight="bold", y=0.97)

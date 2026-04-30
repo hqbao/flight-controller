@@ -1,6 +1,8 @@
 #ifndef MATRIX_H
 #define MATRIX_H
 
+#include "vector3d.h"
+
 /* Bumped 7→16 for fusion6 ESKF (16-element error state). Inflates fusion2_t but
  * stays well within STM32H7 SRAM. fusion6 is the only client requiring >7. */
 #define MATRIX_MAX_SIZE 16
@@ -20,6 +22,13 @@ void matrix_eye(matrix_t* m, int size);
 
 /** Matrix multiplication (result = a * b) */
 void matrix_mult(matrix_t* result, const matrix_t* a, const matrix_t* b);
+
+/** Optimized 3D vector multiply: result = m[0:3,0:3] * v.
+ *  Avoids zeroing/looping over full MATRIX_MAX_SIZE storage in realtime paths. */
+void matrix_mult_vec3(vector3d_t* result, const matrix_t* m, const vector3d_t* v);
+
+/** Optimized 3D vector multiply: result = m[0:3,0:3]^T * v. */
+void matrix_mult_transpose_vec3(vector3d_t* result, const matrix_t* m, const vector3d_t* v);
 
 /** Matrix addition (result = a + b) */
 void matrix_add(matrix_t* result, const matrix_t* a, const matrix_t* b);

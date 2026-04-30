@@ -12,6 +12,18 @@ from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import time
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 RC Receiver Debug Tool (rc_receiver_view.py)
 
@@ -176,7 +188,7 @@ def main():
         'grid.color': GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(14, 9))
+    fig = plt.figure(figsize=screen_fit_figsize(14, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('RC Receiver Debug', fontsize=16,
                  color=TEXT_COLOR, fontweight='bold', y=0.97)

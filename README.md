@@ -40,12 +40,10 @@ The Flight Controller is the core autopilot that:
 flight-controller/
 ├── base/
 │   ├── boards/                    # Board-specific HAL implementations
-│   │   ├── h7v1/                  #   STM32H7 board
-│   │   │   ├── Core/              #     CubeIDE-generated code (main.c, IRQ, MSP)
-│   │   │   ├── platform/          #     Platform HAL drivers (see below)
-│   │   │   └── Drivers/           #     STM32 HAL/CMSIS drivers
-│   │   ├── p4v1/                  #   ESP32-P4 board
-│   │   └── s3v1/                  #   ESP32-S3 board
+│   │   └── h7v1/                  #   STM32H7 board (only supported target)
+│   │       ├── Core/              #     CubeIDE-generated code (main.c, IRQ, MSP)
+│   │       ├── platform/          #     Platform HAL drivers (see below)
+│   │       └── Drivers/           #     STM32 HAL/CMSIS drivers
 │   └── foundation/                # Platform abstraction, pub/sub, macros
 │
 ├── libs/                          # Pre-compiled static libraries
@@ -212,14 +210,6 @@ cd flight-controller/base/boards/h7v1
 ./build.sh bicopter     # Build bicopter (explicit)
 ./build-flash.sh        # Build bicopter + flash
 ./build-flash.sh quad   # Build quadcopter + flash
-```
-
-### ESP32 (requires ESP-IDF v5.x)
-```bash
-. $HOME/esp/esp-idf/export.sh
-cd base/boards/s3v1   # or p4v1
-idf.py build
-idf.py -p /dev/cu.usbmodem* flash monitor
 ```
 
 ## Coding Conventions

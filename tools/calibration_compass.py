@@ -14,6 +14,18 @@ import time
 import os
 import subprocess
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 Magnetometer Calibration Tool (Ellipsoid Fit)
 
@@ -345,7 +357,7 @@ def main():
         'grid.color': GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(14, 8))
+    fig = plt.figure(figsize=screen_fit_figsize(14, 8))
     fig.patch.set_facecolor(BG_COLOR)
     ax = fig.add_subplot(111, projection='3d')
     ax.set_facecolor(BG_COLOR)
@@ -357,6 +369,7 @@ def main():
         axis.label.set_color(TEXT_COLOR)
         axis._axinfo['tick']['color'] = TEXT_COLOR
         axis._axinfo['tick']['inward_factor'] = 0
+    ax.view_init(elev=0, azim=180)
     ax.tick_params(colors=DIM_TEXT)
 
     # Initialize plots

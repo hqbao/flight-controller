@@ -12,6 +12,18 @@ from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import time
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 FFT Spectrum & Peaks Visualization Tool (fft_spectrum_view.py)
 
@@ -223,7 +235,7 @@ def main():
     })
 
     fig, (ax_spec, ax_snap) = plt.subplots(
-        1, 2, figsize=(16, 7),
+        1, 2, figsize=screen_fit_figsize(16, 7),
         gridspec_kw={'width_ratios': [4, 1]})
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('FFT Spectrum \u2014 On-Board (10 Hz)',

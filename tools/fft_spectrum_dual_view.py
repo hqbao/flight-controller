@@ -12,6 +12,18 @@ from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import time
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 FFT Dual Spectrum Visualization Tool (fft_spectrum_dual_view.py)
 
@@ -222,7 +234,7 @@ def main():
 
     # 2 rows (raw on top, filtered on bottom), 2 columns (spectrogram + snapshot bar)
     fig, axes = plt.subplots(
-        2, 2, figsize=(16, 9),
+        2, 2, figsize=screen_fit_figsize(16, 9),
         gridspec_kw={'width_ratios': [4, 1], 'hspace': 0.18, 'wspace': 0.08},
         sharey='row')
     fig.patch.set_facecolor(BG_COLOR)

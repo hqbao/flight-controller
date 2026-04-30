@@ -12,6 +12,18 @@ from matplotlib.widgets import Button
 import time
 import math
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 Flight Telemetry Dashboard
 
@@ -279,7 +291,7 @@ def main():
         'grid.color': GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(18, 10))
+    fig = plt.figure(figsize=screen_fit_figsize(18, 10))
     fig.patch.set_facecolor(BG_COLOR)
 
     fig.suptitle('Flight Telemetry Dashboard', fontsize=14,
@@ -290,7 +302,7 @@ def main():
     # =========================================================================
     ax_quad = fig.add_axes([0.10, 0.05, 0.85, 0.92], projection='3d')
     ax_quad.set_facecolor(BG_COLOR)
-    ax_quad.view_init(elev=25, azim=-90)
+    ax_quad.view_init(elev=0, azim=180)
     ax_quad.set_xlim(-2.5, 2.5)
     ax_quad.set_ylim(-2.5, 2.5)
     ax_quad.set_zlim(-1.5, 1.5)

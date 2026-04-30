@@ -11,6 +11,18 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 Accelerometer Clip / Range Diagnostic Viewer
 
@@ -176,7 +188,7 @@ def main():
         'grid.color': GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(13, 8))
+    fig = plt.figure(figsize=screen_fit_figsize(13, 8))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('Accel Clip Diagnostic \u2014 raw INT16 LSB (AFS_16G \u2192 \u00b132767 = \u00b116 g)',
                  fontsize=12, color=TEXT_COLOR, fontweight='bold', y=0.97)

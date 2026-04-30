@@ -50,6 +50,18 @@ from matplotlib.animation import FuncAnimation  # noqa: E402
 from matplotlib.widgets import Button, RadioButtons, CheckButtons, TextBox  # noqa: E402
 
 
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
+
 # ============================================================================
 # UI palette (matches every other tool)
 # ============================================================================
@@ -606,7 +618,7 @@ def main() -> None:
         "grid.color":       GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=screen_fit_figsize(16, 10))
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle("ZED-F9P Configurator & Live Monitor",
                  fontsize=15, color=TEXT_COLOR, fontweight="bold", y=0.985)

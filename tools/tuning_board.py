@@ -13,6 +13,18 @@ from matplotlib.patches import Rectangle
 from matplotlib.animation import FuncAnimation
 import time
 
+
+def screen_fit_figsize(base_width, base_height, margin_px=90, dpi=100):
+    try:
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw()
+        screen_h = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        return (base_width, base_height)
+    scale = min(1.0, max(300, screen_h - margin_px) / (base_height * dpi))
+    return (base_width * scale, base_height * scale)
+
 """
 Flight Controller Tuning Board
 
@@ -336,7 +348,7 @@ def get_category_params(cat_idx):
 #  GUI SETUP
 # =====================================================================
 
-fig = plt.figure(figsize=(14, 9))
+fig = plt.figure(figsize=screen_fit_figsize(14, 9))
 fig.patch.set_facecolor(BG_COLOR)
 fig.canvas.manager.set_window_title('Flight Controller Tuning Board')
 
