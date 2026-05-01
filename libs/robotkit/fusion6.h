@@ -39,6 +39,7 @@ typedef struct {
 
     /* Measurement noise (accel only for now) */
     double R_accel;           /* m/s² */
+    double R_mag_heading;     /* rad² (yaw pseudo-measurement variance) */
 
     /* Bias sanity bounds */
     double bias_clamp_gyro;   /* rad/s */
@@ -107,6 +108,12 @@ void fusion6_predict(fusion6_t *f,
                      const double gyro[3], const double accel[3], double dt);
 
 void fusion6_update_accel(fusion6_t *f, const double accel[3]);
+
+/** Yaw pseudo-measurement from a magnetic heading (decl-corrected, NED, rad).
+ *  1-D update with H = [0..., R21/c², R22/c², 0...] in the δθ block,
+ *  c² = cos²(pitch) = R00² + R10². Skipped if INIT_DONE not set or near
+ *  gimbal lock (pitch ≳ 84°). Innovation is wrapped to [-π, π]. */
+void fusion6_update_mag_heading(fusion6_t *f, double mag_heading_rad);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 

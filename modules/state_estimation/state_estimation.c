@@ -6,14 +6,17 @@
  *   IMU accel (500 Hz)           → on_accel → fusion6_update_accel
  *                                            → publish STATE_UPDATE @ 500 Hz
  *   Compass   (25 Hz, unit vec)  → on_compass → mag_axis_map
- *                                             → diagnostic stream only
+ *                                             → mag_heading (tilt-comp,
+ *                                                decl-corrected)
+ *                                             → fusion6_update_mag_heading
+ *                                                (1-D yaw pseudo-meas)
+ *                                             → diagnostic stream
  *
- * Magnetometer updates are intentionally disabled here. Compass samples are
- * still mapped into body NED and logged so the next heading/mag method can be
- * developed without allowing mag data to move roll/pitch/yaw. Other sensors
- * (baro, optflow, GPS) are not wired here yet —
- * they will be reintroduced once the core attitude/inertial path is proven on
- * hardware.
+ * Magnetometer feeds yaw only (1-D, decl-corrected heading). Roll/pitch are
+ * still driven by the gravity update; mag does NOT touch the horizontal
+ * components of attitude. Other sensors (baro, optflow, GPS) are not wired
+ * here yet — they will be reintroduced once the core attitude/inertial path
+ * is proven on hardware.
  *
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
@@ -60,7 +63,6 @@ static double   g_last_accel_body[3] = {0, 0, 0};
 /* Latest compass diagnostics for the LOG_CLASS_MAG_FUSION stream. */
 static double   g_last_mag_meas[3] = {0, 0, 0};
 static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [-π, π] */
-static int      g_have_mag         = 0;
 
 static uint8_t  g_log_class      = 0;
 
@@ -164,10 +166,10 @@ static void on_compass(uint8_t *data, size_t size) {
 	if (size < sizeof(vector3d_t)) return;
 	vector3d_t *m = (vector3d_t *)data;
 	map_mag(m, g_last_mag_meas);
-	g_have_mag = 1;
 
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
 	update_mag_diagnostics();
+	fusion6_update_mag_heading(&g_f, g_last_mag_heading);
 }
 
 /* ============================================================
@@ -263,7 +265,6 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 	if (g_log_class != LOG_CLASS_MAG_FUSION) return;
 	if (!g_init_started) return;
-	if (!g_have_mag) return;
 
 	fusion6_state_t s;
 	fusion6_get_state(&g_f, &s);

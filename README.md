@@ -257,7 +257,7 @@ body_ax = -raw_ay;  body_ay = -raw_ax;  body_az = -raw_az;
 ```
 
 ### Sensor-to-Body Axis Mapping (BMM350)
-The compass module publishes calibrated/normalized BMM350 data in the sensor frame. `state_estimation.c` applies the board/body mapping through `mag_axis_map()` in `modules/state_estimation/sensor_unit.h` for diagnostics only; the magnetometer is not currently fused into `fusion6`:
+The compass module publishes calibrated/normalized BMM350 data in the sensor frame. `state_estimation.c` applies the board/body mapping through `mag_axis_map()` in `modules/state_estimation/sensor_unit.h`, derives a tilt-compensated, declination-corrected magnetic heading, and feeds it into `fusion6` as a 1-D yaw pseudo-measurement (`fusion6_update_mag_heading`). Mag never touches roll/pitch.
 - BMM350 on PCB: sensor X=Right, sensor Y=Forward, sensor Z=Down (same X/Y orientation as ICM-42688P)
 - Mapping: `body_x = sensor_y`, `body_y = -sensor_x`, `body_z = sensor_z`
 ```c
@@ -274,9 +274,9 @@ For Hà Nội defaults this uses `decl=-0.6°` (inclination is no longer needed 
 - live body axes drawn as `R(q) · e_i` (Body-X red→blue, Body-Y green, Body-Z purple)
 - raw mag vector `R(q) · m_meas` (red), tilted out of the N-E plane by the local field inclination
 - tilt-compensated mag (orange): horizontal projection of `R(q) · m_meas` onto the N-E plane — points toward magnetic north regardless of attitude
-- status-bar shows `roll/pitch/yaw`, `mag_heading`, chip ID. `mag=disabled` is expected while the magnetometer ESKF update is removed.
+- status-bar shows `roll/pitch/yaw`, `mag_heading`, chip ID. Estimator yaw and `mag_heading` should converge after init (timescale set by `R_mag_heading`).
 
-The firmware additionally computes `m_lvl = Rz(-yaw) · R(q) · m_body` and `mag_heading = atan2(-m_lvl.y, m_lvl.x) - declination` so a future yaw-only pseudo-measurement can feed `fusion6` without touching roll/pitch.
+The firmware computes `m_lvl = Rz(-yaw) · R(q) · m_body` and `mag_heading = atan2(-m_lvl.y, m_lvl.x) - declination`, then feeds `mag_heading` into `fusion6` as a yaw-only pseudo-measurement (no impact on roll/pitch).
 
 ## Sensor Calibration
 
@@ -388,7 +388,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
 | `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
-| `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Magnetometer diagnostics (13 floats / 52 B): measured/predicted unit mag, roll/pitch/yaw, status (`mag=disabled`; no EKF update) |
+| `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Mag diagnostics (7 floats / 28 B): measured body-frame mag, roll/pitch/yaw, decl-corrected mag heading. Yaw is fused via 1-D pseudo-measurement. |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -400,7 +400,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
-| `mag_diagnostic_view.py` | Magnetometer diagnostic 3D viewer (earth NED frame): static reference axes, live body axes (R(q)·e_i), raw mag and tilt-compensated mag vectors. Uses `LOG_CLASS_MAG_FUSION`; current firmware reports `mag=disabled`. |
+| `mag_diagnostic_view.py` | Magnetometer diagnostic viewer: 3D earth-NED panel (body axes, raw mag, tilt-comp mag) plus polar compass dial showing decl-corrected mag heading vs estimator yaw. Uses `LOG_CLASS_MAG_FUSION`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Reads the **BMM350** 3-axis magnetometer at 25 Hz, applies hard/soft iron calibration, normalizes the result to a unit vector, and publishes the calibrated sensor-frame vector. `state_estimation.c` currently performs the final sensor-to-body mapping for diagnostics only; compass data is not fused into attitude.
+Reads the **BMM350** 3-axis magnetometer at 25 Hz, applies hard/soft iron calibration, normalizes the result to a unit vector, and publishes the calibrated sensor-frame vector. `state_estimation.c` performs the sensor-to-body mapping, derives a tilt-compensated decl-corrected heading, and feeds it into `fusion6` as a 1-D yaw pseudo-measurement (no impact on roll/pitch).
 
 ## Data Flow
 
