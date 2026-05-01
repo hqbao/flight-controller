@@ -267,11 +267,9 @@ out_body[2] =  sensor_z;
 ```
 
 ### Magnetometer Diagnostics
-`state_estimation.c` maps the calibrated BMM350 unit vector into body NED, but it does not initialize yaw and does not call a magnetometer update. The ESKF currently uses gyro prediction plus accelerometer gravity correction only. The diagnostic stream still compares the measured body-frame mag vector against the local geomagnetic reference so the replacement heading/mag method can be developed safely:
-```c
-m_ned_unit = (cos(incl) * cos(decl), cos(incl) * sin(decl), sin(incl));
-```
-For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `tools/mag_diagnostic_view.py` diagnostic stream (`LOG_CLASS_MAG_FUSION`) renders a single 3D scene in the **earth NED frame** (back-camera view by default, with 6 face-view buttons):
+`state_estimation.c` maps the calibrated BMM350 unit vector into body NED, but it does not initialize yaw and does not call a magnetometer update. The ESKF currently uses gyro prediction plus accelerometer gravity correction only. The diagnostic stream emits the body-frame mag vector plus a tilt-compensated horizontal projection so the replacement heading/mag method can be developed safely.
+
+For Hà Nội defaults this uses `decl=-0.6°` (inclination is no longer needed by the firmware diagnostic — the viewer infers it visually). `tools/mag_diagnostic_view.py` (`LOG_CLASS_MAG_FUSION`, 7×float / 28 B) renders a single 3D scene in the **earth NED frame** (back-camera view by default, with 6 face-view buttons):
 - static reference Earth N / E / Down axes
 - live body axes drawn as `R(q) · e_i` (Body-X red→blue, Body-Y green, Body-Z purple)
 - raw mag vector `R(q) · m_meas` (red), tilted out of the N-E plane by the local field inclination

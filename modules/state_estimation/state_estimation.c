@@ -18,7 +18,7 @@
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
- *   LOG_CLASS_MAG_FUSION  (25 Hz, 17×float)    — mag diagnostics + tilt-comp
+ *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
  */
 
 #include "state_estimation.h"
@@ -43,15 +43,12 @@
 #define GRAVITY_MSS_LOCAL     9.80665
 #define ACCEL_LSB_TO_MPS2     (GRAVITY_MSS_LOCAL / (double)MAX_IMU_ACCEL)
 #define MAG_DIAG_DECLINATION_RAD   (-0.6  * (double)DEG2RAD)
-#define MAG_DIAG_INCLINATION_RAD   (27.5  * (double)DEG2RAD)
-#define MAG_DIAG_STATUS_DISABLED   6
 
 /* ============================================================
  * State
  * ============================================================ */
 
 static fusion6_t        g_f;
-static fusion6_config_t g_cfg;
 
 static int      g_init_started = 0;
 static int      g_static_count = 0;
@@ -59,17 +56,10 @@ static uint64_t g_last_gyro_us = 0;
 
 static double   g_last_gyro_body[3]  = {0, 0, 0};
 static double   g_last_accel_body[3] = {0, 0, 0};
-static int      g_have_gyro  = 0;
-static int      g_have_accel = 0;
 
 /* Latest compass diagnostics for the LOG_CLASS_MAG_FUSION stream. */
 static double   g_last_mag_meas[3] = {0, 0, 0};
-static double   g_last_mag_pred[3] = {0, 0, 0};
-static double   g_last_mag_lvl[3]  = {0, 0, 0};   /* tilt-compensated, body-yaw-aligned level frame */
 static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [-π, π] */
-static double   g_last_mag_nis     = 0.0;
-static double   g_last_mag_rscale  = 0.0;
-static int      g_last_mag_status  = MAG_DIAG_STATUS_DISABLED;
 static int      g_have_mag         = 0;
 
 static uint8_t  g_log_class      = 0;
@@ -99,48 +89,24 @@ static inline void map_mag(const vector3d_t *sensor_unit, double out_body_unit[3
 }
 
 static void update_mag_diagnostics(void) {
-	/* Diagnostic-only computations: predicted body-frame field (h_pred), the
-	 * tilt-compensated body-yaw-aligned level-frame mag vector (m_lvl), and
-	 * the decl-corrected magnetic heading. Nothing here mutates the ESKF. */
-	double ci = cos(MAG_DIAG_INCLINATION_RAD);
-	double si = sin(MAG_DIAG_INCLINATION_RAD);
-	double cd = cos(MAG_DIAG_DECLINATION_RAD);
-	double sd = sin(MAG_DIAG_DECLINATION_RAD);
-	vector3d_t m_ned = { ci * cd, ci * sd, si };
-
-	matrix_t R;
-	quat_to_rot_matrix(&R, &g_f.q);
-
-	/* Predicted body-frame field from configured NED reference. */
-	vector3d_t h_v;
-	matrix_mult_transpose_vec3(&h_v, &R, &m_ned);
-	g_last_mag_pred[0] = h_v.x;
-	g_last_mag_pred[1] = h_v.y;
-	g_last_mag_pred[2] = h_v.z;
-
-	/* Tilt compensation: rotate mag from body to earth, then back by -yaw to a
-	 * body-yaw-aligned level frame. In that frame the horizontal components
-	 * (m_lvl.x, m_lvl.y) point along the body forward / right axes after roll
-	 * & pitch are removed, so atan2(-m_lvl.y, m_lvl.x) is the magnetic heading. */
+	/* Diagnostic-only: tilt-compensated magnetic heading. The body-yaw-aligned
+	 * level-frame mag vector m_lvl = Rz(-yaw) · R(q) · m_body has roll & pitch
+	 * removed, so atan2(-m_lvl.y, m_lvl.x) gives the magnetic heading. We only
+	 * need its two horizontal components, then drop it. Nothing here mutates
+	 * the ESKF. */
 	vector3d_t m_b = { g_last_mag_meas[0], g_last_mag_meas[1], g_last_mag_meas[2] };
 	vector3d_t m_e;
-	matrix_mult_vec3(&m_e, &R, &m_b);
+	quat_rotate_vector(&m_e, &g_f.q, &m_b);
 
 	vector3d_t eul;
 	quat_to_euler(&eul, &g_f.q);
 	double cy = cos(eul.z);
 	double sy = sin(eul.z);
-	g_last_mag_lvl[0] =  cy * m_e.x + sy * m_e.y;
-	g_last_mag_lvl[1] = -sy * m_e.x + cy * m_e.y;
-	g_last_mag_lvl[2] =  m_e.z;
+	double lvl_x =  cy * m_e.x + sy * m_e.y;
+	double lvl_y = -sy * m_e.x + cy * m_e.y;
 
-	double heading = atan2(-g_last_mag_lvl[1], g_last_mag_lvl[0])
-	               - MAG_DIAG_DECLINATION_RAD;
+	double heading = atan2(-lvl_y, lvl_x) - MAG_DIAG_DECLINATION_RAD;
 	g_last_mag_heading = atan2(sin(heading), cos(heading));
-
-	g_last_mag_nis     = 0.0;
-	g_last_mag_rscale  = 0.0;
-	g_last_mag_status  = MAG_DIAG_STATUS_DISABLED;
 }
 
 static void static_init_step(void) {
@@ -164,10 +130,8 @@ static void on_gyro(uint8_t *data, size_t size) {
 	float raw[3];
 	memcpy(raw, data, 12);
 	map_gyro(raw, g_last_gyro_body);
-	g_have_gyro = 1;
 
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
-	if (!g_have_accel) return;
 
 	uint64_t now_us = platform_time_us();
 	if (g_last_gyro_us == 0) {
@@ -186,10 +150,9 @@ static void on_accel(uint8_t *data, size_t size) {
 	float raw[3];
 	memcpy(raw, data, 12);
 	map_accel(raw, g_last_accel_body);
-	g_have_accel = 1;
 
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) {
-		if (g_have_gyro && !g_init_started) static_init_step();
+		if (!g_init_started) static_init_step();
 		return;
 	}
 
@@ -291,16 +254,10 @@ static void on_attitude_log_50hz(uint8_t *data, size_t size) {
 /* ============================================================
  * Magnetometer diagnostic log stream (LOG_CLASS_MAG_FUSION = 0x1F)
  *
- * 17-float / 68-byte payload @ 25 Hz, consumed by tools/mag_diagnostic_view.py.
+ * 7-float / 28-byte payload @ 25 Hz, consumed by tools/mag_diagnostic_view.py.
  *   float[0..2]   = m_meas (body NED, unit)
- *   float[3..5]   = m_pred = R(q)^T · m_ned_unit (body NED, unit)
- *   float[6]      = NIS (0 while mag update is disabled)
- *   float[7]      = r_scale (0 while mag update is disabled)
- *   float[8..10]  = roll, pitch, yaw  (deg)
- *   float[11]     = status (6 = mag update disabled, diagnostics only)
- *   float[12..14] = m_lvl  (body-yaw-aligned level-frame mag, unit)
- *   float[15]     = mag_heading_deg (decl-corrected, [-180, 180])
- *   float[16]     = reserved (0)
+ *   float[3..5]   = roll, pitch, yaw  (deg)
+ *   float[6]      = mag_heading_deg (decl-corrected, [-180, 180])
  * ============================================================ */
 static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
@@ -311,24 +268,14 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 	fusion6_state_t s;
 	fusion6_get_state(&g_f, &s);
 
-	float payload[17];
-	payload[0]  = (float)g_last_mag_meas[0];
-	payload[1]  = (float)g_last_mag_meas[1];
-	payload[2]  = (float)g_last_mag_meas[2];
-	payload[3]  = (float)g_last_mag_pred[0];
-	payload[4]  = (float)g_last_mag_pred[1];
-	payload[5]  = (float)g_last_mag_pred[2];
-	payload[6]  = (float)g_last_mag_nis;
-	payload[7]  = (float)g_last_mag_rscale;
-	payload[8]  = (float)(s.euler.x * (double)RAD2DEG);
-	payload[9]  = (float)(s.euler.y * (double)RAD2DEG);
-	payload[10] = (float)(s.euler.z * (double)RAD2DEG);
-	payload[11] = (float)g_last_mag_status;
-	payload[12] = (float)g_last_mag_lvl[0];
-	payload[13] = (float)g_last_mag_lvl[1];
-	payload[14] = (float)g_last_mag_lvl[2];
-	payload[15] = (float)(g_last_mag_heading * (double)RAD2DEG);
-	payload[16] = 0.0f;
+	float payload[7];
+	payload[0] = (float)g_last_mag_meas[0];
+	payload[1] = (float)g_last_mag_meas[1];
+	payload[2] = (float)g_last_mag_meas[2];
+	payload[3] = (float)(s.euler.x * (double)RAD2DEG);
+	payload[4] = (float)(s.euler.y * (double)RAD2DEG);
+	payload[5] = (float)(s.euler.z * (double)RAD2DEG);
+	payload[6] = (float)(g_last_mag_heading * (double)RAD2DEG);
 
 	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
 }
@@ -338,8 +285,9 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
  * ============================================================ */
 
 void state_estimation_setup(void) {
-	fusion6_config_default(&g_cfg);
-	fusion6_init(&g_f, &g_cfg);
+	fusion6_config_t cfg;
+	fusion6_config_default(&cfg);
+	fusion6_init(&g_f, &cfg);
 
 	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, on_gyro);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, on_accel);

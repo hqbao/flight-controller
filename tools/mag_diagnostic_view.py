@@ -2,21 +2,16 @@
 Mag Diagnostic Viewer (minimal)
 ================================
 
-Single 3D panel showing, in the body frame:
-    * Body axes (X forward, Y right, Z down) from the ESKF quaternion
-    * Raw measured mag vector m_meas (red)
-    * Tilt-compensated mag vector m_lvl (orange) — firmware-supplied,
-      body-yaw-aligned level frame, roll/pitch removed via the quaternion
+Single 3D panel showing, in the earth NED frame:
+    * Body axes from the ESKF roll/pitch/yaw
+    * Raw measured mag vector R(q)·m_meas (red)
+    * Tilt-compensated mag (orange) = horizontal projection of the raw
+      vector onto the N-E plane
 
-Wire format (17 floats / 68 B, LOG_CLASS_MAG_FUSION = 0x1F):
-    [0..2]   m_meas  (body NED, unit)
-    [3..5]   m_pred  (unused here)
-    [6..7]   NIS, r_scale  (unused here)
-    [8..10]  roll, pitch, yaw  (deg)
-    [11]     status  (unused here)
-    [12..14] m_lvl   (body-yaw-aligned level frame, unit)
-    [15]     mag_heading_deg
-    [16]     reserved
+Wire format (7 floats / 28 B, LOG_CLASS_MAG_FUSION = 0x1F):
+    [0..2]  m_meas  (body NED, unit)
+    [3..5]  roll, pitch, yaw  (deg)
+    [6]     mag_heading_deg  (decl-corrected, [-180, 180])
 """
 
 import math
@@ -60,8 +55,8 @@ LOG_CLASS_NONE = 0x00
 LOG_CLASS_HEART_BEAT = 0x09
 LOG_CLASS_MAG_FUSION = 0x1F
 
-MAG_FRAME_SIZE = 68            # 17 floats
-MAG_FRAME_FORMAT = "<17f"
+MAG_FRAME_SIZE = 28            # 7 floats
+MAG_FRAME_FORMAT = "<7f"
 
 # --- UI palette (shared with other tools/*.py viewers) ---
 BG_COLOR = "#1e1e1e"
@@ -358,11 +353,10 @@ def main():
             return ()
 
         m_meas = np.array(latest[0:3])
-        roll   = math.radians(latest[8])
-        pitch  = math.radians(latest[9])
-        yaw    = math.radians(latest[10])
-        m_lvl  = np.array(latest[12:15])
-        heading_deg = float(latest[15])
+        roll   = math.radians(latest[3])
+        pitch  = math.radians(latest[4])
+        yaw    = math.radians(latest[5])
+        heading_deg = float(latest[6])
 
         # Render in EARTH frame (NED). Body axes = R(q) · e_i so they tilt
         # the same direction the body tilts.
@@ -397,8 +391,8 @@ def main():
             head.set_3d_properties([vec[2]])
 
         status_text.set_text(
-            f"r={latest[8]:+.1f}°  p={latest[9]:+.1f}°  "
-            f"yaw={latest[10]:+.1f}°  mag_heading={heading_deg:+.1f}°"
+            f"r={latest[3]:+.1f}°  p={latest[4]:+.1f}°  "
+            f"yaw={latest[5]:+.1f}°  mag_heading={heading_deg:+.1f}°"
         )
         if g_chip_id is not None:
             chip_text.set_text(f"Chip {g_chip_id}")
