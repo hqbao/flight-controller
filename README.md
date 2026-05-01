@@ -88,6 +88,7 @@ flight-controller/
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
 │   ├── mag_diagnostic_view.py    #   Magnetometer body-frame diagnostics
+│   ├── optflow_velocity_view.py   #   Optical-flow body-velocity diagnostics (UP+DOWN)
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -386,6 +387,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
 | `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
 | `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Mag diagnostics (7 floats / 28 B): measured body-frame mag, roll/pitch/yaw, decl-corrected mag heading. Yaw is fused via 1-D pseudo-measurement. |
+| `LOG_CLASS_VEL_FUSION` | `0x20` | `state_estimation.c` | Optical-flow body-velocity diagnostics (10 floats / 40 B): per-camera (DOWN, UP) measured `v_body_xy` (m/s), ESKF-predicted `v_body_xy`, per-camera clarity and range. Velocity fused via `fusion6_update_velocity_xy_body`. |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -398,6 +400,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
 | `mag_diagnostic_view.py` | Magnetometer diagnostic viewer: 3D earth-NED panel (body axes, raw mag, tilt-comp mag) plus polar compass dial showing decl-corrected mag heading vs estimator yaw. Uses `LOG_CLASS_MAG_FUSION`. |
+| `optflow_velocity_view.py` | Optical-flow body-velocity viewer: per-camera (DOWN, UP) measured vx/vy time-series overlaid on the ESKF-predicted body velocity, plus clarity and range strips. Uses `LOG_CLASS_VEL_FUSION`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |

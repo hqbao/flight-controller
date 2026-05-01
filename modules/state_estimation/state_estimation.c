@@ -11,16 +11,23 @@
  *                                             → fusion6_update_mag_heading
  *                                                (1-D yaw pseudo-meas)
  *                                             → diagnostic stream
+ *   Optflow   (~25 Hz, UP+DOWN)  → on_optflow → derotate (gyro)
+ *                                             → range·flow → v_body_xy
+ *                                             → fusion6_update_velocity_xy_body
+ *                                             → diagnostic stream
  *
  * Magnetometer feeds yaw only (1-D, decl-corrected heading). Roll/pitch are
  * still driven by the gravity update; mag does NOT touch the horizontal
- * components of attitude. Other sensors (baro, optflow, GPS) are not wired
- * here yet.
+ * components of attitude. Optical flow feeds horizontal body velocity (vx,vy)
+ * and indirectly tightens roll/pitch through the cross-coupling. Vertical
+ * velocity / position are not yet observed by any update — `vz` and `pz`
+ * still drift on accel-only integration.
  *
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
+ *   LOG_CLASS_VEL_FUSION  (25 Hz, 10×float)    — optflow velocity diagnostics
  */
 
 #include "state_estimation.h"
@@ -46,6 +53,27 @@
 #define ACCEL_LSB_TO_MPS2     (GRAVITY_MSS_LOCAL / (double)MAX_IMU_ACCEL)
 #define MAG_DIAG_DECLINATION_RAD   (-0.6  * (double)DEG2RAD)
 
+/* --- Optical-flow gates / noise model ---
+ * Range: VL53L1X reports 0..4 m; reject below 50 mm where geometry breaks
+ * down and above 4 m where the ToF saturates.
+ * Clarity: optflow library returns ~0..100; gate at 5, fully trust at 30.
+ * Velocity: a 4 m/s body velocity at 1 m range gives ~4 rad/s flow — well
+ * above any sane indoor scenario; reject obvious glitches above this.
+ *
+ * R model (per axis, σ in m/s):
+ *   σ = range·σ_flow + |flow|·range·σ_range_frac + range·σ_gyro
+ *   r = σ² · clarity_scale
+ * Defaults are conservative; tighten after Phase-4 cart test.
+ */
+#define OPTFLOW_RANGE_MIN_MM     50
+#define OPTFLOW_RANGE_MAX_MM     4000
+#define OPTFLOW_CLARITY_MIN      5.0
+#define OPTFLOW_CLARITY_GOOD     30.0
+#define OPTFLOW_VEL_MAX_MPS      6.0
+#define OPTFLOW_SIGMA_FLOW       0.05    /* rad/s 1-σ on derotated flow rate */
+#define OPTFLOW_SIGMA_RANGE_FRAC 0.05    /* range relative 1-σ */
+#define OPTFLOW_SIGMA_GYRO       0.005   /* rad/s 1-σ residual gyro after derot */
+
 /* ============================================================
  * State
  * ============================================================ */
@@ -62,6 +90,12 @@ static double   g_last_accel_body[3] = {0, 0, 0};
 /* Latest compass diagnostics for the LOG_CLASS_MAG_FUSION stream. */
 static double   g_last_mag_meas[3] = {0, 0, 0};
 static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [-π, π] */
+
+/* Latest optflow per-direction snapshots for LOG_CLASS_VEL_FUSION.
+ * Index 0 = OPTFLOW_DOWNWARD, 1 = OPTFLOW_UPWARD. */
+static double   g_last_optflow_v[2][2]   = { {0, 0}, {0, 0} };  /* [dir][x,y] */
+static double   g_last_optflow_clarity[2] = {0, 0};
+static double   g_last_optflow_range_m[2] = {0, 0};
 
 static uint8_t  g_log_class      = 0;
 
@@ -169,6 +203,81 @@ static void on_compass(uint8_t *data, size_t size) {
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
 	update_mag_diagnostics();
 	fusion6_update_mag_heading(&g_f, g_last_mag_heading);
+}
+
+/* ============================================================
+ * Optical-flow update (downward + upward cameras share one topic, routed
+ * by msg.direction). Per-camera gates: skip if range invalid, clarity below
+ * threshold, or velocity glitch. The other camera keeps fusing.
+ *
+ * Pinhole geometry (downward looking at static surface at range r):
+ *   flow_rate_x_image ≈ vx_body / r  −  ω_y_body
+ *   flow_rate_y_image ≈ vy_body / r  +  ω_x_body
+ * Inverting:
+ *   vx_body = r · (flow_rate_x + ω_y)
+ *   vy_body = r · (flow_rate_y − ω_x)
+ *
+ * `optflow_to_rad_per_s()` already flips the sign for upward cameras so the
+ * published flow is "rate relative to the surface", which means the same
+ * formula above produces a body-velocity estimate with the same sign for
+ * both directions. Sign convention is to be confirmed on bench (cart slide
+ * test) — flip the wy / wx signs here if estimator velocity moves opposite
+ * to truth.
+ * ============================================================ */
+static void on_optflow(uint8_t *data, size_t size) {
+	if (size < sizeof(optflow_data_t)) return;
+	optflow_data_t msg;
+	memcpy(&msg, data, sizeof(msg));
+	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+	if (msg.dt_us == 0) return;
+
+	int dir_idx = (msg.direction == OPTFLOW_UPWARD) ? 1 : 0;
+	int upward  = dir_idx;
+
+	int32_t z_mm = (int32_t)msg.z;
+	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) return;
+	double range_m = lidar_mm_to_m(z_mm);
+
+	double q_scale = optflow_quality_to_R_scale(msg.clarity,
+	                                            OPTFLOW_CLARITY_MIN,
+	                                            OPTFLOW_CLARITY_GOOD);
+	if (!isfinite(q_scale)) return;   /* below clarity floor → skip this camera */
+
+	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, upward);
+	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, upward);
+	if (!isfinite(flow_x) || !isfinite(flow_y)) return;
+
+	/* Derotate using the most recent body angular rate. */
+	double wx = g_last_gyro_body[0];
+	double wy = g_last_gyro_body[1];
+	double flow_lin_x = flow_x + wy;
+	double flow_lin_y = flow_y - wx;
+
+	/* Translate to body horizontal velocity (m/s). */
+	double v_body_x = range_m * flow_lin_x;
+	double v_body_y = range_m * flow_lin_y;
+
+	if (!isfinite(v_body_x) || !isfinite(v_body_y)) return;
+	if (fabs(v_body_x) > OPTFLOW_VEL_MAX_MPS) return;
+	if (fabs(v_body_y) > OPTFLOW_VEL_MAX_MPS) return;
+
+	/* Cache for telemetry (regardless of whether the update goes through
+	 * — but we only get here after every gate has passed). */
+	g_last_optflow_v[dir_idx][0]  = v_body_x;
+	g_last_optflow_v[dir_idx][1]  = v_body_y;
+	g_last_optflow_clarity[dir_idx] = msg.clarity;
+	g_last_optflow_range_m[dir_idx] = range_m;
+
+	/* Adaptive measurement noise. */
+	double sigma = range_m * OPTFLOW_SIGMA_FLOW
+	             + fabs(flow_lin_x) * OPTFLOW_SIGMA_RANGE_FRAC * range_m
+	             + range_m * OPTFLOW_SIGMA_GYRO;
+	double r = sigma * sigma * q_scale;
+	if (!isfinite(r) || r < 1e-6) r = 1e-6;
+	double R_meas[2][2] = { { r, 0.0 }, { 0.0, r } };
+
+	double v_xy[2] = { v_body_x, v_body_y };
+	fusion6_update_velocity_xy_body(&g_f, v_xy, R_meas);
 }
 
 /* ============================================================
@@ -281,6 +390,47 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * Optflow velocity fusion log stream (LOG_CLASS_VEL_FUSION = 0x20)
+ *
+ * 10-float / 40-byte payload @ 25 Hz, consumed by tools/optflow_velocity_view.py.
+ *   float[0..1] = v_meas DOWN  (vx, vy, body, m/s)
+ *   float[2..3] = v_meas UP    (vx, vy, body, m/s)
+ *   float[4..5] = v_pred       (vx, vy from current ESKF, body, m/s)
+ *   float[6]    = clarity DOWN
+ *   float[7]    = clarity UP
+ *   float[8]    = range DOWN (m)
+ *   float[9]    = range UP   (m)
+ * Cached values are zero until a sample for that camera passes the gates.
+ * ============================================================ */
+static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_VEL_FUSION) return;
+	if (!g_init_started) return;
+
+	/* Predicted body velocity from current ESKF state: v_body = R^T · v_ned. */
+	fusion6_state_t s;
+	fusion6_get_state(&g_f, &s);
+	vector3d_t v_ned = s.vel;
+	vector3d_t v_body_pred;
+	matrix_t R; quat_to_rot_matrix(&R, &s.q);
+	matrix_mult_transpose_vec3(&v_body_pred, &R, &v_ned);
+
+	float payload[10];
+	payload[0] = (float)g_last_optflow_v[OPTFLOW_DOWNWARD][0];
+	payload[1] = (float)g_last_optflow_v[OPTFLOW_DOWNWARD][1];
+	payload[2] = (float)g_last_optflow_v[OPTFLOW_UPWARD][0];
+	payload[3] = (float)g_last_optflow_v[OPTFLOW_UPWARD][1];
+	payload[4] = (float)v_body_pred.x;
+	payload[5] = (float)v_body_pred.y;
+	payload[6] = (float)g_last_optflow_clarity[OPTFLOW_DOWNWARD];
+	payload[7] = (float)g_last_optflow_clarity[OPTFLOW_UPWARD];
+	payload[8] = (float)g_last_optflow_range_m[OPTFLOW_DOWNWARD];
+	payload[9] = (float)g_last_optflow_range_m[OPTFLOW_UPWARD];
+
+	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
+}
+
+/* ============================================================
  * Setup
  * ============================================================ */
 
@@ -292,7 +442,9 @@ void state_estimation_setup(void) {
 	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, on_gyro);
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, on_accel);
 	subscribe(SENSOR_COMPASS, on_compass);
+	subscribe(EXTERNAL_SENSOR_OPTFLOW, on_optflow);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_vel_fusion_log_25hz);
 }

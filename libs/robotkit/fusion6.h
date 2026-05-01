@@ -9,11 +9,11 @@
 /**
  * FUSION6 — 15-state Error-State Kalman Filter (ESKF).
  *
- * Implements IMU-driven prediction, accelerometer (gravity) update, and a
- * 1-D yaw pseudo-measurement from a tilt-compensated magnetic heading
- * (`fusion6_update_mag_heading`). Other sensors (baro/lidar/optflow/GPS) are
- * not included yet — they will be re-added incrementally on top of this
- * proven core.
+ * Implements IMU-driven prediction, accelerometer (gravity) update, a 1-D
+ * yaw pseudo-measurement from a tilt-compensated magnetic heading
+ * (`fusion6_update_mag_heading`), and a 2-D horizontal body-velocity update
+ * (`fusion6_update_velocity_xy_body`) for optical-flow / camera-derived
+ * velocity. Vertical velocity, position, and GPS are not wired here yet.
  *
  * State (NED frame, +X=N, +Y=E, +Z=Down):
  *   Nominal: p[3], v[3], q, b_a[3], b_g[3]
@@ -41,7 +41,6 @@ typedef struct {
     /* Measurement noise */
     double R_accel;           /* m/s² */
     double R_mag_heading;     /* rad² (yaw pseudo-measurement variance) */
-
     /* Bias sanity bounds */
     double bias_clamp_gyro;   /* rad/s */
     double bias_clamp_accel;  /* m/s² */
@@ -115,6 +114,15 @@ void fusion6_update_accel(fusion6_t *f, const double accel[3]);
  *  c² = cos²(pitch) = R00² + R10². Skipped if INIT_DONE not set or near
  *  gimbal lock (pitch ≳ 84°). Innovation is wrapped to [-π, π]. */
 void fusion6_update_mag_heading(fusion6_t *f, double mag_heading_rad);
+
+/** Horizontal body-velocity update (e.g. from a downward / upward optical-flow
+ *  camera + range-to-surface). 2-D measurement z = (vx_body, vy_body) in m/s,
+ *  with caller-supplied 2×2 covariance R_meas (row-major, typically diagonal).
+ *  Vertical velocity is NOT updated here. Skipped if INIT_DONE not set or if
+ *  the innovation covariance is singular. See FUSION6_ESKF.md §3c. */
+void fusion6_update_velocity_xy_body(fusion6_t *f,
+                                     const double v_xy_body[2],
+                                     const double R_meas[2][2]);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 
