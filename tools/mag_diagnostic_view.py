@@ -2,11 +2,14 @@
 Mag Diagnostic Viewer (minimal)
 ================================
 
-Single 3D panel showing, in the earth NED frame:
-    * Body axes from the ESKF roll/pitch/yaw
-    * Raw measured mag vector R(q)·m_meas (red)
-    * Tilt-compensated mag (orange) = horizontal projection of the raw
-      vector onto the N-E plane
+Two panels:
+  * 3D earth-NED panel:
+        - Body axes from the ESKF roll/pitch/yaw
+        - Raw measured mag vector R(q)·m_meas (red)
+        - Tilt-compensated mag (orange) = horizontal projection of the raw
+          vector onto the N-E plane
+  * 2D compass dial:
+        - Magnetic heading (decl-corrected) as a needle on a N/E/S/W rose
 
 Wire format (7 floats / 28 B, LOG_CLASS_MAG_FUSION = 0x1F):
     [0..2]  m_meas  (body NED, unit)
@@ -208,13 +211,13 @@ def main():
         "grid.color": GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=screen_fit_figsize(10, 10))
+    fig = plt.figure(figsize=screen_fit_figsize(14, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.canvas.manager.set_window_title("Mag Diagnostic Viewer")
     fig.suptitle("State Estimation \u2014 Magnetometer Diagnostics",
                  fontsize=14, color=TEXT_COLOR, fontweight="bold", y=0.99)
 
-    ax = fig.add_axes([0.05, 0.10, 0.90, 0.83], projection="3d")
+    ax = fig.add_axes([0.02, 0.10, 0.60, 0.83], projection="3d")
     ax.set_facecolor(BG_COLOR)
     ax.set_box_aspect((1, 1, 1))
     for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
@@ -273,12 +276,46 @@ def main():
     ax.legend(loc="upper left", fontsize=7, framealpha=0.3,
               facecolor=PANEL_COLOR, edgecolor=GRID_COLOR, labelcolor=TEXT_COLOR)
 
+    # --- 2D compass dial (right side) ---
+    # Polar axes with N at top, angle increasing clockwise (compass convention).
+    cax = fig.add_axes([0.66, 0.22, 0.28, 0.62], projection="polar")
+    cax.set_facecolor(BG_COLOR)
+    cax.set_theta_zero_location("N")
+    cax.set_theta_direction(-1)
+    cax.set_ylim(0, 1.0)
+    cax.set_yticklabels([])
+    cax.set_xticks(np.deg2rad([0, 45, 90, 135, 180, 225, 270, 315]))
+    cax.set_xticklabels(["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+                        color=TEXT_COLOR, fontsize=10)
+    cax.tick_params(pad=6)
+    cax.grid(color=GRID_COLOR, alpha=0.4, linewidth=0.5)
+    cax.spines["polar"].set_color(GRID_COLOR)
+    cax.set_title("Magnetic Heading (decl-corrected)",
+                  color=TEXT_COLOR, fontsize=10, pad=14)
+
+    # Needle: line from origin to outer ring + arrowhead.
+    needle_line, = cax.plot([0, 0], [0, 0.95], color=ACCENT_ORANGE, lw=3.0)
+    needle_head, = cax.plot([0], [0.95], color=ACCENT_ORANGE, marker="o", ms=8)
+    # Yaw needle (estimator's yaw for comparison) drawn fainter.
+    yaw_line, = cax.plot([0, 0], [0, 0.85], color=ACCENT_BLUE, lw=1.5,
+                          alpha=0.7)
+    yaw_head, = cax.plot([0], [0.85], color=ACCENT_BLUE, marker="o", ms=5,
+                          alpha=0.7)
+    heading_text = cax.text(0.5, -0.22, "", transform=cax.transAxes,
+                             ha="center", color=TEXT_COLOR, fontsize=11,
+                             fontweight="bold")
+    cax.legend([needle_line, yaw_line], ["Mag heading", "Estimator yaw"],
+               loc="upper right", bbox_to_anchor=(1.02, 1.18),
+               fontsize=7, framealpha=0.3,
+               facecolor=PANEL_COLOR, edgecolor=GRID_COLOR,
+               labelcolor=TEXT_COLOR)
+
     # --- View buttons (6 faces) ---
     views = {"Top": (90, 180), "Front": (0, 0), "Back": (0, 180),
              "Left": (0, 90), "Right": (0, -90), "Iso": (18, -60)}
     view_btns = []
     for i, (label, (elev, azim)) in enumerate(views.items()):
-        bx = fig.add_axes([0.03 + i * 0.065, 0.07, 0.06, 0.035])
+        bx = fig.add_axes([0.02 + i * 0.045, 0.07, 0.042, 0.035])
         b = Button(bx, label, color=BTN_COLOR, hovercolor=BTN_HOVER)
         b.label.set_color(TEXT_COLOR)
         b.label.set_fontsize(7)
@@ -389,6 +426,19 @@ def main():
             line.set_3d_properties([0, vec[2]])
             head.set_data([vec[0]], [vec[1]])
             head.set_3d_properties([vec[2]])
+
+        # Compass needle: heading is in degrees, [-180,180], 0 = magnetic N,
+        # +ve toward E. The polar axes already use N-up + CW, so we feed
+        # the angle in radians directly.
+        heading_rad = math.radians(heading_deg)
+        needle_line.set_data([heading_rad, heading_rad], [0, 0.95])
+        needle_head.set_data([heading_rad], [0.95])
+        yaw_rad = math.radians(latest[5])
+        yaw_line.set_data([yaw_rad, yaw_rad], [0, 0.85])
+        yaw_head.set_data([yaw_rad], [0.85])
+        heading_text.set_text(
+            f"mag={heading_deg:+6.1f}°    yaw={latest[5]:+6.1f}°"
+        )
 
         status_text.set_text(
             f"r={latest[3]:+.1f}°  p={latest[4]:+.1f}°  "
