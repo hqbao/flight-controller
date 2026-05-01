@@ -58,38 +58,31 @@
 #define ACCEL_LSB_TO_MPS2     (GRAVITY_MSS_LOCAL / (double)MAX_IMU_ACCEL)
 #define MAG_DIAG_DECLINATION_RAD   (-0.6  * (double)DEG2RAD)
 
-/* --- Optical-flow gates / noise model ---
+/* --- Optical-flow gates ---
  * Range: VL53L1X reports 0..4 m; reject below 50 mm where geometry breaks
  * down and above 4 m where the ToF saturates.
- * Clarity: optflow library returns ~0..100; gate at 5, fully trust at 30.
+ * Clarity: optflow library returns ~0..100; gate at 5 — frames below this
+ * are dropped entirely.
  * Velocity: a 4 m/s body velocity at 1 m range gives ~4 rad/s flow — well
  * above any sane indoor scenario; reject obvious glitches above this.
  *
- * R model (per axis, σ in m/s):
- *   σ = range·σ_flow + |flow|·range·σ_range_frac + range·σ_gyro
- *   r = σ² · clarity_scale
- * Defaults are conservative; tighten after Phase-4 cart test.
+ * Measurement noise lives inside fusion6 as cfg.R_vel_xy_body (per-axis
+ * variance, applied as diag R). Static for now; revisit if bench tests show
+ * the filter is over- or under-trusting the camera.
  */
 #define OPTFLOW_RANGE_MIN_MM     50
 #define OPTFLOW_RANGE_MAX_MM     4000
 #define OPTFLOW_CLARITY_MIN      5.0
-#define OPTFLOW_CLARITY_GOOD     30.0
 #define OPTFLOW_VEL_MAX_MPS      6.0
-#define OPTFLOW_SIGMA_FLOW       0.05    /* rad/s 1-σ on derotated flow rate */
-#define OPTFLOW_SIGMA_RANGE_FRAC 0.05    /* range relative 1-σ */
-#define OPTFLOW_SIGMA_GYRO       0.005   /* rad/s 1-σ residual gyro after derot */
 
 /* Zero-velocity update (ZUPT): when the rangefinder reports below the
  * optflow gate (taxi / takeoff / landing inside the optflow blind zone),
- * AND the IMU agrees we are not moving, fuse v_body=(0,0) instead of
- * leaving the estimator open-loop. Without this, accel-bias + tilt-error
- * integration walks the velocity by ~0.15 m/s/s every second the camera
- * is gated out. With it, the estimator is pinned at zero on the ground
- * and bias states keep getting observed. */
+ * fuse v_body=(0,0) instead of leaving the estimator open-loop. Without
+ * this, accel-bias + tilt-error integration walks the velocity by
+ * ~0.15 m/s/s every second the camera is gated out. With it, the
+ * estimator is pinned at zero on the ground and bias states keep getting
+ * observed. ZUPT shares cfg.R_vel_xy_body with regular optflow updates. */
 #define OPTFLOW_ZUPT_RANGE_MAX_MM   200    /* trigger only if 0 ≤ z_mm < this */
-#define OPTFLOW_ZUPT_GYRO_MAX_RPS   0.10   /* rad/s, ~5.7 deg/s */
-#define OPTFLOW_ZUPT_ACCEL_TOL_MSS  0.5    /* m/s² off |g| (allows ~3° tilt) */
-#define OPTFLOW_ZUPT_SIGMA_MPS      0.05   /* m/s 1-σ on assumed zero motion */
 
 /* ============================================================
  * State
@@ -240,9 +233,8 @@ static void on_compass(uint8_t *data, size_t size) {
  * Sign convention is to be confirmed on bench (cart slide test) — flip the
  * wy / wx signs here if estimator velocity moves opposite to truth.
  *
- * ZUPT branch: when the rangefinder is below the gate and the IMU agrees
- * we are stationary, we fuse v_body=(0,0) instead of skipping. See the
- * OPTFLOW_ZUPT_* constants for thresholds.
+ * ZUPT branch: when the rangefinder is below the gate, fuse v_body=(0,0)
+ * instead of skipping. See OPTFLOW_ZUPT_RANGE_MAX_MM.
  * ============================================================ */
 static void on_optflow(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
@@ -267,41 +259,22 @@ static void on_optflow(uint8_t *data, size_t size) {
 
 	int32_t z_mm = (int32_t)msg.z;
 	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) {
-		/* Below the optflow gate — try a ZUPT if we look stationary. The
-		 * VL53L1X reports z=0 when the target is closer than its minimum
-		 * range (camera resting on / very close to the ground), so we accept
-		 * z in [0, 200) as "close to the ground". The IMU stationarity check
-		 * keeps mid-flight rangefinder glitches from being mistaken for a
-		 * landing. */
+		/* Below the optflow gate — try a ZUPT. The VL53L1X reports z=0
+		 * when the target is closer than its minimum range (camera
+		 * resting on / very close to the ground), so we accept z in
+		 * [0, 200) as "close to the ground" and pin the horizontal
+		 * velocity to zero. */
 		if (z_mm >= 0 && z_mm < OPTFLOW_ZUPT_RANGE_MAX_MM) {
-			double gx = g_last_gyro_body[0];
-			double gy = g_last_gyro_body[1];
-			double gz = g_last_gyro_body[2];
-			double ax = g_last_accel_body[0];
-			double ay = g_last_accel_body[1];
-			double az = g_last_accel_body[2];
-			double gyro_mag2  = gx*gx + gy*gy + gz*gz;
-			double accel_mag  = sqrt(ax*ax + ay*ay + az*az);
-			const double gyro_thr2 = OPTFLOW_ZUPT_GYRO_MAX_RPS
-			                       * OPTFLOW_ZUPT_GYRO_MAX_RPS;
-			if (gyro_mag2 < gyro_thr2
-			        && fabs(accel_mag - GRAVITY_MSS_LOCAL) < OPTFLOW_ZUPT_ACCEL_TOL_MSS) {
-				double r = OPTFLOW_ZUPT_SIGMA_MPS * OPTFLOW_ZUPT_SIGMA_MPS;
-				double R_zupt[2][2] = { { r, 0.0 }, { 0.0, r } };
-				double v_zero[2] = { 0.0, 0.0 };
-				fusion6_update_velocity_xy_body(&g_f, v_zero, R_zupt);
-				g_last_optflow_v[0] = 0.0;
-				g_last_optflow_v[1] = 0.0;
-			}
+			double v_zero[2] = { 0.0, 0.0 };
+			fusion6_update_velocity_xy_body(&g_f, v_zero);
+			g_last_optflow_v[0] = 0.0;
+			g_last_optflow_v[1] = 0.0;
 		}
 		return;
 	}
 	double range_m = lidar_mm_to_m(z_mm);
 
-	double q_scale = optflow_quality_to_R_scale(msg.clarity,
-	                                            OPTFLOW_CLARITY_MIN,
-	                                            OPTFLOW_CLARITY_GOOD);
-	if (!isfinite(q_scale)) return;   /* below clarity floor — skip this frame */
+	if (msg.clarity < OPTFLOW_CLARITY_MIN) return;   /* below clarity floor — skip */
 
 	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, /*upward=*/0);
 	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, /*upward=*/0);
@@ -324,15 +297,8 @@ static void on_optflow(uint8_t *data, size_t size) {
 	g_last_optflow_v[0] = v_body_x;
 	g_last_optflow_v[1] = v_body_y;
 
-	/* Adaptive measurement noise. */
-	double sigma = range_m * OPTFLOW_SIGMA_FLOW
-	             + fabs(flow_lin_x) * OPTFLOW_SIGMA_RANGE_FRAC * range_m
-	             + range_m * OPTFLOW_SIGMA_GYRO;
-	double r = sigma * sigma * q_scale;
-	double R_meas[2][2] = { { r, 0.0 }, { 0.0, r } };
-
 	double v_xy[2] = { v_body_x, v_body_y };
-	fusion6_update_velocity_xy_body(&g_f, v_xy, R_meas);
+	fusion6_update_velocity_xy_body(&g_f, v_xy);
 }
 
 /* ============================================================

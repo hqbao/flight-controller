@@ -142,11 +142,21 @@ def send_chip_id(ser):
 
 
 def serial_reader():
+    """Read whatever bytes are available, parse complete frames out.
+
+    Uses a non-blocking poll (`in_waiting`) so we never artificially cap
+    the loop rate by a read timeout. Frames are parsed out of a rolling
+    buffer by walking forward to the 'db' magic — same wire format as
+    every other viewer. The previous byte-at-a-time pattern was fine on
+    its own, and bulk-reading with a 50 ms timeout actually capped us at
+    20 Hz, which is why we explicitly avoid that here."""
     global g_serial, g_chip_id, g_rx_frame_count
     if not SERIAL_PORT:
         return
+    HEADER_SIZE = 6   # 'd' 'b' id class len_lo len_hi
+    CHKSUM_SIZE = 2
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0)  # non-blocking
         time.sleep(0.2)
         ser.reset_input_buffer()
         ser.write(b"\x00" * 32)
@@ -156,37 +166,49 @@ def serial_reader():
         send_chip_id(ser)
         send_log_class(ser, LOG_CLASS_HEART_BEAT)
 
+        buf = bytearray()
         while True:
-            b1 = ser.read(1)
-            if not b1 or b1[0] not in (0x62, 0x64):
-                continue
-            b2 = ser.read(1)
-            if not b2:
-                continue
-            if not ((b1[0] == 0x64 and b2[0] == 0x62)
-                    or (b1[0] == 0x62 and b2[0] == 0x64)):
-                continue
-            id_byte = ser.read(1)
-            class_byte = ser.read(1)
-            len_bytes = ser.read(2)
-            if not (id_byte and class_byte and len(len_bytes) == 2):
-                continue
-            msg_id = id_byte[0]
-            length = int.from_bytes(len_bytes, "little")
-            if length > 1024:
-                continue
-            payload = ser.read(length)
-            if len(payload) != length:
-                continue
-            _ = ser.read(2)  # checksum (unverified)
-            if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
-                g_chip_id = payload[:8].hex().upper()
-                print(f"Chip ID: {g_chip_id}")
-            elif msg_id == SEND_LOG_ID and length == VEL_FRAME_SIZE:
-                vals = struct.unpack(VEL_FRAME_FORMAT, payload)
-                if all(math.isfinite(v) for v in vals):
-                    g_rx_frame_count += 1
-                    push_latest(vals)
+            n = ser.in_waiting
+            if n:
+                buf.extend(ser.read(n))
+            else:
+                time.sleep(0.001)   # 1 ms idle, far below frame period
+
+            # Parse out as many complete frames as the buffer holds.
+            while True:
+                idx = buf.find(b"db")
+                if idx < 0:
+                    if len(buf) > 1:
+                        del buf[:-1]
+                    break
+                if idx > 0:
+                    del buf[:idx]
+                if len(buf) < HEADER_SIZE:
+                    break
+                length = buf[4] | (buf[5] << 8)
+                if length > 1024:
+                    del buf[:2]   # skip past this magic, resync
+                    continue
+                frame_size = HEADER_SIZE + length + CHKSUM_SIZE
+                if len(buf) < frame_size:
+                    break
+                msg_id = buf[2]
+                payload = bytes(buf[HEADER_SIZE:HEADER_SIZE + length])
+                del buf[:frame_size]
+
+                if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
+                    g_chip_id = payload[:8].hex().upper()
+                    print(f"Chip ID: {g_chip_id}")
+                elif msg_id == SEND_LOG_ID and length == VEL_FRAME_SIZE:
+                    vals = struct.unpack(VEL_FRAME_FORMAT, payload)
+                    # v_meas (vals[0..1]) is intentionally NaN when the FC
+                    # rejected the optflow frame — keep those frames so the
+                    # chart leaves a visible gap and RX rate reflects the
+                    # true log cadence. Only drop if v_pred/clarity/range
+                    # are bad.
+                    if all(math.isfinite(v) for v in vals[2:]):
+                        g_rx_frame_count += 1
+                        push_latest(vals)
     except Exception as e:
         print(f"Serial error: {e}")
     finally:
@@ -442,13 +464,17 @@ def main():
         t = now - t0[0]
 
         # --- 2D position integration (body-frame, no yaw rotation) ---
+        # Skip integration when v_meas is NaN (FC rejected the frame) —
+        # otherwise px/py would lock to NaN and the path/marker disappear.
+        v_meas_valid = math.isfinite(latest[0]) and math.isfinite(latest[1])
         if pos_state["last_t"] is None:
             dt_pos = 0.0
         else:
             dt_pos = max(0.0, min(0.2, now - pos_state["last_t"]))
         pos_state["last_t"] = now
-        pos_state["px"] += latest[0] * dt_pos
-        pos_state["py"] += latest[1] * dt_pos
+        if v_meas_valid:
+            pos_state["px"] += latest[0] * dt_pos
+            pos_state["py"] += latest[1] * dt_pos
         if (abs(pos_state["px"]) > BOX_HALF_M
                 or abs(pos_state["py"]) > BOX_HALF_M):
             pos_state["px"] = 0.0
@@ -460,10 +486,15 @@ def main():
         trail_y.append(pos_state["px"])
         trail_line.set_data(list(trail_x), list(trail_y))
         cur_marker.set_data([pos_state["py"]], [pos_state["px"]])
-        arrow_meas.set_data(
-            [pos_state["py"], pos_state["py"] + latest[1] * ARROW_SCALE],
-            [pos_state["px"], pos_state["px"] + latest[0] * ARROW_SCALE],
-        )
+        # Hide the v_meas arrow on rejected frames (NaN endpoints would
+        # collapse the line2D to nothing anyway, but be explicit).
+        if v_meas_valid:
+            arrow_meas.set_data(
+                [pos_state["py"], pos_state["py"] + latest[1] * ARROW_SCALE],
+                [pos_state["px"], pos_state["px"] + latest[0] * ARROW_SCALE],
+            )
+        else:
+            arrow_meas.set_data([pos_state["py"]], [pos_state["px"]])
         arrow_pred.set_data(
             [pos_state["py"], pos_state["py"] + latest[3] * ARROW_SCALE],
             [pos_state["px"], pos_state["px"] + latest[2] * ARROW_SCALE],

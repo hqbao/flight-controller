@@ -41,6 +41,8 @@ typedef struct {
     /* Measurement noise */
     double R_accel;           /* m/s² */
     double R_mag_heading;     /* rad² (yaw pseudo-measurement variance) */
+    double R_vel_xy_body;     /* (m/s)² (horizontal body-velocity variance,
+                                 applied to both axes — diag R_meas) */
     /* Bias sanity bounds */
     double bias_clamp_gyro;   /* rad/s */
     double bias_clamp_accel;  /* m/s² */
@@ -116,13 +118,12 @@ void fusion6_update_accel(fusion6_t *f, const double accel[3]);
 void fusion6_update_mag_heading(fusion6_t *f, double mag_heading_rad);
 
 /** Horizontal body-velocity update (e.g. from a downward / upward optical-flow
- *  camera + range-to-surface). 2-D measurement z = (vx_body, vy_body) in m/s,
- *  with caller-supplied 2×2 covariance R_meas (row-major, typically diagonal).
+ *  camera + range-to-surface). 2-D measurement z = (vx_body, vy_body) in m/s.
+ *  Per-axis measurement variance is taken from cfg.R_vel_xy_body (diag R).
  *  Vertical velocity is NOT updated here. Skipped if INIT_DONE not set or if
  *  the innovation covariance is singular. See FUSION6_ESKF.md §3c. */
 void fusion6_update_velocity_xy_body(fusion6_t *f,
-                                     const double v_xy_body[2],
-                                     const double R_meas[2][2]);
+                                     const double v_xy_body[2]);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 
