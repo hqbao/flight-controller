@@ -1,5 +1,5 @@
 /**
- * STATE_ESTIMATION — simplified glue around fusion6 (gyro + accel only).
+ * STATE_ESTIMATION — glue around fusion6.
  *
  * Sensor flow:
  *   IMU gyro  (1 kHz, post-notch) → on_gyro  → fusion6_predict
@@ -15,8 +15,7 @@
  * Magnetometer feeds yaw only (1-D, decl-corrected heading). Roll/pitch are
  * still driven by the gravity update; mag does NOT touch the horizontal
  * components of attitude. Other sensors (baro, optflow, GPS) are not wired
- * here yet — they will be reintroduced once the core attitude/inertial path
- * is proven on hardware.
+ * here yet.
  *
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
@@ -197,7 +196,7 @@ static void publish_state(void) {
 	out.accel_earth = s.accel_earth;
 	out.gyro_bias   = s.gyro_bias;
 	out.accel_bias  = s.accel_bias;
-	out.baro_bias   = 0.0;          /* baro not wired in simplified core */
+	out.baro_bias   = 0.0;          /* baro not wired yet */
 	out.trace_P_pos = s.trace_P_pos;
 	out.trace_P_vel = s.trace_P_vel;
 	out.trace_P_att = s.trace_P_att;

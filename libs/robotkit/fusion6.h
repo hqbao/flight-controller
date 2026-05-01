@@ -7,12 +7,13 @@
 #include "matrix.h"
 
 /**
- * FUSION6 — 15-state Error-State Kalman Filter (ESKF), simplified core.
+ * FUSION6 — 15-state Error-State Kalman Filter (ESKF).
  *
- * Only IMU-driven prediction and accelerometer (gravity) update are
- * implemented. Other sensors (mag/baro/lidar/optflow/GPS) are intentionally
- * removed so the core attitude+inertial path is small and easy to verify.
- * They will be re-added incrementally on top of this proven core.
+ * Implements IMU-driven prediction, accelerometer (gravity) update, and a
+ * 1-D yaw pseudo-measurement from a tilt-compensated magnetic heading
+ * (`fusion6_update_mag_heading`). Other sensors (baro/lidar/optflow/GPS) are
+ * not included yet — they will be re-added incrementally on top of this
+ * proven core.
  *
  * State (NED frame, +X=N, +Y=E, +Z=Down):
  *   Nominal: p[3], v[3], q, b_a[3], b_g[3]
@@ -37,7 +38,7 @@ typedef struct {
     double sigma_bias_accel;  /* m/s³ /√Hz */
     double sigma_bias_gyro;   /* rad/s² /√Hz */
 
-    /* Measurement noise (accel only for now) */
+    /* Measurement noise */
     double R_accel;           /* m/s² */
     double R_mag_heading;     /* rad² (yaw pseudo-measurement variance) */
 

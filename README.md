@@ -267,16 +267,13 @@ out_body[2] =  sensor_z;
 ```
 
 ### Magnetometer Diagnostics
-`state_estimation.c` maps the calibrated BMM350 unit vector into body NED, but it does not initialize yaw and does not call a magnetometer update. The ESKF currently uses gyro prediction plus accelerometer gravity correction only. The diagnostic stream emits the body-frame mag vector plus a tilt-compensated horizontal projection so the replacement heading/mag method can be developed safely.
+`state_estimation.c` maps the calibrated BMM350 unit vector into body NED, derives a tilt-compensated, declination-corrected magnetic heading, and feeds it into `fusion6` as a 1-D yaw pseudo-measurement (no impact on roll/pitch).
 
-For Hà Nội defaults this uses `decl=-0.6°` (inclination is no longer needed by the firmware diagnostic — the viewer infers it visually). `tools/mag_diagnostic_view.py` (`LOG_CLASS_MAG_FUSION`, 7×float / 28 B) renders a single 3D scene in the **earth NED frame** (back-camera view by default, with 6 face-view buttons):
-- static reference Earth N / E / Down axes
-- live body axes drawn as `R(q) · e_i` (Body-X red→blue, Body-Y green, Body-Z purple)
-- raw mag vector `R(q) · m_meas` (red), tilted out of the N-E plane by the local field inclination
-- tilt-compensated mag (orange): horizontal projection of `R(q) · m_meas` onto the N-E plane — points toward magnetic north regardless of attitude
-- status-bar shows `roll/pitch/yaw`, `mag_heading`, chip ID. Estimator yaw and `mag_heading` should converge after init (timescale set by `R_mag_heading`).
+For Hà Nội defaults this uses `decl=-0.6°`. `tools/mag_diagnostic_view.py` (`LOG_CLASS_MAG_FUSION`, 7×float / 28 B) renders two panels:
+- **3D earth-NED scene** (back-camera view by default, with 6 face-view buttons): static reference Earth N / E / Down axes; live body axes drawn as `R(q) · e_i` (Body-X blue, Body-Y purple, Body-Z green); raw mag `R(q) · m_meas` (red); tilt-compensated mag (orange) projected onto the N-E plane.
+- **Polar compass dial**: orange needle = decl-corrected magnetic heading; blue needle = estimator yaw. Both should converge after init (timescale set by `R_mag_heading`).
 
-The firmware computes `m_lvl = Rz(-yaw) · R(q) · m_body` and `mag_heading = atan2(-m_lvl.y, m_lvl.x) - declination`, then feeds `mag_heading` into `fusion6` as a yaw-only pseudo-measurement (no impact on roll/pitch).
+Firmware computes `m_lvl = Rz(-yaw) · R(q) · m_body` and `mag_heading = atan2(-m_lvl.y, m_lvl.x) - declination`, then feeds `mag_heading` into `fusion6` as a yaw-only pseudo-measurement.
 
 ## Sensor Calibration
 
