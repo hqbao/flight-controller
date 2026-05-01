@@ -11,9 +11,10 @@
  *
  * Implements IMU-driven prediction, accelerometer (gravity) update, a 1-D
  * yaw pseudo-measurement from a tilt-compensated magnetic heading
- * (`fusion6_update_mag_heading`), and a 2-D horizontal body-velocity update
+ * (`fusion6_update_mag_heading`), a 2-D horizontal body-velocity update
  * (`fusion6_update_velocity_xy_body`) for optical-flow / camera-derived
- * velocity. Vertical velocity, position, and GPS are not wired here yet.
+ * velocity, and a 1-D barometric altitude update (`fusion6_update_baro_z`)
+ * on p.z. Vertical velocity and GPS are not wired here yet.
  *
  * State (NED frame, +X=N, +Y=E, +Z=Down):
  *   Nominal: p[3], v[3], q, b_a[3], b_g[3]
@@ -30,6 +31,12 @@
 
 #define FUSION6_HF_INIT_DONE     (1u << 10)
 #define FUSION6_HF_BIAS_CLAMPED  (1u << 9)
+/* Sensor-lamp bits 0..7 follow the flight-controller viewer convention
+ * (HEALTH_BITS in tools/flight_telemetry_view.py): Gyro=0, Accel=1,
+ * Compass=2, Baro=3, Range=4, OptD=5, OptU=6, GPS=7. fusion6 only owns
+ * BARO_OK today; the rest are produced by the FC glue when it has the
+ * sensor wired. */
+#define FUSION6_HF_BARO_OK       (1u << 3)
 
 typedef struct {
     /* Process noise PSDs */
@@ -43,6 +50,7 @@ typedef struct {
     double R_mag_heading;     /* rad² (yaw pseudo-measurement variance) */
     double R_vel_xy_body;     /* (m/s)² (horizontal body-velocity variance,
                                  applied to both axes — diag R_meas) */
+    double R_baro;            /* m² (barometric altitude variance, NED p.z) */
     /* Bias sanity bounds */
     double bias_clamp_gyro;   /* rad/s */
     double bias_clamp_accel;  /* m/s² */
@@ -124,6 +132,13 @@ void fusion6_update_mag_heading(fusion6_t *f, double mag_heading_rad);
  *  the innovation covariance is singular. See FUSION6_ESKF.md §3c. */
 void fusion6_update_velocity_xy_body(fusion6_t *f,
                                      const double v_xy_body[2]);
+
+/** Barometric altitude update. 1-D scalar measurement on p.z (NED, +Down).
+ *  Caller must convert sensor reading to NED p.z metres before calling
+ *  (a barometer that reports altitude-above-startup +up should be negated).
+ *  Uses cfg.R_baro. Skipped if INIT_DONE not set or innovation-cov is
+ *  non-positive. Sets FUSION6_HF_BARO_OK on success. */
+void fusion6_update_baro_z(fusion6_t *f, double z_ned_m);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 

@@ -15,13 +15,17 @@
  *                                             → range·flow → v_body_xy
  *                                             → fusion6_update_velocity_xy_body
  *                                             → diagnostic stream
+ *   Baro      (25 Hz, mm above startup) → on_baro → mm→m + sign flip (NED)
+ *                                                 → fusion6_update_baro_z
+ *                                                   (1-D scalar on p.z)
  *
  * Magnetometer feeds yaw only (1-D, decl-corrected heading). Roll/pitch are
  * still driven by the gravity update; mag does NOT touch the horizontal
  * components of attitude. Optical flow feeds horizontal body velocity (vx,vy)
  * and indirectly tightens roll/pitch through the cross-coupling. Vertical
- * velocity / position are not yet observed by any update — `vz` and `pz`
- * still drift on accel-only integration.
+ * position is observed by the barometer (1-D update on p.z); vertical
+ * velocity is still inferred indirectly through the position innovation +
+ * accel integration.
  *
  * The UP-pointing camera publishes on the same EXTERNAL_SENSOR_OPTFLOW topic
  * but is intentionally ignored here: it has no range finder so there is no
@@ -33,6 +37,7 @@
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
  *   LOG_CLASS_VEL_FUSION  (25 Hz, 6×float)     — optflow velocity diagnostics
+ *   LOG_CLASS_BARO_FUSION (25 Hz, 5×float)     — baro altitude diagnostics
  */
 
 #include "state_estimation.h"
@@ -84,6 +89,18 @@
  * observed. ZUPT shares cfg.R_vel_xy_body with regular optflow updates. */
 #define OPTFLOW_ZUPT_RANGE_MAX_MM   200    /* trigger only if 0 ≤ z_mm < this */
 
+/* --- Barometer ---
+ * air_pressure module publishes a `double` payload at ~25 Hz containing
+ *   1000 × (altitude_m − startup_baseline_m)  (positive = up)
+ * i.e. millimetres above the power-on altitude. The 100-sample warmup in
+ * air_pressure.c means we only start receiving frames after baseline is
+ * established, so no extra warmup gate is needed here.
+ *
+ * We convert mm → m, then negate to get NED p.z (NED +Z = Down). A wide
+ * sanity gate rejects DPS310 read glitches (single-frame jumps of many
+ * tens of metres). R_baro is configured inside fusion6 (cfg.R_baro). */
+#define BARO_SANITY_GATE_M       50.0
+
 /* ============================================================
  * State
  * ============================================================ */
@@ -106,6 +123,11 @@ static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [
 static double   g_last_optflow_v[2]    = {0, 0};   /* [vx, vy] body, m/s */
 static double   g_last_optflow_clarity = 0.0;
 static double   g_last_optflow_range_m = 0.0;
+
+/* Latest baro snapshot (NED metres on p.z, after sign flip + unit convert). */
+static double   g_last_baro_z_ned_m    = 0.0;
+static double   g_last_baro_innov_m    = 0.0;   /* z_meas − p.z (m), 0 if rejected */
+static int      g_have_baro            = 0;    /* set on first accepted frame */
 
 static uint8_t  g_log_class      = 0;
 
@@ -302,6 +324,49 @@ static void on_optflow(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * Barometric altitude update.
+ *
+ * Payload: double, millimetres above startup baseline, +up.
+ * Convert to NED metres on p.z (negate, then mm→m), sanity-gate, then
+ * fuse via the 1-D scalar update. fusion6 owns R_baro.
+ * ============================================================ */
+static void on_baro(uint8_t *data, size_t size) {
+	if (size < sizeof(double)) return;
+	double baro_mm_up;
+	memcpy(&baro_mm_up, data, sizeof(double));
+	if (!isfinite(baro_mm_up)) return;
+
+	double z_ned_m = -baro_mm_up * 1e-3;   /* +up mm → +down m */
+
+	g_last_baro_z_ned_m = z_ned_m;
+
+	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+
+	/* First baro frame after INIT_DONE: snap p.z (and zero v.z) to the
+	 * measurement. Without this, accel-only integration between INIT_DONE
+	 * (~0.25 s after boot) and the first baro frame (~4 s after boot, due
+	 * to the air_pressure 100-sample warmup) can walk p.z past the sanity
+	 * gate, locking baro out forever. */
+	if (!g_have_baro) {
+		g_f.p.z = z_ned_m;
+		g_f.v.z = 0.0;
+		g_f.health_flags |= FUSION6_HF_BARO_OK;
+		g_have_baro = 1;
+		g_last_baro_innov_m = 0.0;
+		return;
+	}
+
+	double innov = z_ned_m - g_f.p.z;
+	if (fabs(innov) > BARO_SANITY_GATE_M) {
+		g_last_baro_innov_m = innov;   /* keep diagnostic; do not fuse */
+		return;
+	}
+
+	g_last_baro_innov_m = innov;
+	fusion6_update_baro_z(&g_f, z_ned_m);
+}
+
+/* ============================================================
  * Publish helpers
  * ============================================================ */
 
@@ -326,7 +391,9 @@ static void publish_state(void) {
 	out.accel_earth = s.accel_earth;
 	out.gyro_bias   = s.gyro_bias;
 	out.accel_bias  = s.accel_bias;
-	out.baro_bias   = 0.0;          /* baro not wired yet */
+	out.baro_bias   = 0.0;          /* baro fused without an explicit bias
+	                                   state; air_pressure.c zeros the offset
+	                                   at startup which suffices for now. */
 	out.trace_P_pos = s.trace_P_pos;
 	out.trace_P_vel = s.trace_P_vel;
 	out.trace_P_att = s.trace_P_att;
@@ -446,6 +513,32 @@ static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * Baro fusion log stream (LOG_CLASS_BARO_FUSION = 0x21)
+ *
+ * 5-float / 20-byte payload @ 25 Hz, consumed by tools/baro_fusion_view.py.
+ *   float[0] = z_meas       (NED metres on p.z; +down, after sign flip)
+ *   float[1] = p_z          (current ESKF p.z, NED, m)
+ *   float[2] = v_z          (current ESKF v.z, NED, m/s)
+ *   float[3] = innovation   (z_meas − p_z, m; non-zero even when gated)
+ *   float[4] = baro_ok      (1.0 if FUSION6_HF_BARO_OK set, else 0.0)
+ * Cached values are zero until the first SENSOR_AIR_PRESSURE arrives.
+ * ============================================================ */
+static void on_baro_fusion_log_25hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_BARO_FUSION) return;
+	if (!g_init_started) return;
+
+	float payload[5];
+	payload[0] = (float)g_last_baro_z_ned_m;
+	payload[1] = (float)g_f.p.z;
+	payload[2] = (float)g_f.v.z;
+	payload[3] = (float)g_last_baro_innov_m;
+	payload[4] = (g_f.health_flags & FUSION6_HF_BARO_OK) ? 1.0f : 0.0f;
+
+	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
+}
+
+/* ============================================================
  * Setup
  * ============================================================ */
 
@@ -458,8 +551,10 @@ void state_estimation_setup(void) {
 	subscribe(SENSOR_IMU1_ACCEL_UPDATE, on_accel);
 	subscribe(SENSOR_COMPASS, on_compass);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, on_optflow);
+	subscribe(SENSOR_AIR_PRESSURE, on_baro);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_vel_fusion_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
 }
