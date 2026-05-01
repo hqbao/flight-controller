@@ -87,6 +87,8 @@ BTN_GREEN       = '#2d5a2d'
 BTN_GREEN_HOV   = '#3d7a3d'
 BTN_RED         = '#5a2d2d'
 BTN_RED_HOV     = '#7a3d3d'
+BTN_COLOR       = '#333333'
+BTN_HOVER       = '#555555'
 HEALTH_OK       = '#55cc55'
 HEALTH_BAD      = '#ff3333'
 
@@ -300,7 +302,7 @@ def main():
     # =========================================================================
     # 3D Quadcopter — full-screen background
     # =========================================================================
-    ax_quad = fig.add_axes([0.10, 0.05, 0.85, 0.92], projection='3d')
+    ax_quad = fig.add_axes([0.10, 0.10, 0.85, 0.87], projection='3d')
     ax_quad.set_facecolor(BG_COLOR)
     ax_quad.view_init(elev=0, azim=180)
     ax_quad.set_xlim(-2.5, 2.5)
@@ -407,7 +409,7 @@ def main():
     # =========================================================================
     # Left data panel — instrument readout strip
     # =========================================================================
-    ax_data = fig.add_axes([0.005, 0.05, 0.105, 0.92])
+    ax_data = fig.add_axes([0.005, 0.10, 0.105, 0.87])
     ax_data.set_facecolor(BG_COLOR)
     ax_data.patch.set_alpha(0.6)
     ax_data.set_xlim(0, 1)
@@ -538,22 +540,22 @@ def main():
     alt_t0 = [None]
 
     # =========================================================================
-    # Status bar — bottom edge
+    # Status bar — dedicated row ABOVE the button row to avoid overlap.
     # =========================================================================
-    chip_id_text = fig.text(0.96, 0.035, 'Chip ID: ---', fontsize=7,
-                             ha='right', color=DIM_TEXT)
-
-    state_text = fig.text(0.16, 0.015, 'State: ---', fontsize=9,
+    state_text = fig.text(0.005, 0.055, 'State: ---', fontsize=9,
                           color=TEXT_COLOR, fontweight='bold')
 
     health_texts = []
     for i, name in enumerate(HEALTH_BITS):
-        x = 0.32 + i * 0.05
-        txt = fig.text(x, 0.015, f'\u25cf{name}', fontsize=7, color=DIM_TEXT)
+        x = 0.18 + i * 0.05
+        txt = fig.text(x, 0.057, f'\u25cf{name}', fontsize=7, color=DIM_TEXT)
         health_texts.append(txt)
 
-    fps_text = fig.text(0.96, 0.015, '', fontsize=8, ha='right',
+    fps_text = fig.text(0.995, 0.057, '', fontsize=8, ha='right',
                         color=DIM_TEXT)
+
+    chip_id_text = fig.text(0.995, 0.078, 'Chip ID: ---', fontsize=7,
+                             ha='right', color=DIM_TEXT)
 
     # =========================================================================
     # Toggle Log Button
@@ -628,6 +630,33 @@ def main():
             threading.Thread(target=_post_reset, daemon=True).start()
 
     btn_reset.on_clicked(on_reset)
+
+    # =========================================================================
+    # Clear Button — wipes plot history without touching the FC
+    # =========================================================================
+    ax_clear = fig.add_axes([0.55, 0.005, 0.06, 0.04])
+    btn_clear = Button(ax_clear, 'Clear',
+                       color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_clear.label.set_color(TEXT_COLOR)
+    btn_clear.label.set_fontsize(8)
+
+    def on_clear(event):
+        xy_history['x'].clear()
+        xy_history['y'].clear()
+        for k in vel_history:
+            vel_history[k].clear()
+        for k in alt_history:
+            alt_history[k].clear()
+        vel_t0[0] = None
+        alt_t0[0] = None
+        for ln in vel_lines:
+            ln.set_data([], [])
+        alt_line.set_data([], [])
+        pos_trail.set_data([], [])
+        pos_dot.set_data([], [])
+        fig.canvas.draw_idle()
+
+    btn_clear.on_clicked(on_clear)
 
     # =========================================================================
     # Animation loop

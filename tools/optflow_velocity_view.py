@@ -81,8 +81,12 @@ BTN_RED_HOV = "#7a3d3d"
 BTN_COLOR = "#333333"
 BTN_HOVER = "#444444"
 
-WINDOW_S = 20.0      # rolling time window
+WINDOW_S = 10.0      # rolling time window
 RATE_HZ = 25         # log stream rate (informational)
+
+BOX_HALF_M = 2.0     # ±2 m position view; recenter when current pos escapes
+TRAIL_LEN  = 800     # ~32 s at 25 Hz
+ARROW_SCALE = 0.5    # 1 m/s drawn as 0.5 m on the 2D chart
 
 # --- Serial autodetect ---
 SERIAL_PORT = None
@@ -101,6 +105,7 @@ data_queue = queue.Queue(maxsize=1)
 g_serial = None
 g_logging_active = False
 g_chip_id = None
+g_rx_frame_count = 0
 
 
 def push_latest(vals):
@@ -137,7 +142,7 @@ def send_chip_id(ser):
 
 
 def serial_reader():
-    global g_serial, g_chip_id
+    global g_serial, g_chip_id, g_rx_frame_count
     if not SERIAL_PORT:
         return
     try:
@@ -180,6 +185,7 @@ def serial_reader():
             elif msg_id == SEND_LOG_ID and length == VEL_FRAME_SIZE:
                 vals = struct.unpack(VEL_FRAME_FORMAT, payload)
                 if all(math.isfinite(v) for v in vals):
+                    g_rx_frame_count += 1
                     push_latest(vals)
     except Exception as e:
         print(f"Serial error: {e}")
@@ -203,19 +209,23 @@ def main():
         "grid.color": GRID_COLOR,
     })
 
-    fig = plt.figure(figsize=screen_fit_figsize(14, 9))
+    fig = plt.figure(figsize=screen_fit_figsize(16, 9))
     fig.patch.set_facecolor(BG_COLOR)
     fig.canvas.manager.set_window_title("Optflow Velocity Viewer")
-    fig.suptitle("State Estimation \u2014 Optical-Flow Body Velocity",
+    fig.suptitle("State Estimation — Optical-Flow Body Velocity",
                  fontsize=14, color=TEXT_COLOR, fontweight="bold", y=0.99)
 
-    # 4 panels, stacked: vx, vy, clarity, range. Shared X (time).
-    gs = fig.add_gridspec(4, 1, left=0.07, right=0.97, top=0.94, bottom=0.10,
-                          hspace=0.30, height_ratios=[3, 3, 1.4, 1.4])
-    ax_vx = fig.add_subplot(gs[0])
-    ax_vy = fig.add_subplot(gs[1], sharex=ax_vx)
-    ax_q  = fig.add_subplot(gs[2], sharex=ax_vx)
-    ax_r  = fig.add_subplot(gs[3], sharex=ax_vx)
+    # Left column: 4 stacked time-series strips (vx, vy, clarity, range).
+    # Right column: 2D top-down body-frame position with velocity arrows.
+    gs = fig.add_gridspec(4, 2, left=0.05, right=0.97, top=0.94, bottom=0.14,
+                          hspace=0.30, wspace=0.18,
+                          height_ratios=[3, 3, 1.4, 1.4],
+                          width_ratios=[1.4, 1.0])
+    ax_vx = fig.add_subplot(gs[0, 0])
+    ax_vy = fig.add_subplot(gs[1, 0], sharex=ax_vx)
+    ax_q  = fig.add_subplot(gs[2, 0], sharex=ax_vx)
+    ax_r  = fig.add_subplot(gs[3, 0], sharex=ax_vx)
+    ax_xy = fig.add_subplot(gs[:, 1])
 
     for axp in (ax_vx, ax_vy, ax_q, ax_r):
         axp.set_facecolor(BG_COLOR)
@@ -232,8 +242,16 @@ def main():
     plt.setp(ax_vy.get_xticklabels(), visible=False)
     plt.setp(ax_q.get_xticklabels(),  visible=False)
 
-    # Rolling buffers
-    t_buf      = deque(maxlen=int(WINDOW_S * RATE_HZ * 4))
+    # Y axes start in autoscale mode; matplotlib will compute limits from the
+    # first batch of data. Note: calling set_ylim() at any point turns off
+    # the autoscale flag, so we must re-enable it explicitly in the update
+    # loop with set_autoscaley_on(True) before relim()/autoscale_view().
+    for axp in (ax_vx, ax_vy, ax_q, ax_r):
+        axp.set_autoscaley_on(True)
+
+    # Rolling buffers (one slot per expected RX frame; over-allocating just
+    # multiplies the per-redraw cost without showing more data).
+    t_buf      = deque(maxlen=int(WINDOW_S * RATE_HZ) + 8)
     vx_down    = deque(maxlen=t_buf.maxlen)
     vy_down    = deque(maxlen=t_buf.maxlen)
     vx_pred    = deque(maxlen=t_buf.maxlen)
@@ -260,10 +278,53 @@ def main():
                    facecolor=PANEL_COLOR, edgecolor=GRID_COLOR,
                    labelcolor=TEXT_COLOR)
 
-    chip_text   = fig.text(0.02, 0.025, "", fontsize=8, ha="left",  color=DIM_TEXT)
-    status_text = fig.text(0.50, 0.025, "", fontsize=8, ha="center", color=DIM_TEXT)
+    # --- 2D body-frame position view ---
+    # Convention: body X (forward) is the VERTICAL axis (up = forward),
+    # body Y (right) is the HORIZONTAL axis. Matches a top-down chase view.
+    ax_xy.set_facecolor(BG_COLOR)
+    ax_xy.set_aspect("equal", adjustable="box")
+    ax_xy.set_xlim(-BOX_HALF_M, BOX_HALF_M)
+    ax_xy.set_ylim(-BOX_HALF_M, BOX_HALF_M)
+    ax_xy.grid(True, color=GRID_COLOR, alpha=0.4, linewidth=0.5)
+    ax_xy.axhline(0, color=GRID_COLOR, lw=0.6)
+    ax_xy.axvline(0, color=GRID_COLOR, lw=0.6)
+    ax_xy.set_xlabel("body y — right (m)",   color=TEXT_COLOR, fontsize=9)
+    ax_xy.set_ylabel("body x — forward (m)", color=TEXT_COLOR, fontsize=9)
+    for sp in ax_xy.spines.values():
+        sp.set_color(GRID_COLOR)
+    # Box outline at ±BOX_HALF_M (visualises recenter trigger).
+    ax_xy.plot([-BOX_HALF_M, BOX_HALF_M, BOX_HALF_M, -BOX_HALF_M, -BOX_HALF_M],
+               [-BOX_HALF_M, -BOX_HALF_M, BOX_HALF_M, BOX_HALF_M, -BOX_HALF_M],
+               color=GRID_COLOR, lw=0.8, linestyle="--")
+    trail_x = deque(maxlen=TRAIL_LEN)
+    trail_y = deque(maxlen=TRAIL_LEN)
+    trail_line, = ax_xy.plot([], [], color=ACCENT_GREEN, lw=1.2, alpha=0.8,
+                             label="path (∫v_meas dt)")
+    cur_marker, = ax_xy.plot([], [], "o", color=ACCENT_GREEN, markersize=8,
+                             markeredgecolor="white", markeredgewidth=0.8)
+    arrow_meas, = ax_xy.plot([], [], color=ACCENT_GREEN, lw=2.2,
+                             label="v_meas (m/s)")
+    arrow_pred, = ax_xy.plot([], [], color=ACCENT_BLUE, lw=2.2, alpha=0.85,
+                             label="v_pred ESKF")
+    ax_xy.legend(loc="upper right", fontsize=7, framealpha=0.3,
+                 facecolor=PANEL_COLOR, edgecolor=GRID_COLOR,
+                 labelcolor=TEXT_COLOR)
+    pos_state = {"px": 0.0, "py": 0.0, "last_t": None, "recenter": 0}
+
+    # --- Bottom info row -----------------------------------------------
+    # Layout (y in figure coords):
+    #   y=0.085  status line (truth: pos / v_meas / v_pred / clarity / range)
+    #   y=0.045  chip id  (left)         |   fps (right of status)
+    #   y=0.018  buttons:  [Start Log] [Reset FC]
+    chip_text   = fig.text(0.02, 0.045, "", fontsize=8, ha="left",  color=DIM_TEXT)
+    fps_text    = fig.text(0.50, 0.045, "", fontsize=8, ha="center", color=DIM_TEXT)
+    status_text = fig.text(0.50, 0.085, "", fontsize=8, ha="center",
+                           color=TEXT_COLOR, family="monospace")
 
     t0 = [None]   # set on first sample so the X axis starts at 0
+    draw_count = [0]
+    last_rx_count = [0]
+    last_fps_t = [time.time()]
 
     # --- Buttons ---
     ax_toggle = fig.add_axes([0.76, 0.018, 0.10, 0.035])
@@ -313,6 +374,10 @@ def main():
         for d in (t_buf, vx_down, vy_down,
                   vx_pred, vy_pred, q_down, r_down):
             d.clear()
+        trail_x.clear(); trail_y.clear()
+        pos_state["px"] = 0.0; pos_state["py"] = 0.0
+        pos_state["last_t"] = None
+        pos_state["recenter"] = 0
         t0[0] = None
 
         def _after():
@@ -324,6 +389,30 @@ def main():
 
     btn_reset.on_clicked(on_reset)
 
+    # Clear button: wipes all chart history without touching the FC.
+    ax_clear = fig.add_axes([0.65, 0.018, 0.10, 0.035])
+    btn_clear = Button(ax_clear, "Clear",
+                       color=BTN_GREEN, hovercolor=BTN_GREEN_HOV)
+    btn_clear.label.set_color(TEXT_COLOR)
+    btn_clear.label.set_fontsize(8)
+
+    def on_clear(_event):
+        for d in (t_buf, vx_down, vy_down,
+                  vx_pred, vy_pred, q_down, r_down):
+            d.clear()
+        trail_x.clear(); trail_y.clear()
+        pos_state["px"] = 0.0; pos_state["py"] = 0.0
+        pos_state["last_t"] = None
+        pos_state["recenter"] = 0
+        t0[0] = None
+        # Reset y-limits so autoscale starts fresh.
+        for axp in (ax_vx, ax_vy, ax_q, ax_r):
+            axp.relim()
+            axp.set_autoscaley_on(True)
+            axp.autoscale_view(scalex=False, scaley=True)
+
+    btn_clear.on_clicked(on_clear)
+
     def update(_):
         latest = None
         while True:
@@ -331,13 +420,54 @@ def main():
                 latest = data_queue.get_nowait()
             except queue.Empty:
                 break
+
+        now = time.time()
+        if latest is not None:
+            draw_count[0] += 1
+        if now - last_fps_t[0] >= 1.0:
+            elapsed = now - last_fps_t[0]
+            rx_count = g_rx_frame_count
+            rx_hz = (rx_count - last_rx_count[0]) / elapsed
+            draw_hz = draw_count[0] / elapsed
+            fps_text.set_text(f"RX {rx_hz:.0f} Hz | Draw {draw_hz:.0f} Hz")
+            last_rx_count[0] = rx_count
+            draw_count[0] = 0
+            last_fps_t[0] = now
+
         if latest is None:
             return ()
 
-        now = time.time()
         if t0[0] is None:
             t0[0] = now
         t = now - t0[0]
+
+        # --- 2D position integration (body-frame, no yaw rotation) ---
+        if pos_state["last_t"] is None:
+            dt_pos = 0.0
+        else:
+            dt_pos = max(0.0, min(0.2, now - pos_state["last_t"]))
+        pos_state["last_t"] = now
+        pos_state["px"] += latest[0] * dt_pos
+        pos_state["py"] += latest[1] * dt_pos
+        if (abs(pos_state["px"]) > BOX_HALF_M
+                or abs(pos_state["py"]) > BOX_HALF_M):
+            pos_state["px"] = 0.0
+            pos_state["py"] = 0.0
+            trail_x.clear(); trail_y.clear()
+            pos_state["recenter"] += 1
+        # Plot horizontal=py (right), vertical=px (forward) so body X is up.
+        trail_x.append(pos_state["py"])
+        trail_y.append(pos_state["px"])
+        trail_line.set_data(list(trail_x), list(trail_y))
+        cur_marker.set_data([pos_state["py"]], [pos_state["px"]])
+        arrow_meas.set_data(
+            [pos_state["py"], pos_state["py"] + latest[1] * ARROW_SCALE],
+            [pos_state["px"], pos_state["px"] + latest[0] * ARROW_SCALE],
+        )
+        arrow_pred.set_data(
+            [pos_state["py"], pos_state["py"] + latest[3] * ARROW_SCALE],
+            [pos_state["px"], pos_state["px"] + latest[2] * ARROW_SCALE],
+        )
 
         t_buf.append(t)
         vx_down.append(latest[0]); vy_down.append(latest[1])
@@ -365,29 +495,28 @@ def main():
             x_hi = max(WINDOW_S, ts[-1])
             ax_vx.set_xlim(x_lo, x_hi)
 
-            def autoscale_y(axp, *series):
-                vals = [v for s in series for v in s if math.isfinite(v)]
-                if not vals:
-                    return
-                lo, hi = min(vals), max(vals)
-                pad = max(0.1, 0.1 * (hi - lo))
-                axp.set_ylim(lo - pad, hi + pad)
-
-            autoscale_y(ax_vx, vx_down, vx_pred)
-            autoscale_y(ax_vy, vy_down, vy_pred)
-            autoscale_y(ax_q,  q_down)
-            autoscale_y(ax_r,  r_down)
+            # True autoscale on Y for each strip. set_autoscaley_on(True) is
+            # required because matplotlib silently disables the autoscale
+            # flag on any axis whose limits have ever been set explicitly
+            # (e.g. by the Clear button or an earlier autoscale_view call
+            # — yes, autoscale_view itself sets the flag off after running).
+            for axp in (ax_vx, ax_vy, ax_q, ax_r):
+                axp.relim()
+                axp.set_autoscaley_on(True)
+                axp.autoscale_view(scalex=False, scaley=True)
 
         status_text.set_text(
-            f"DOWN  v=({latest[0]:+.2f}, {latest[1]:+.2f}) m/s  "
-            f"clarity={latest[4]:.0f}  range={latest[5]:.2f} m   "
-            f"|   ESKF pred=({latest[2]:+.2f}, {latest[3]:+.2f}) m/s"
+            f"pos=({pos_state['px']:+.2f}, {pos_state['py']:+.2f}) m  "
+            f"recenter#{pos_state['recenter']:<2d} │ "
+            f"v_meas=({latest[0]:+.2f}, {latest[1]:+.2f}) m/s │ "
+            f"v_pred=({latest[2]:+.2f}, {latest[3]:+.2f}) m/s │ "
+            f"clarity={latest[4]:>3.0f}  range={latest[5]:.2f} m"
         )
         if g_chip_id is not None:
             chip_text.set_text(f"Chip {g_chip_id}")
         return ()
 
-    _anim = FuncAnimation(fig, update, interval=40, blit=False,
+    _anim = FuncAnimation(fig, update, interval=20, blit=False,
                           cache_frame_data=False)
 
     def on_close(_):
