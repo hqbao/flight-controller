@@ -11,7 +11,7 @@
  *                                             → fusion6_update_mag_heading
  *                                                (1-D yaw pseudo-meas)
  *                                             → diagnostic stream
- *   Optflow   (~25 Hz, UP+DOWN)  → on_optflow → derotate (gyro)
+ *   Optflow   (~25 Hz, DOWN only) → on_optflow → derotate (gyro)
  *                                             → range·flow → v_body_xy
  *                                             → fusion6_update_velocity_xy_body
  *                                             → diagnostic stream
@@ -23,11 +23,16 @@
  * velocity / position are not yet observed by any update — `vz` and `pz`
  * still drift on accel-only integration.
  *
+ * The UP-pointing camera publishes on the same EXTERNAL_SENSOR_OPTFLOW topic
+ * but is intentionally ignored here: it has no range finder so there is no
+ * way to convert its angular flow to body-frame m/s. UP frames are silently
+ * dropped at the top of on_optflow().
+ *
  * Telemetry:
  *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
- *   LOG_CLASS_VEL_FUSION  (25 Hz, 10×float)    — optflow velocity diagnostics
+ *   LOG_CLASS_VEL_FUSION  (25 Hz, 6×float)     — optflow velocity diagnostics
  */
 
 #include "state_estimation.h"
@@ -91,11 +96,11 @@ static double   g_last_accel_body[3] = {0, 0, 0};
 static double   g_last_mag_meas[3] = {0, 0, 0};
 static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [-π, π] */
 
-/* Latest optflow per-direction snapshots for LOG_CLASS_VEL_FUSION.
- * Index 0 = OPTFLOW_DOWNWARD, 1 = OPTFLOW_UPWARD. */
-static double   g_last_optflow_v[2][2]   = { {0, 0}, {0, 0} };  /* [dir][x,y] */
-static double   g_last_optflow_clarity[2] = {0, 0};
-static double   g_last_optflow_range_m[2] = {0, 0};
+/* Latest optflow snapshot (DOWN camera only — UP has no range finder so it
+ * is not fused; see on_optflow() for the gate). */
+static double   g_last_optflow_v[2]    = {0, 0};   /* [vx, vy] body, m/s */
+static double   g_last_optflow_clarity = 0.0;
+static double   g_last_optflow_range_m = 0.0;
 
 static uint8_t  g_log_class      = 0;
 
@@ -206,9 +211,12 @@ static void on_compass(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
- * Optical-flow update (downward + upward cameras share one topic, routed
- * by msg.direction). Per-camera gates: skip if range invalid, clarity below
- * threshold, or velocity glitch. The other camera keeps fusing.
+ * Optical-flow update (DOWN-pointing camera only).
+ *
+ * The UP camera shares this topic but has no range finder, so its samples
+ * carry z=0 and would always fail the range gate. To keep things explicit
+ * we drop UP frames at the top — also avoids burning cycles on a frame we
+ * never intend to fuse.
  *
  * Pinhole geometry (downward looking at static surface at range r):
  *   flow_rate_x_image ≈ vx_body / r  −  ω_y_body
@@ -217,22 +225,23 @@ static void on_compass(uint8_t *data, size_t size) {
  *   vx_body = r · (flow_rate_x + ω_y)
  *   vy_body = r · (flow_rate_y − ω_x)
  *
- * `optflow_to_rad_per_s()` already flips the sign for upward cameras so the
- * published flow is "rate relative to the surface", which means the same
- * formula above produces a body-velocity estimate with the same sign for
- * both directions. Sign convention is to be confirmed on bench (cart slide
- * test) — flip the wy / wx signs here if estimator velocity moves opposite
- * to truth.
+ * Sign convention is to be confirmed on bench (cart slide test) — flip the
+ * wy / wx signs here if estimator velocity moves opposite to truth.
  * ============================================================ */
 static void on_optflow(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
 	optflow_data_t msg;
 	memcpy(&msg, data, sizeof(msg));
+	if (msg.direction != OPTFLOW_DOWNWARD) return;   /* UP has no range — skip */
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
 	if (msg.dt_us == 0) return;
 
-	int dir_idx = (msg.direction == OPTFLOW_UPWARD) ? 1 : 0;
-	int upward  = dir_idx;
+	/* Always cache the raw clarity + range as reported by the camera so the
+	 * VEL_FUSION viewer can tell "camera silent" from "camera publishing but
+	 * gated out". v_meas is overwritten only when the update actually goes
+	 * through (so a stale velocity sticks around if the camera fails). */
+	g_last_optflow_clarity = msg.clarity;
+	g_last_optflow_range_m = (double)msg.z * 1e-3;   /* mm → m */
 
 	int32_t z_mm = (int32_t)msg.z;
 	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) return;
@@ -241,10 +250,10 @@ static void on_optflow(uint8_t *data, size_t size) {
 	double q_scale = optflow_quality_to_R_scale(msg.clarity,
 	                                            OPTFLOW_CLARITY_MIN,
 	                                            OPTFLOW_CLARITY_GOOD);
-	if (!isfinite(q_scale)) return;   /* below clarity floor → skip this camera */
+	if (!isfinite(q_scale)) return;   /* below clarity floor — skip this frame */
 
-	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, upward);
-	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, upward);
+	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, /*upward=*/0);
+	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, /*upward=*/0);
 	if (!isfinite(flow_x) || !isfinite(flow_y)) return;
 
 	/* Derotate using the most recent body angular rate. */
@@ -261,12 +270,8 @@ static void on_optflow(uint8_t *data, size_t size) {
 	if (fabs(v_body_x) > OPTFLOW_VEL_MAX_MPS) return;
 	if (fabs(v_body_y) > OPTFLOW_VEL_MAX_MPS) return;
 
-	/* Cache for telemetry (regardless of whether the update goes through
-	 * — but we only get here after every gate has passed). */
-	g_last_optflow_v[dir_idx][0]  = v_body_x;
-	g_last_optflow_v[dir_idx][1]  = v_body_y;
-	g_last_optflow_clarity[dir_idx] = msg.clarity;
-	g_last_optflow_range_m[dir_idx] = range_m;
+	g_last_optflow_v[0] = v_body_x;
+	g_last_optflow_v[1] = v_body_y;
 
 	/* Adaptive measurement noise. */
 	double sigma = range_m * OPTFLOW_SIGMA_FLOW
@@ -392,15 +397,13 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 /* ============================================================
  * Optflow velocity fusion log stream (LOG_CLASS_VEL_FUSION = 0x20)
  *
- * 10-float / 40-byte payload @ 25 Hz, consumed by tools/optflow_velocity_view.py.
+ * 6-float / 24-byte payload @ 25 Hz, consumed by tools/optflow_velocity_view.py.
  *   float[0..1] = v_meas DOWN  (vx, vy, body, m/s)
- *   float[2..3] = v_meas UP    (vx, vy, body, m/s)
- *   float[4..5] = v_pred       (vx, vy from current ESKF, body, m/s)
- *   float[6]    = clarity DOWN
- *   float[7]    = clarity UP
- *   float[8]    = range DOWN (m)
- *   float[9]    = range UP   (m)
- * Cached values are zero until a sample for that camera passes the gates.
+ *   float[2..3] = v_pred       (vx, vy from current ESKF, body, m/s)
+ *   float[4]    = clarity DOWN
+ *   float[5]    = range DOWN (m)
+ * Cached values are zero until a sample passes the gates. Only the
+ * downward-pointing camera is fused (UP has no range finder).
  * ============================================================ */
 static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
@@ -415,17 +418,13 @@ static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
 	matrix_t R; quat_to_rot_matrix(&R, &s.q);
 	matrix_mult_transpose_vec3(&v_body_pred, &R, &v_ned);
 
-	float payload[10];
-	payload[0] = (float)g_last_optflow_v[OPTFLOW_DOWNWARD][0];
-	payload[1] = (float)g_last_optflow_v[OPTFLOW_DOWNWARD][1];
-	payload[2] = (float)g_last_optflow_v[OPTFLOW_UPWARD][0];
-	payload[3] = (float)g_last_optflow_v[OPTFLOW_UPWARD][1];
-	payload[4] = (float)v_body_pred.x;
-	payload[5] = (float)v_body_pred.y;
-	payload[6] = (float)g_last_optflow_clarity[OPTFLOW_DOWNWARD];
-	payload[7] = (float)g_last_optflow_clarity[OPTFLOW_UPWARD];
-	payload[8] = (float)g_last_optflow_range_m[OPTFLOW_DOWNWARD];
-	payload[9] = (float)g_last_optflow_range_m[OPTFLOW_UPWARD];
+	float payload[6];
+	payload[0] = (float)g_last_optflow_v[0];
+	payload[1] = (float)g_last_optflow_v[1];
+	payload[2] = (float)v_body_pred.x;
+	payload[3] = (float)v_body_pred.y;
+	payload[4] = (float)g_last_optflow_clarity;
+	payload[5] = (float)g_last_optflow_range_m;
 
 	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
 }

@@ -2,20 +2,19 @@
 Optical-Flow Velocity Viewer
 =============================
 
-Shows the body-frame horizontal velocity (vx, vy) measured by each optical-flow
-camera (DOWN + UP) overlaid on the ESKF-predicted body velocity. Useful when
+Shows the body-frame horizontal velocity (vx, vy) measured by the DOWN-pointing
+optical-flow camera overlaid on the ESKF-predicted body velocity. Useful when
 bringing up the optflow → fusion6 path: confirms sign convention, range gating,
-and that the two cameras agree on translation while one being covered does not
-poison the estimator.
+and that the estimator tracks measured velocity during translation.
 
-Wire format (10 floats / 40 B, LOG_CLASS_VEL_FUSION = 0x20):
+The UP camera is not shown here — it has no range finder so it is not fused
+(see state_estimation.c on_optflow()).
+
+Wire format (6 floats / 24 B, LOG_CLASS_VEL_FUSION = 0x20):
     [0..1]  v_meas DOWN  (vx, vy, body, m/s)
-    [2..3]  v_meas UP    (vx, vy, body, m/s)
-    [4..5]  v_pred       (vx, vy from current ESKF, body, m/s)
-    [6]     clarity DOWN
-    [7]     clarity UP
-    [8]     range DOWN (m)
-    [9]     range UP   (m)
+    [2..3]  v_pred       (vx, vy from current ESKF, body, m/s)
+    [4]     clarity DOWN
+    [5]     range DOWN (m)
 """
 
 import math
@@ -60,8 +59,8 @@ LOG_CLASS_NONE = 0x00
 LOG_CLASS_HEART_BEAT = 0x09
 LOG_CLASS_VEL_FUSION = 0x20
 
-VEL_FRAME_SIZE = 40            # 10 floats
-VEL_FRAME_FORMAT = "<10f"
+VEL_FRAME_SIZE = 24            # 6 floats
+VEL_FRAME_FORMAT = "<6f"
 
 # --- UI palette (shared with other tools/*.py viewers) ---
 BG_COLOR = "#1e1e1e"
@@ -237,28 +236,20 @@ def main():
     t_buf      = deque(maxlen=int(WINDOW_S * RATE_HZ * 4))
     vx_down    = deque(maxlen=t_buf.maxlen)
     vy_down    = deque(maxlen=t_buf.maxlen)
-    vx_up      = deque(maxlen=t_buf.maxlen)
-    vy_up      = deque(maxlen=t_buf.maxlen)
     vx_pred    = deque(maxlen=t_buf.maxlen)
     vy_pred    = deque(maxlen=t_buf.maxlen)
     q_down     = deque(maxlen=t_buf.maxlen)
-    q_up       = deque(maxlen=t_buf.maxlen)
     r_down     = deque(maxlen=t_buf.maxlen)
-    r_up       = deque(maxlen=t_buf.maxlen)
 
     # Lines
     l_vx_down, = ax_vx.plot([], [], color=ACCENT_GREEN,  lw=1.4, label="DOWN meas")
-    l_vx_up,   = ax_vx.plot([], [], color=ACCENT_ORANGE, lw=1.4, label="UP meas")
     l_vx_pred, = ax_vx.plot([], [], color=ACCENT_BLUE,   lw=1.8, alpha=0.85,
                             label="ESKF pred")
     l_vy_down, = ax_vy.plot([], [], color=ACCENT_GREEN,  lw=1.4, label="DOWN meas")
-    l_vy_up,   = ax_vy.plot([], [], color=ACCENT_ORANGE, lw=1.4, label="UP meas")
     l_vy_pred, = ax_vy.plot([], [], color=ACCENT_BLUE,   lw=1.8, alpha=0.85,
                             label="ESKF pred")
     l_q_down,  = ax_q.plot([],  [], color=ACCENT_GREEN,  lw=1.2, label="DOWN")
-    l_q_up,    = ax_q.plot([],  [], color=ACCENT_ORANGE, lw=1.2, label="UP")
     l_r_down,  = ax_r.plot([],  [], color=ACCENT_GREEN,  lw=1.2, label="DOWN")
-    l_r_up,    = ax_r.plot([],  [], color=ACCENT_ORANGE, lw=1.2, label="UP")
 
     for axp in (ax_vx, ax_vy):
         axp.legend(loc="upper right", fontsize=7, framealpha=0.3,
@@ -319,8 +310,8 @@ def main():
         btn_toggle.hovercolor = BTN_GREEN_HOV
         ax_toggle.set_facecolor(BTN_GREEN)
         # Clear plot history.
-        for d in (t_buf, vx_down, vy_down, vx_up, vy_up,
-                  vx_pred, vy_pred, q_down, q_up, r_down, r_up):
+        for d in (t_buf, vx_down, vy_down,
+                  vx_pred, vy_pred, q_down, r_down):
             d.clear()
         t0[0] = None
 
@@ -350,29 +341,24 @@ def main():
 
         t_buf.append(t)
         vx_down.append(latest[0]); vy_down.append(latest[1])
-        vx_up.append(latest[2]);   vy_up.append(latest[3])
-        vx_pred.append(latest[4]); vy_pred.append(latest[5])
-        q_down.append(latest[6]);  q_up.append(latest[7])
-        r_down.append(latest[8]);  r_up.append(latest[9])
+        vx_pred.append(latest[2]); vy_pred.append(latest[3])
+        q_down.append(latest[4])
+        r_down.append(latest[5])
 
         # Trim to rolling window.
         while t_buf and (t - t_buf[0]) > WINDOW_S:
             t_buf.popleft()
-            for d in (vx_down, vy_down, vx_up, vy_up, vx_pred, vy_pred,
-                      q_down, q_up, r_down, r_up):
+            for d in (vx_down, vy_down, vx_pred, vy_pred,
+                      q_down, r_down):
                 d.popleft()
 
         ts = list(t_buf)
         l_vx_down.set_data(ts, list(vx_down))
-        l_vx_up.set_data(ts,   list(vx_up))
         l_vx_pred.set_data(ts, list(vx_pred))
         l_vy_down.set_data(ts, list(vy_down))
-        l_vy_up.set_data(ts,   list(vy_up))
         l_vy_pred.set_data(ts, list(vy_pred))
         l_q_down.set_data(ts,  list(q_down))
-        l_q_up.set_data(ts,    list(q_up))
         l_r_down.set_data(ts,  list(r_down))
-        l_r_up.set_data(ts,    list(r_up))
 
         if ts:
             x_lo = max(0.0, ts[-1] - WINDOW_S)
@@ -387,17 +373,15 @@ def main():
                 pad = max(0.1, 0.1 * (hi - lo))
                 axp.set_ylim(lo - pad, hi + pad)
 
-            autoscale_y(ax_vx, vx_down, vx_up, vx_pred)
-            autoscale_y(ax_vy, vy_down, vy_up, vy_pred)
-            autoscale_y(ax_q,  q_down, q_up)
-            autoscale_y(ax_r,  r_down, r_up)
+            autoscale_y(ax_vx, vx_down, vx_pred)
+            autoscale_y(ax_vy, vy_down, vy_pred)
+            autoscale_y(ax_q,  q_down)
+            autoscale_y(ax_r,  r_down)
 
         status_text.set_text(
             f"DOWN  v=({latest[0]:+.2f}, {latest[1]:+.2f}) m/s  "
-            f"clarity={latest[6]:.0f}  range={latest[8]:.2f} m   "
-            f"|   UP  v=({latest[2]:+.2f}, {latest[3]:+.2f}) m/s  "
-            f"clarity={latest[7]:.0f}  range={latest[9]:.2f} m   "
-            f"|   ESKF pred=({latest[4]:+.2f}, {latest[5]:+.2f}) m/s"
+            f"clarity={latest[4]:.0f}  range={latest[5]:.2f} m   "
+            f"|   ESKF pred=({latest[2]:+.2f}, {latest[3]:+.2f}) m/s"
         )
         if g_chip_id is not None:
             chip_text.set_text(f"Chip {g_chip_id}")
