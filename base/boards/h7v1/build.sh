@@ -26,7 +26,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Parse arguments
-AIRCRAFT="bicopter"
+AIRCRAFT="quad"
 for arg in "$@"; do
     case "$arg" in
         clean) CLEAN=1 ;;

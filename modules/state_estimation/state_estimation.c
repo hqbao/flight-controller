@@ -79,6 +79,18 @@
 #define OPTFLOW_SIGMA_RANGE_FRAC 0.05    /* range relative 1-σ */
 #define OPTFLOW_SIGMA_GYRO       0.005   /* rad/s 1-σ residual gyro after derot */
 
+/* Zero-velocity update (ZUPT): when the rangefinder reports below the
+ * optflow gate (taxi / takeoff / landing inside the optflow blind zone),
+ * AND the IMU agrees we are not moving, fuse v_body=(0,0) instead of
+ * leaving the estimator open-loop. Without this, accel-bias + tilt-error
+ * integration walks the velocity by ~0.15 m/s/s every second the camera
+ * is gated out. With it, the estimator is pinned at zero on the ground
+ * and bias states keep getting observed. */
+#define OPTFLOW_ZUPT_RANGE_MAX_MM   200    /* trigger only if 0 ≤ z_mm < this */
+#define OPTFLOW_ZUPT_GYRO_MAX_RPS   0.10   /* rad/s, ~5.7 deg/s */
+#define OPTFLOW_ZUPT_ACCEL_TOL_MSS  0.5    /* m/s² off |g| (allows ~3° tilt) */
+#define OPTFLOW_ZUPT_SIGMA_MPS      0.05   /* m/s 1-σ on assumed zero motion */
+
 /* ============================================================
  * State
  * ============================================================ */
@@ -227,6 +239,10 @@ static void on_compass(uint8_t *data, size_t size) {
  *
  * Sign convention is to be confirmed on bench (cart slide test) — flip the
  * wy / wx signs here if estimator velocity moves opposite to truth.
+ *
+ * ZUPT branch: when the rangefinder is below the gate and the IMU agrees
+ * we are stationary, we fuse v_body=(0,0) instead of skipping. See the
+ * OPTFLOW_ZUPT_* constants for thresholds.
  * ============================================================ */
 static void on_optflow(uint8_t *data, size_t size) {
 	if (size < sizeof(optflow_data_t)) return;
@@ -234,17 +250,52 @@ static void on_optflow(uint8_t *data, size_t size) {
 	memcpy(&msg, data, sizeof(msg));
 	if (msg.direction != OPTFLOW_DOWNWARD) return;   /* UP has no range — skip */
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
-	if (msg.dt_us == 0) return;
 
 	/* Always cache the raw clarity + range as reported by the camera so the
 	 * VEL_FUSION viewer can tell "camera silent" from "camera publishing but
-	 * gated out". v_meas is overwritten only when the update actually goes
-	 * through (so a stale velocity sticks around if the camera fails). */
+	 * gated out". This MUST stay above all gate-and-return paths below
+	 * (dt_us, range, clarity, outlier) — otherwise the diagnostic strips
+	 * freeze on every gated frame. v_meas, by contrast, is invalidated to
+	 * NaN whenever we don't fuse, so the viewer leaves a gap instead of
+	 * holding a stale value that would look like a fresh measurement. */
 	g_last_optflow_clarity = msg.clarity;
 	g_last_optflow_range_m = (double)msg.z * 1e-3;   /* mm → m */
+	g_last_optflow_v[0] = NAN;
+	g_last_optflow_v[1] = NAN;
+
+	if (msg.dt_us == 0) return;   /* FC-side dt outside [10ms, 500ms] sanity band */
 
 	int32_t z_mm = (int32_t)msg.z;
-	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) return;
+	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) {
+		/* Below the optflow gate — try a ZUPT if we look stationary. The
+		 * VL53L1X reports z=0 when the target is closer than its minimum
+		 * range (camera resting on / very close to the ground), so we accept
+		 * z in [0, 200) as "close to the ground". The IMU stationarity check
+		 * keeps mid-flight rangefinder glitches from being mistaken for a
+		 * landing. */
+		if (z_mm >= 0 && z_mm < OPTFLOW_ZUPT_RANGE_MAX_MM) {
+			double gx = g_last_gyro_body[0];
+			double gy = g_last_gyro_body[1];
+			double gz = g_last_gyro_body[2];
+			double ax = g_last_accel_body[0];
+			double ay = g_last_accel_body[1];
+			double az = g_last_accel_body[2];
+			double gyro_mag2  = gx*gx + gy*gy + gz*gz;
+			double accel_mag  = sqrt(ax*ax + ay*ay + az*az);
+			const double gyro_thr2 = OPTFLOW_ZUPT_GYRO_MAX_RPS
+			                       * OPTFLOW_ZUPT_GYRO_MAX_RPS;
+			if (gyro_mag2 < gyro_thr2
+			        && fabs(accel_mag - GRAVITY_MSS_LOCAL) < OPTFLOW_ZUPT_ACCEL_TOL_MSS) {
+				double r = OPTFLOW_ZUPT_SIGMA_MPS * OPTFLOW_ZUPT_SIGMA_MPS;
+				double R_zupt[2][2] = { { r, 0.0 }, { 0.0, r } };
+				double v_zero[2] = { 0.0, 0.0 };
+				fusion6_update_velocity_xy_body(&g_f, v_zero, R_zupt);
+				g_last_optflow_v[0] = 0.0;
+				g_last_optflow_v[1] = 0.0;
+			}
+		}
+		return;
+	}
 	double range_m = lidar_mm_to_m(z_mm);
 
 	double q_scale = optflow_quality_to_R_scale(msg.clarity,
@@ -254,7 +305,6 @@ static void on_optflow(uint8_t *data, size_t size) {
 
 	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, /*upward=*/0);
 	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, /*upward=*/0);
-	if (!isfinite(flow_x) || !isfinite(flow_y)) return;
 
 	/* Derotate using the most recent body angular rate. */
 	double wx = g_last_gyro_body[0];
@@ -262,13 +312,14 @@ static void on_optflow(uint8_t *data, size_t size) {
 	double flow_lin_x = flow_x + wy;
 	double flow_lin_y = flow_y - wx;
 
-	/* Translate to body horizontal velocity (m/s). */
+	/* Translate to body horizontal velocity (m/s). All inputs above are
+	 * finite by construction (dt_us bounded by FC bridge, range bounded by
+	 * lidar gate, gyro bounded by IMU full-scale), so no NaN/Inf gate is
+	 * needed here — only the physical-plausibility outlier reject. */
 	double v_body_x = range_m * flow_lin_x;
 	double v_body_y = range_m * flow_lin_y;
 
-	if (!isfinite(v_body_x) || !isfinite(v_body_y)) return;
-	if (fabs(v_body_x) > OPTFLOW_VEL_MAX_MPS) return;
-	if (fabs(v_body_y) > OPTFLOW_VEL_MAX_MPS) return;
+	if (fmax(fabs(v_body_x), fabs(v_body_y)) > OPTFLOW_VEL_MAX_MPS) return;
 
 	g_last_optflow_v[0] = v_body_x;
 	g_last_optflow_v[1] = v_body_y;
@@ -278,7 +329,6 @@ static void on_optflow(uint8_t *data, size_t size) {
 	             + fabs(flow_lin_x) * OPTFLOW_SIGMA_RANGE_FRAC * range_m
 	             + range_m * OPTFLOW_SIGMA_GYRO;
 	double r = sigma * sigma * q_scale;
-	if (!isfinite(r) || r < 1e-6) r = 1e-6;
 	double R_meas[2][2] = { { r, 0.0 }, { 0.0, r } };
 
 	double v_xy[2] = { v_body_x, v_body_y };
