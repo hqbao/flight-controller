@@ -87,7 +87,7 @@ flight-controller/
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
-│   ├── mag_fusion_view.py        #   Magnetometer body-frame diagnostics
+│   ├── mag_diagnostic_view.py    #   Magnetometer body-frame diagnostics
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -271,18 +271,14 @@ out_body[2] =  sensor_z;
 ```c
 m_ned_unit = (cos(incl) * cos(decl), cos(incl) * sin(decl), sin(incl));
 ```
-For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `tools/mag_fusion_view.py` diagnostic stream (`LOG_CLASS_MAG_FUSION`) shows:
-- `m_meas` and `m_pred = R(q)^T · m_ned_unit` in body frame
-- a top-left earth-frame 3D mag scene: nose axis, attitude/predicted-g overlay matching `attitude_view.py`, `R(q) · m_meas`, tilt-compensated horizontal mag projection, and configured `m_ned_unit`
-- a top-right local/body-frame 3D scene: fixed body axes plus Earth North/East/Up rotated into the local frame, so yaw drift is visible as Earth North moving around the body frame
-- a yaw/field chart with `yaw_est`, tilt-compensated `mag yaw`, and `angle(R·m_meas, m_ned_unit)` over a full ±180° range
-- a magnetic inclination chart comparing measured `asin((R·m_meas).z / |R·m_meas|)` against the configured local inclination
-- status-bar mag status. `mag=disabled`, `NIS=0`, and `R=0` are expected while the magnetometer update is removed.
+For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `tools/mag_diagnostic_view.py` diagnostic stream (`LOG_CLASS_MAG_FUSION`) renders a single 3D scene in the **earth NED frame** (back-camera view by default, with 6 face-view buttons):
+- static reference Earth N / E / Down axes
+- live body axes drawn as `R(q) · e_i` (Body-X red→blue, Body-Y green, Body-Z purple)
+- raw mag vector `R(q) · m_meas` (red), tilted out of the N-E plane by the local field inclination
+- tilt-compensated mag (orange): horizontal projection of `R(q) · m_meas` onto the N-E plane — points toward magnetic north regardless of attitude
+- status-bar shows `roll/pitch/yaw`, `mag_heading`, chip ID. `mag=disabled` is expected while the magnetometer ESKF update is removed.
 
-On a level desk in Hà Nội, the body-mapped compass vector should still satisfy approximately:
-- `m_body.z ≈ sin(27.5°) ≈ +0.46`
-- `sqrt(m_body.x² + m_body.y²) ≈ cos(27.5°) ≈ 0.89`
-In the viewer, large yaw/field errors (for example >30°) mean the compass heading should not be trusted yet; measured inclination far below +27.5° usually points to vertical scale/soft-iron calibration, axis mapping, or local magnetic disturbance.
+The firmware additionally computes `m_lvl = Rz(-yaw) · R(q) · m_body` and `mag_heading = atan2(-m_lvl.y, m_lvl.x) - declination` so a future yaw-only pseudo-measurement can feed `fusion6` without touching roll/pitch.
 
 ## Sensor Calibration
 
@@ -406,7 +402,7 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
-| `mag_fusion_view.py` | Magnetometer diagnostic: side-by-side 3D mag and local/body-frame views, attitude-vector overlay matching `attitude_view.py`, yaw_est vs mag-yaw tracking plus field-angle chart, measured inclination vs local reference, and status-bar mag status. Uses `LOG_CLASS_MAG_FUSION`; current firmware reports `mag=disabled`. |
+| `mag_diagnostic_view.py` | Magnetometer diagnostic 3D viewer (earth NED frame): static reference axes, live body axes (R(q)·e_i), raw mag and tilt-compensated mag vectors. Uses `LOG_CLASS_MAG_FUSION`; current firmware reports `mag=disabled`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
