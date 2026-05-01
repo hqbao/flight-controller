@@ -1,16 +1,22 @@
 """
-Mag Fusion Viewer
-=================
+Mag Diagnostic Viewer
+=====================
 
-Visualises the 3-axis magnetometer update inside fusion6. Reads
-LOG_CLASS_MAG_FUSION (0x1F) from state_estimation @ 25 Hz.
+Visualises body-frame magnetometer diagnostics from state_estimation. The
+current firmware does not apply a magnetometer EKF update; this tool keeps the
+mapped compass vector, diagnostic predicted field, and attitude overlay visible
+while the next heading/mag method is developed.
 
-Wire format (11 floats = 44 B):
+Wire format (13 floats = 52 B):
     [0..2]   m_meas  (body NED, unit vector, post hard/soft iron)
     [3..5]   m_pred  = R(q)^T \u00b7 m_ned_unit  (body NED, unit)
-    [6]      NIS  (after R inflation)
-    [7]      r_scale  (1.0 = no inflation)
+    [6]      NIS  (0 while mag update is disabled)
+    [7]      r_scale  (0 while mag update is disabled)
     [8..10]  roll, pitch, yaw  (deg)
+    [11]     reject reason  (0=applied, 1=nonfinite, 2=dir-gate,
+                             3=singular-S, 4=singular-S-infl,
+                             5=accel-conflict, 6=disabled)
+    [12]     reserved (0 while mag update is disabled)
 
 Panels:
     1. 3D diagnostic scene
@@ -22,11 +28,14 @@ Panels:
              - Orange : measured mag horizontal projection in earth frame
              - Green  : configured reference m_ned_unit
          Healthy = red overlays green. Purple matches attitude_view.py.
-    2. yaw_est, mag yaw, and field-vector angular error in degrees
+     2. yaw_est, mag yaw, and field-vector angular error in degrees. Yaw
+         traces are unwrapped for display so ±180° boundary crossings do not
+         look like estimator jumps.
     3. Measured magnetic inclination vs configured reference
     4. Quaternion/local-frame 3D view: earth axes expressed in local body frame
 
-Status bar: RX Hz / Draw Hz, mean |y|, mean NIS, inflation %, decl/incl.
+Status bar: RX Hz / Draw Hz, mean |y|, mean NIS, R-scale, mag status,
+decl/incl.
 """
 
 import math
@@ -71,9 +80,16 @@ LOG_CLASS_NONE = 0x00
 LOG_CLASS_HEART_BEAT = 0x09
 LOG_CLASS_MAG_FUSION = 0x1F
 
-MAG_FRAME_SIZE = 44   # 11 floats
+MAG_FRAME_SIZE_OLD = 44       # 11 floats, before reject-reason debug field
+MAG_FRAME_SIZE_REJECT = 48    # 12 floats, reject reason included
+MAG_FRAME_SIZE = 52           # 13 floats, status + reserved field
+MAG_FRAME_FORMATS = {
+    MAG_FRAME_SIZE_OLD: "<11f",
+    MAG_FRAME_SIZE_REJECT: "<12f",
+    MAG_FRAME_SIZE: "<13f",
+}
 
-# --- Reference field (must match firmware fusion6 config) ---
+# --- Reference field (must match firmware diagnostic constants) ---
 DECL_DEG = -0.6
 INCL_DEG = 27.5
 
@@ -96,6 +112,15 @@ BTN_COLOR = "#333333"
 BTN_HOVER = "#444444"
 
 NIS_THRESH_3D = 11.345
+REJECT_REASONS = {
+    0: "applied",
+    1: "nonfinite",
+    2: "dir-gate",
+    3: "singular-S",
+    4: "singular-S-infl",
+    5: "accel-conflict",
+    6: "disabled",
+}
 
 # --- Serial autodetect ---
 SERIAL_PORT = None
@@ -143,7 +168,7 @@ def _send_db(ser, msg_id, payload_byte):
 
 def send_log_class_command(ser, log_class):
     _send_db(ser, DB_CMD_LOG_CLASS, log_class)
-    names = {0x00: "NONE", 0x09: "HEART_BEAT", 0x1F: "MAG_FUSION"}
+    names = {0x00: "NONE", 0x09: "HEART_BEAT", 0x1F: "MAG_DIAG"}
     print(f"  \u2192 Log class: {names.get(log_class, f'0x{log_class:02X}')}")
 
 
@@ -201,8 +226,8 @@ def serial_reader():
             if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
                 g_chip_id = payload[:8].hex().upper()
                 print(f"  \u2713 Chip ID: {g_chip_id}")
-            elif msg_id == SEND_LOG_ID and length == MAG_FRAME_SIZE:
-                vals = struct.unpack("<11f", payload)
+            elif msg_id == SEND_LOG_ID and length in MAG_FRAME_FORMATS:
+                vals = struct.unpack(MAG_FRAME_FORMATS[length], payload)
                 if all(math.isfinite(v) for v in vals):
                     g_rx_frame_count += 1
                     push_latest_sample(vals)
@@ -231,6 +256,14 @@ def rot_zyx_no_yaw(roll, pitch):
     return rot_zyx(roll, pitch, 0.0)
 
 
+def unwrap_deg(values):
+    """Return a continuous degree series for display-only yaw plots."""
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return arr
+    return np.rad2deg(np.unwrap(np.deg2rad(arr)))
+
+
 def main():
     threading.Thread(target=serial_reader, daemon=True).start()
 
@@ -248,8 +281,8 @@ def main():
 
     fig = plt.figure(figsize=screen_fit_figsize(16, 9))
     fig.patch.set_facecolor(BG_COLOR)
-    fig.canvas.manager.set_window_title("Mag Fusion Viewer")
-    fig.suptitle("State Estimation \u2014 Magnetometer Fusion",
+    fig.canvas.manager.set_window_title("Mag Diagnostic Viewer")
+    fig.suptitle("State Estimation \u2014 Magnetometer Diagnostics",
                  fontsize=14, color=TEXT_COLOR, fontweight="bold", y=0.99)
 
     # --- Reference NED unit vector from configured decl/incl ---
@@ -496,6 +529,13 @@ def main():
     y_norm_buf = deque(maxlen=BUF_LEN)
     nis_buf = deque(maxlen=BUF_LEN)
     rs_buf  = deque(maxlen=BUF_LEN)
+    last_status = {
+        "rscale": 0.0,
+        "reject_text": "n/a",
+        "roll_deg": 0.0,
+        "pitch_deg": 0.0,
+        "yaw_deg": 0.0,
+    }
 
     t_start = time.time()
     draw_count = [0]
@@ -519,6 +559,15 @@ def main():
             roll   = math.radians(latest[8])
             pitch  = math.radians(latest[9])
             yaw    = math.radians(latest[10])
+            reject_reason = int(round(latest[11])) if len(latest) > 11 else 0
+            reject_text = REJECT_REASONS.get(reject_reason, f"code-{reject_reason}")
+            last_status.update({
+                "rscale": rscale,
+                "reject_text": reject_text,
+                "roll_deg": latest[8],
+                "pitch_deg": latest[9],
+                "yaw_deg": latest[10],
+            })
 
             # 3D scene vectors. Mag/nose are earth-frame diagnostics. The
             # attitude vector reconstructs attitude_view.py's pred-g vector:
@@ -613,10 +662,18 @@ def main():
             # Trim to last 30 s for display only.
             mask = t_arr >= -30.0
             t_v = t_arr[mask]
-            yaw_est_line.set_data(t_v, np.array(yaw_est_buf)[mask])
-            mag_yaw_line.set_data(t_v, np.array(mag_yaw_buf)[mask])
-            field_err_line.set_data(t_v, np.array(field_err_buf)[mask])
+            yaw_est_v = unwrap_deg(np.array(yaw_est_buf)[mask])
+            mag_yaw_v = unwrap_deg(np.array(mag_yaw_buf)[mask])
+            field_err_v = np.array(field_err_buf)[mask]
+            yaw_est_line.set_data(t_v, yaw_est_v)
+            mag_yaw_line.set_data(t_v, mag_yaw_v)
+            field_err_line.set_data(t_v, field_err_v)
             incl_line.set_data(t_v, np.array(incl_buf)[mask])
+            if len(t_v):
+                y_min = float(np.nanmin([np.nanmin(yaw_est_v), np.nanmin(mag_yaw_v), np.nanmin(field_err_v), -10.0]))
+                y_max = float(np.nanmax([np.nanmax(yaw_est_v), np.nanmax(mag_yaw_v), np.nanmax(field_err_v), 10.0]))
+                pad = max(15.0, 0.08 * (y_max - y_min))
+                ax_err.set_ylim(y_min - pad, y_max + pad)
 
             # Stats on last 5 s
             mask5 = t_arr >= -5.0
@@ -624,16 +681,11 @@ def main():
                 mag_y = float(np.mean(np.array(y_norm_buf)[mask5]))
                 mean_nis = float(np.mean(np.array(nis_buf)[mask5]))
                 mean_yaw_err = float(np.mean(np.abs(np.array(yaw_err_buf)[mask5])))
-                rs5 = np.array(rs_buf)[mask5]
-                infl_pct = float(np.mean(rs5 > 1.001) * 100.0)
-                if latest is not None:
-                    stats_text.set_text(
-                        f"|y|={mag_y:.3f}  yaw_err={mean_yaw_err:.1f}\u00b0  NIS={mean_nis:.2f}  "
-                        f"r={latest[8]:+.1f}\u00b0 p={latest[9]:+.1f}\u00b0 y={latest[10]:+.1f}\u00b0")
-                else:
-                    stats_text.set_text(
-                        f"|y|={mag_y:.3f}  yaw_err={mean_yaw_err:.1f}\u00b0  "
-                        f"NIS={mean_nis:.2f}  infl={infl_pct:.0f}%")
+                stats_text.set_text(
+                    f"|y|={mag_y:.3f}  yaw_err={mean_yaw_err:.1f}\u00b0  NIS={mean_nis:.2f}  "
+                    f"R={last_status['rscale']:.2f}  mag={last_status['reject_text']}  "
+                    f"r={last_status['roll_deg']:+.1f}\u00b0 p={last_status['pitch_deg']:+.1f}\u00b0 "
+                    f"y={last_status['yaw_deg']:+.1f}\u00b0")
 
         if g_chip_id is not None:
             chip_text.set_text(

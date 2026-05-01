@@ -87,7 +87,7 @@ flight-controller/
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
 │   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
-│   ├── mag_fusion_view.py        #   Fusion6 magnetometer update diagnostics
+│   ├── mag_fusion_view.py        #   Magnetometer body-frame diagnostics
 │   ├── test_dblink.py             #   Automated UART data path test
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
@@ -166,7 +166,7 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 ### Event-Driven Topics
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
 - `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
-- `SENSOR_COMPASS` — Calibrated sensor-frame compass unit vector; `state_estimation` maps it to body NED via `sensor_unit.h`
+- `SENSOR_COMPASS` — Calibrated sensor-frame compass unit vector; `state_estimation` maps it to body NED via `sensor_unit.h` for diagnostics only (no attitude update)
 - `STATE_UPDATE` — Unified ESKF (fusion6) `nav_state_t` snapshot @ 500 Hz: position, velocity, quaternion, euler, body+earth linear accel, biases, P-trace, health
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
 - `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → dblink)
@@ -257,7 +257,7 @@ body_ax = -raw_ay;  body_ay = -raw_ax;  body_az = -raw_az;
 ```
 
 ### Sensor-to-Body Axis Mapping (BMM350)
-The compass module publishes calibrated/normalized BMM350 data in the sensor frame. `state_estimation.c` applies the board/body mapping through `mag_axis_map()` in `modules/state_estimation/sensor_unit.h` before calling `fusion6_update_mag()`:
+The compass module publishes calibrated/normalized BMM350 data in the sensor frame. `state_estimation.c` applies the board/body mapping through `mag_axis_map()` in `modules/state_estimation/sensor_unit.h` for diagnostics only; the magnetometer is not currently fused into `fusion6`:
 - BMM350 on PCB: sensor X=Right, sensor Y=Forward, sensor Z=Down (same X/Y orientation as ICM-42688P)
 - Mapping: `body_x = sensor_y`, `body_y = -sensor_x`, `body_z = sensor_z`
 ```c
@@ -266,8 +266,8 @@ out_body[1] = -sensor_x;
 out_body[2] =  sensor_z;
 ```
 
-### Magnetometer Fusion and Heading Diagnostics
-`state_estimation.c` maps the calibrated BMM350 unit vector into body NED and feeds that body-frame vector into `fusion6_update_mag()`. The update uses a configured local geomagnetic reference:
+### Magnetometer Diagnostics
+`state_estimation.c` maps the calibrated BMM350 unit vector into body NED, but it does not initialize yaw and does not call a magnetometer update. The ESKF currently uses gyro prediction plus accelerometer gravity correction only. The diagnostic stream still compares the measured body-frame mag vector against the local geomagnetic reference so the replacement heading/mag method can be developed safely:
 ```c
 m_ned_unit = (cos(incl) * cos(decl), cos(incl) * sin(decl), sin(incl));
 ```
@@ -277,12 +277,12 @@ For Hà Nội defaults this is `decl=-0.6°`, `incl=+27.5°` (`+down`). The `too
 - a top-right local/body-frame 3D scene: fixed body axes plus Earth North/East/Up rotated into the local frame, so yaw drift is visible as Earth North moving around the body frame
 - a yaw/field chart with `yaw_est`, tilt-compensated `mag yaw`, and `angle(R·m_meas, m_ned_unit)` over a full ±180° range
 - a magnetic inclination chart comparing measured `asin((R·m_meas).z / |R·m_meas|)` against the configured local inclination
-- status-bar NIS / adaptive `R` inflation summary for the mag update
+- status-bar mag status. `mag=disabled`, `NIS=0`, and `R=0` are expected while the magnetometer update is removed.
 
-Because this is a full 3-axis vector update, the vertical magnetic component can influence roll/pitch if compass calibration or axis mapping is wrong. On a level desk in Hà Nội, the body-mapped compass vector should satisfy approximately:
+On a level desk in Hà Nội, the body-mapped compass vector should still satisfy approximately:
 - `m_body.z ≈ sin(27.5°) ≈ +0.46`
 - `sqrt(m_body.x² + m_body.y²) ≈ cos(27.5°) ≈ 0.89`
-If `R·m_meas` overlaps `m_ned` but roll/pitch drift away from level, inspect the calibrated mag vector Z component and BMM350 axis mapping before changing ESKF gains. In the viewer, large yaw/field errors (for example >30°) mean the compass heading should not be trusted yet; measured inclination far below +27.5° usually points to vertical scale/soft-iron calibration, axis mapping, or local magnetic disturbance.
+In the viewer, large yaw/field errors (for example >30°) mean the compass heading should not be trusted yet; measured inclination far below +27.5° usually points to vertical scale/soft-iron calibration, axis mapping, or local magnetic disturbance.
 
 ## Sensor Calibration
 
@@ -394,7 +394,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_POSITION_COMPARE` | `0x1C` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
 | `LOG_CLASS_TROUBLESHOOT_ACCEL` | `0x1D` | `troubleshoot.c` | Per-axis raw INT16 accel min/max + clip count over 1 s window |
 | `LOG_CLASS_GPS` | `0x1E` | `gps.c` | Packed `gps_log_t` (48 B): lat/lon/alt, NED + ground speed, heading, h/v acc, pDOP, num_sv, fix_type, flags, reliable (10 Hz from a configured ZED-F9P) |
-| `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Fusion6 mag update diagnostics (11 floats / 44 B): measured/predicted unit mag, NIS, R-scale, roll/pitch/yaw |
+| `LOG_CLASS_MAG_FUSION` | `0x1F` | `state_estimation.c` | Magnetometer diagnostics (13 floats / 52 B): measured/predicted unit mag, roll/pitch/yaw, status (`mag=disabled`; no EKF update) |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -406,11 +406,11 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `fft_spectrum_view.py` | Real-time spectrogram with dynamic notch peak overlay (replaces old fft_view.py / fft_spectrogram.py) |
 | `fft_spectrum_dual_view.py` | Raw + post-notch spectrograms stacked side-by-side — verify notch filter effectiveness in flight |
 | `troubleshoot_accel_clip_view.py` | Accelerometer full-scale-range diagnostic: per-axis raw INT16 LSB min/max + clip-count over 1 s window. Confirms whether the configured `AFS_*` range is being saturated under flight vibration / maneuvers. Pairs with `LOG_CLASS_TROUBLESHOOT_ACCEL` from the `troubleshoot` module. |
-| `mag_fusion_view.py` | Fusion6 magnetometer diagnostic: side-by-side 3D mag and local/body-frame views, attitude-vector overlay matching `attitude_view.py`, yaw_est vs mag-yaw tracking plus field-angle chart, measured inclination vs local reference, and status-bar NIS/R-scale. Uses `LOG_CLASS_MAG_FUSION`. |
+| `mag_fusion_view.py` | Magnetometer diagnostic: side-by-side 3D mag and local/body-frame views, attitude-vector overlay matching `attitude_view.py`, yaw_est vs mag-yaw tracking plus field-angle chart, measured inclination vs local reference, and status-bar mag status. Uses `LOG_CLASS_MAG_FUSION`; current firmware reports `mag=disabled`. |
 | `rc_receiver_view.py` | RC receiver debug tool: roll/pitch/yaw/alt time-series, state/mode display, message counter |
 | `calibration_gyro.py` | Gyro temperature compensation (polynomial fit, upload, query, CSV) |
 | `calibration_accel.py` | Accelerometer 6-position ellipsoid calibration (upload, query, default, CSV) |
-| `calibration_compass.py` | Compass ellipsoid fit calibration (upload, query, default, CSV) |
+| `calibration_compass.py` | Compass ellipsoid fit calibration (upload, query, default, CSV) with quality gates that block poor full-sphere coverage, unsafe soft-iron fits, or level inclination mismatch before upload |
 | `mix_control_quadcopter_test.py` | Quadcopter motor output visualizer (8 motors) |
 | `mix_control_bicopter_test.py` | Bicopter tilt-rotor output visualizer (2 motors + 2 servos) |
 | `flight_telemetry_view.py` | Flight telemetry HUD: 3D quadcopter, data panel, position/velocity/altitude overlays |

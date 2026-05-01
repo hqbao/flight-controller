@@ -48,12 +48,6 @@ typedef struct {
     double accel_mag_gate;    /* m/s² */
 
     double gravity;           /* m/s² */
-
-    /* --- Magnetometer (unit-vector) update --- */
-    double mag_declination;   /* rad, +east of true north */
-    double mag_inclination;   /* rad, +down (positive in northern hemisphere) */
-    double R_mag;             /* per-axis 1σ on unit-vector components (unitless) */
-    double mag_dir_gate_cos;  /* skip update if dot(m_meas, R^T m_ned) < this */
 } fusion6_config_t;
 
 void fusion6_config_default(fusion6_config_t *cfg);
@@ -113,29 +107,6 @@ void fusion6_predict(fusion6_t *f,
                      const double gyro[3], const double accel[3], double dt);
 
 void fusion6_update_accel(fusion6_t *f, const double accel[3]);
-
-/**
- * Magnetometer update (3-axis, unit-vector convention).
- *
- * Inputs:
- *   mag_body_unit  : already calibrated (hard/soft iron) and normalized to
- *                    unit length, expressed in the vehicle body NED frame.
- *
- * Outputs (when non-NULL):
- *   m_pred_out     : R(q)^T · m_ned_unit (predicted body-frame mag, unit)
- *   y_out          : innovation = mag_body_unit - m_pred
- *   nis_out        : Normalized Innovation Squared (after R inflation)
- *   r_scale_out    : R inflation factor actually applied (1.0 = none)
- *
- * Returns 1 if the update was applied, 0 if rejected (dir gate / NaN /
- * singular S).
- */
-int fusion6_update_mag(fusion6_t *f,
-                       const double mag_body_unit[3],
-                       double m_pred_out[3],
-                       double y_out[3],
-                       double *nis_out,
-                       double *r_scale_out);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 

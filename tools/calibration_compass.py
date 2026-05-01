@@ -71,6 +71,18 @@ DB_CMD_RESET            = 0x07
 DB_CMD_CHIP_ID          = 0x09
 PLOT_LIMIT = 500  # Initial axis limit (scroll to zoom)
 
+# Conservative quality gates. A bad magnetometer calibration is worse than
+# identity/default for any future vector-heading method because it can corrupt
+# the vertical field.
+MIN_FIT_POINTS = 80
+MIN_UPLOAD_POINTS = 180
+MIN_AXIS_SPAN_UT = 20.0
+MIN_COVERAGE_RATIO = 0.15
+MAX_SOFT_IRON_COND = 4.0
+MAX_RADIAL_STD = 0.12
+LEVEL_INCL_DEG = 27.5
+LEVEL_INCL_TOL_DEG = 12.0
+
 # FC storage layout: mag params at indices 17-29
 # index 17 = calibrated flag, 18-20 = bias, 21-29 = scale matrix
 PARAM_MAG_CAL_FLAG = 17
@@ -117,6 +129,7 @@ g_last_raw = None
 g_chip_id = None
 g_querying_storage = False
 calibration_result = (np.zeros(3), np.eye(3))
+calibration_quality = None
 last_calibration_time = 0
 
 
@@ -269,6 +282,78 @@ def serial_reader():
 
 # --- Calibration Algorithm ---
 
+def evaluate_calibration_quality(data, center, S):
+    centered = data - center
+    corrected = np.dot(S, centered.T).T
+    corrected_radius = np.linalg.norm(corrected, axis=1)
+    raw_radius = np.linalg.norm(centered, axis=1)
+    axis_span = np.ptp(data, axis=0)
+    svals = np.linalg.svd(S, compute_uv=False)
+
+    unit = centered / np.maximum(raw_radius[:, None], 1e-9)
+    cov_eigs = np.linalg.eigvalsh(np.cov(unit.T))
+    cov_eigs = np.maximum(cov_eigs, 0.0)
+
+    quality = {
+        'points': len(data),
+        'axis_span': axis_span,
+        'min_axis_span': float(np.min(axis_span)),
+        'coverage_ratio': float(cov_eigs[0] / max(cov_eigs[-1], 1e-9)),
+        'soft_iron_cond': float(np.max(svals) / max(np.min(svals), 1e-9)),
+        'radial_std': float(np.std(corrected_radius)),
+        'reasons': [],
+    }
+
+    if quality['points'] < MIN_UPLOAD_POINTS:
+        quality['reasons'].append(f"need {MIN_UPLOAD_POINTS}+ points")
+    if quality['min_axis_span'] < MIN_AXIS_SPAN_UT:
+        quality['reasons'].append("poor axis span")
+    if quality['coverage_ratio'] < MIN_COVERAGE_RATIO:
+        quality['reasons'].append("poor 3D coverage")
+    if quality['soft_iron_cond'] > MAX_SOFT_IRON_COND:
+        quality['reasons'].append("soft-iron too extreme")
+    if quality['radial_std'] > MAX_RADIAL_STD:
+        quality['reasons'].append("fit residual too high")
+
+    quality['pass'] = len(quality['reasons']) == 0
+    return quality
+
+
+def format_quality_lines(q):
+    if q is None:
+        return "Quality: waiting for fit\n"
+    status = "PASS" if q.get('pass') else "BLOCKED"
+    span = q.get('axis_span', np.zeros(3))
+    lines = (
+        f"Quality: {status}\n"
+        f"Pts:{q.get('points', 0)}  Span min:{q.get('min_axis_span', 0):.1f}uT\n"
+        f"Cov:{q.get('coverage_ratio', 0):.2f}  Cond:{q.get('soft_iron_cond', 0):.2f}\n"
+        f"Rad std:{q.get('radial_std', 0):.3f}\n"
+        f"Span XYZ:[{span[0]:.0f},{span[1]:.0f},{span[2]:.0f}]\n"
+    )
+    if not q.get('pass') and q.get('reasons'):
+        lines += "Fix: " + ", ".join(q['reasons'][:2]) + "\n"
+    return lines
+
+
+def candidate_level_inclination_deg(raw_sensor, bias, scale):
+    """Apply candidate cal and BMM350 sensor->body map, assuming board level."""
+    v = np.dot(scale, (np.asarray(raw_sensor) - bias))
+    n = np.linalg.norm(v)
+    if n < 1e-9:
+        return None
+    sensor = v / n
+    body = np.array([sensor[1], -sensor[0], sensor[2]])
+    return float(np.degrees(np.arcsin(np.clip(body[2], -1.0, 1.0))))
+
+
+def level_inclination_pass(raw_sensor, bias, scale):
+    incl = candidate_level_inclination_deg(raw_sensor, bias, scale)
+    if incl is None:
+        return False, None
+    err = abs(incl - LEVEL_INCL_DEG)
+    return err <= LEVEL_INCL_TOL_DEG, incl
+
 def calibrate_magnetometer(data):
     """
     Full ellipsoid fit for magnetometer calibration.
@@ -280,7 +365,7 @@ def calibrate_magnetometer(data):
         (center, S): Hard iron bias vector (3,) and soft iron correction matrix (3,3)
         None on failure
     """
-    if len(data) < 10:
+    if len(data) < MIN_FIT_POINTS:
         return None
 
     x = data[:, 0]
@@ -325,20 +410,22 @@ def calibrate_magnetometer(data):
     A_mat_scaled = A_mat / scale
 
     vals, vecs = np.linalg.eigh(A_mat_scaled)
-    vals = np.abs(vals)
+    if np.any(vals <= 0) or not np.all(np.isfinite(vals)):
+        return None
 
     sqrt_vals = np.sqrt(vals)
     D_sqrt = np.diag(sqrt_vals)
 
     S = np.dot(vecs, np.dot(D_sqrt, vecs.T))
+    quality = evaluate_calibration_quality(data, center, S)
 
-    return center, S
+    return center, S, quality
 
 
 # --- GUI ---
 
 def main():
-    global is_collecting, raw_data_points, calibration_result, last_calibration_time
+    global is_collecting, raw_data_points, calibration_result, calibration_quality, last_calibration_time
     global g_received_count, g_last_raw, g_querying_storage
 
     t = threading.Thread(target=serial_reader, daemon=True)
@@ -396,7 +483,8 @@ def main():
         "   green dots become round.\n"
         "   Auto-fit runs every 1s.\n\n"
         "4. Click 'Stream' to stop\n\n"
-        "5. Click 'Upload'\n"
+        "5. Place drone level, then\n"
+        "   click 'Upload'\n"
         "   Saves to FC flash\n\n"
         "6. Click 'Query FC' to verify\n\n"
         "7. Click 'View Cal'\n"
@@ -547,6 +635,49 @@ def main():
         if np.allclose(B, 0) and np.allclose(S, np.eye(3)):
             print("  \u2717 No calibration computed yet.")
             return
+        if not calibration_quality or not calibration_quality.get('pass'):
+            reasons = [] if calibration_quality is None else calibration_quality.get('reasons', [])
+            info_text.set_text(
+                f"UPLOAD BLOCKED \u2717\n"
+                f"{'=' * 26}\n\n"
+                f"This fit is not safe\n"
+                f"for vector mag use.\n\n"
+                f"{format_quality_lines(calibration_quality)}\n"
+                f"Rotate through a full\n"
+                f"sphere, then retry."
+            )
+            print("  \u2717 Mag upload blocked:", ", ".join(reasons) if reasons else "quality not ready")
+            plt.draw()
+            return
+        if g_last_raw is None:
+            info_text.set_text(
+                f"UPLOAD BLOCKED \u2717\n"
+                f"{'=' * 26}\n\n"
+                f"No live mag sample yet.\n"
+                f"Click 'Start Log', place\n"
+                f"the drone level/still,\n"
+                f"then click Upload."
+            )
+            return
+        level_ok, level_incl = level_inclination_pass(g_last_raw, B, S)
+        if not level_ok:
+            incl_text = "n/a" if level_incl is None else f"{level_incl:+.1f}\u00b0"
+            info_text.set_text(
+                f"UPLOAD BLOCKED \u2717\n"
+                f"{'=' * 26}\n\n"
+                f"Level inclination check\n"
+                f"failed for this fit.\n\n"
+                f"Current: {incl_text}\n"
+                f"Expected: {LEVEL_INCL_DEG:+.1f}\u00b0\n"
+                f"Tolerance: \u00b1{LEVEL_INCL_TOL_DEG:.0f}\u00b0\n\n"
+                f"Place drone level/still\n"
+                f"before Upload. If still\n"
+                f"blocked, recalibrate in\n"
+                f"a cleaner area."
+            )
+            print(f"  \u2717 Mag upload blocked: level inclination {incl_text} != {LEVEL_INCL_DEG:+.1f}\u00b0")
+            plt.draw()
+            return
         if not g_serial or not g_serial.is_open:
             return
         send_calibration_upload(g_serial, B, S)
@@ -555,6 +686,7 @@ def main():
             f"{'=' * 26}\n\n"
             f"Calibration sent to FC.\n"
             f"Saved to flash.\n\n"
+            f"Level incl: {level_incl:+.1f}\u00b0\n\n"
             f"Click 'Query FC' to verify.\n\n"
             f"Click 'View Cal' to see\n"
             f"calibrated output."
@@ -621,7 +753,7 @@ def main():
 
 
     def load_csv(event):
-        global raw_data_points, calibration_result, last_calibration_time
+        global raw_data_points, calibration_result, calibration_quality, last_calibration_time
         cal_dir = get_cal_dir()
         filepath = _open_file_dialog(title='Load calibration CSV', initialdir=cal_dir)
         if not filepath:
@@ -643,6 +775,7 @@ def main():
 
         raw_data_points = list(points)
         calibration_result = (np.zeros(3), np.eye(3))
+        calibration_quality = None
         last_calibration_time = 0
 
         data_np = np.array(raw_data_points)
@@ -655,11 +788,19 @@ def main():
             plot_last.set_data([last_pt[0]], [last_pt[1]])
             plot_last.set_3d_properties([last_pt[2]])
 
+        if len(data_np) >= MIN_FIT_POINTS:
+            res = calibrate_magnetometer(data_np)
+            if res is not None:
+                B, S, q = res
+                calibration_result = (B, S)
+                calibration_quality = q
+
         info_text.set_text(
             f"CSV LOADED \u2713\n"
             f"{'=' * 26}\n\n"
             f"Points: {len(raw_data_points)}\n"
             f"File: {os.path.basename(filepath)}\n\n"
+            f"{format_quality_lines(calibration_quality)}\n"
             f"Click 'Stream' to add\n"
             f"more points, or auto-fit\n"
             f"will run on next stream."
@@ -669,9 +810,10 @@ def main():
     btn_loadcsv.on_clicked(load_csv)
 
     def clear_points(event):
-        global raw_data_points, calibration_result, last_calibration_time
+        global raw_data_points, calibration_result, calibration_quality, last_calibration_time
         raw_data_points = []
         calibration_result = (np.zeros(3), np.eye(3))
+        calibration_quality = None
         last_calibration_time = 0
         plot_raw.set_data([], [])
         plot_raw.set_3d_properties([])
@@ -742,7 +884,7 @@ def main():
     def update(frame):
         nonlocal chip_id_request_time
         global g_received_count, g_last_raw, g_chip_id
-        global is_collecting, raw_data_points, calibration_result, last_calibration_time
+        global is_collecting, raw_data_points, calibration_result, calibration_quality, last_calibration_time
         global g_querying_storage
 
         data_updated = False
@@ -781,12 +923,25 @@ def main():
                 plot_last.set_data([last_pt[0]], [last_pt[1]])
                 plot_last.set_3d_properties([last_pt[2]])
 
-            # Realtime calibration every 1s with >= 20 points
-            if time.time() - last_calibration_time > 1.0 and len(raw_data_points) > 20:
+            # Realtime calibration every 1s with enough points for a stable fit.
+            if time.time() - last_calibration_time > 1.0 and len(raw_data_points) >= MIN_FIT_POINTS:
                 res = calibrate_magnetometer(data_np)
                 if res is not None:
-                    B, S = res
+                    B, S, q = res
                     calibration_result = (B, S)
+                    calibration_quality = q
+                else:
+                    span = np.ptp(data_np, axis=0)
+                    calibration_quality = {
+                        'points': len(raw_data_points),
+                        'axis_span': span,
+                        'min_axis_span': float(np.min(span)),
+                        'coverage_ratio': 0.0,
+                        'soft_iron_cond': 0.0,
+                        'radial_std': 0.0,
+                        'pass': False,
+                        'reasons': ['fit failed'],
+                    }
                 last_calibration_time = time.time()
 
             # Update corrected points display
@@ -809,6 +964,8 @@ def main():
                         f"STREAMING ({len(raw_data_points)} pts)\n"
                         f"{'=' * 26}\n"
                         f"{chip_line}\n"
+                        f"{format_quality_lines(calibration_quality)}\n"
+                        f"Place level before Upload.\n\n"
                         f"Hard Iron Bias B (uT):\n{B_str}\n\n"
                         f"Soft Iron Matrix S:\n{S_str}\n\n"
                         f"Last Calibrated (unit):\n"
@@ -820,9 +977,11 @@ def main():
                     f"STREAMING ({len(raw_data_points)} pts)\n"
                     f"{'=' * 26}\n\n"
                     f"Collecting data...\n"
-                    f"Need 20+ points for\n"
+                    f"Need {MIN_FIT_POINTS}+ points for\n"
                     f"auto-fit to start.\n\n"
-                    f"Rotate in ALL directions."
+                    f"Upload requires {MIN_UPLOAD_POINTS}+\n"
+                    f"points with full-sphere\n"
+                    f"coverage."
                 )
 
         # Update live arrow and status when new data arrived

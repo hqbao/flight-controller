@@ -11,10 +11,11 @@
  * Subscribes:
  *   SENSOR_IMU1_GYRO_FILTERED_UPDATE (1 kHz, post-notch, deg/s float[3])
  *   SENSOR_IMU1_ACCEL_UPDATE         (500 Hz, raw LSB float[3])
- *   SENSOR_COMPASS                   (vector3d_t, calibrated sensor-frame unit vector)
+ *   SENSOR_COMPASS                   (vector3d_t, calibrated sensor-frame unit vector;
+ *                                     diagnostic only, no attitude update)
  *   NOTIFY_LOG_CLASS                 (uint8_t log class selector)
  *   SCHEDULER_50HZ                   (attitude diagnostic log)
- *   SCHEDULER_25HZ                   (mag-fusion diagnostic log)
+ *   SCHEDULER_25HZ                   (mag diagnostic log)
  *
  * Publishes:
  *   STATE_UPDATE                     (nav_state_t @ 500 Hz)

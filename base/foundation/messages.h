@@ -516,7 +516,7 @@ typedef struct {
 // 0x1C LOG_CLASS_POSITION_COMPARE — removed (legacy position_estimation deleted in Phase 4)
 #define LOG_CLASS_TROUBLESHOOT_ACCEL   0x1D  // accel raw LSB min/max/clip-count diagnostic
 #define LOG_CLASS_GPS                  0x1E  // gps_log_t (48 bytes) at GPS update rate
-#define LOG_CLASS_MAG_FUSION           0x1F  // 11×float (44 B) for tools/mag_fusion_view.py
+#define LOG_CLASS_MAG_FUSION           0x1F  // 13×float (52 B) mag diagnostic; update disabled
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03
