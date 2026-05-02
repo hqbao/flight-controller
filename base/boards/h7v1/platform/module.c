@@ -9,8 +9,6 @@
 #include <state_control/state_control.h>
 #include <mix_control/mix_control.h>
 #include <rc_receiver/rc_receiver.h>
-#include <gps_navigation/gps_navigation.h>
-#include <gps_denied_navigation/gps_denied_navigation.h>
 #include <optflow/optflow.h>
 #include <gps/gps.h>
 #include <flight_state/flight_state.h>
@@ -41,8 +39,6 @@ void platform_setup(void) {
 	mix_control_setup();
 	optflow_setup();
 	gps_setup();
-	//gps_navigation_setup();
-	//gps_denied_navigation_setup();
 	rc_receiver_setup();
 	flight_telemetry_setup();
 	troubleshoot_setup();

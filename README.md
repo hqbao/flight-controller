@@ -62,8 +62,6 @@ flight-controller/
 │   ├── position_estimation/       #   Position/velocity estimation (Fusion5 + Fusion4 parallel, configurable)
 │   ├── position_control/          #   Position hold P-control loops
 │   ├── speed_control/             #   Motor/servo output driver (per-port DShot/PWM)
-│   ├── gps_navigation/            #   GPS waypoint navigation (outdoor)
-│   ├── gps_denied_navigation/     #   Optical flow navigation (indoor)
 │   ├── rc_receiver/               #   RC receiver input processing
 │   ├── calibration/               #   Sensor calibration (gyro/accel/mag)
 │   ├── flight_state/              #   Flight state machine
