@@ -520,6 +520,7 @@ typedef struct {
 // 0x20 LOG_CLASS_VEL_FUSION — removed; subsumed by LOG_CLASS_OPTFLOW (0x22)
 #define LOG_CLASS_BARO_FUSION          0x21  // 4×float (16 B) baro altitude diagnostic: z_meas, p.z, v.z, baro_ok flag
 #define LOG_CLASS_OPTFLOW              0x22  // 8×float (32 B) optflow diagnostic: flow_raw_xy (rad/s), v_meas_xy + v_pred_xy (m/s), range (m), clarity
+#define LOG_CLASS_GPS_FUSION           0x23  // 14×float (56 B) GPS fusion diagnostic: gps_pos_ned, gps_vel_ned, eskf_p, eskf_v, gps_ok, num_sv
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03

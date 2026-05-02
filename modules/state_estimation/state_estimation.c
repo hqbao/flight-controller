@@ -52,6 +52,7 @@
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
  *   LOG_CLASS_BARO_FUSION (25 Hz, 4×float)     — baro altitude diagnostics
  *   LOG_CLASS_OPTFLOW       (25 Hz, 8×float)     — raw flow / v_meas / v_pred / range / clarity
+ *   LOG_CLASS_GPS_FUSION  (5 Hz, 14×float)     — gps pos/vel vs ESKF p/v + quality
  */
 
 #include "state_estimation.h"
@@ -184,9 +185,13 @@ static int32_t  g_gps_origin_alt_mm    = 0;
 static int      g_gps_quality_ok       = 0;
 static uint64_t g_gps_quality_us       = 0;     /* time of last quality frame */
 
-/* Latest GPS snapshots for telemetry / debugging. */
-static double   g_last_gps_pos_ned[3]  = {0, 0, 0};
-static double   g_last_gps_vel_ned[3]  = {0, 0, 0};
+/* Latest GPS snapshots for telemetry / debugging.
+ * Initialised to NaN so the GPS-fusion viewer can distinguish "no fix yet"
+ * from "fix at NED origin" (which is a legitimate measurement of 0,0,0). */
+static double   g_last_gps_pos_ned[3]  = {NAN, NAN, NAN};
+static double   g_last_gps_vel_ned[3]  = {NAN, NAN, NAN};
+static uint8_t  g_last_gps_num_sv      = 0;
+static uint8_t  g_last_gps_fix_type    = 0;
 
 static uint8_t  g_log_class      = 0;
 
@@ -501,6 +506,8 @@ static void on_gps_quality(uint8_t *data, size_t size) {
 	                && (q.h_acc * 1e-3 <= GPS_MAX_H_ACC_M)
 	                && (q.v_acc * 1e-3 <= GPS_MAX_V_ACC_M)
 	                && (q.reliable != 0);
+	g_last_gps_num_sv   = q.num_sv;
+	g_last_gps_fix_type = q.fix_type;
 }
 
 static int gps_quality_fresh_and_ok(void) {
@@ -695,6 +702,44 @@ static void on_optflow_log_25hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * GPS fusion log stream (LOG_CLASS_GPS_FUSION = 0x23)
+ *
+ * 14-float / 56-byte payload @ 5 Hz, consumed by tools/gps_fusion_view.py.
+ * 5 Hz matches the typical NAV-PVT rate so each frame represents one GPS
+ * tick of evidence; the GPS snapshots are NaN until the first accepted
+ * fix arrives, letting the viewer keep a blank track until then.
+ *   float[0..2]  = gps_pos_ned   (m,   NED, lazy-origin-relative)
+ *   float[3..5]  = gps_vel_ned   (m/s, NED)
+ *   float[6..8]  = eskf_p        (m,   NED, current state)
+ *   float[9..11] = eskf_v        (m/s, NED)
+ *   float[12]    = gps_ok        (1.0 if FUSION6_HF_GPS_OK set, else 0.0)
+ *   float[13]    = num_sv        (most recent satellite count, as float)
+ * ============================================================ */
+static void on_gps_fusion_log_5hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_GPS_FUSION) return;
+	if (!g_init_started) return;
+
+	float payload[14];
+	payload[0]  = (float)g_last_gps_pos_ned[0];
+	payload[1]  = (float)g_last_gps_pos_ned[1];
+	payload[2]  = (float)g_last_gps_pos_ned[2];
+	payload[3]  = (float)g_last_gps_vel_ned[0];
+	payload[4]  = (float)g_last_gps_vel_ned[1];
+	payload[5]  = (float)g_last_gps_vel_ned[2];
+	payload[6]  = (float)g_f.p.x;
+	payload[7]  = (float)g_f.p.y;
+	payload[8]  = (float)g_f.p.z;
+	payload[9]  = (float)g_f.v.x;
+	payload[10] = (float)g_f.v.y;
+	payload[11] = (float)g_f.v.z;
+	payload[12] = (g_f.health_flags & FUSION6_HF_GPS_OK) ? 1.0f : 0.0f;
+	payload[13] = (float)g_last_gps_num_sv;
+
+	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
+}
+
+/* ============================================================
  * Setup
  * ============================================================ */
 
@@ -725,4 +770,5 @@ void state_estimation_setup(void) {
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_optflow_log_25hz);
+	subscribe(SCHEDULER_5HZ,  on_gps_fusion_log_5hz);
 }
