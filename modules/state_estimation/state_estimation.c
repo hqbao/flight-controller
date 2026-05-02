@@ -3,8 +3,8 @@
  *
  * Sensor flow:
  *   IMU gyro  (1 kHz, post-notch) → on_gyro  → fusion6_predict
+ *                                            → publish STATE_UPDATE @ 1 kHz
  *   IMU accel (500 Hz)           → on_accel → fusion6_update_accel
- *                                            → publish STATE_UPDATE @ 500 Hz
  *   Compass   (25 Hz, unit vec)  → on_compass → mag_axis_map
  *                                             → mag_heading (tilt-comp,
  *                                                decl-corrected)
@@ -33,11 +33,11 @@
  * dropped at the top of on_optflow().
  *
  * Telemetry:
- *   STATE_UPDATE          (nav_state_t, 500 Hz) — for downstream control
+ *   STATE_UPDATE          (nav_state_t, 1 kHz) — for downstream control
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
- *   LOG_CLASS_VEL_FUSION  (25 Hz, 6×float)     — optflow velocity diagnostics
- *   LOG_CLASS_BARO_FUSION (25 Hz, 5×float)     — baro altitude diagnostics
+ *   LOG_CLASS_BARO_FUSION (25 Hz, 4×float)     — baro altitude diagnostics
+ *   LOG_CLASS_OPTFLOW_DEROT (25 Hz, 10×float)  — raw/derot/v_meas/v_pred + range + clarity
  */
 
 #include "state_estimation.h"
@@ -98,8 +98,17 @@
  *
  * We convert mm → m, then negate to get NED p.z (NED +Z = Down). A wide
  * sanity gate rejects DPS310 read glitches (single-frame jumps of many
- * tens of metres). R_baro is configured inside fusion6 (cfg.R_baro). */
+ * tens of metres). R_baro is configured inside fusion6 (cfg.R_baro).
+ *
+ * Ground-effect gate: rotor downwash compresses static pressure under the
+ * airframe near the ground, biasing the baro low (apparent altitude high)
+ * by 0.5..2 m depending on throttle and prop diameter. When the downward
+ * rangefinder reports < 1 m we trust the lidar and skip the baro update
+ * entirely. The gate is freshness-protected so a stale cache from before
+ * takeoff doesn't lock baro out forever after the lidar saturates. */
 #define BARO_SANITY_GATE_M       50.0
+#define BARO_GROUND_EFFECT_M     1.0
+#define BARO_RANGE_FRESH_US      500000ULL   /* 0.5 s */
 
 /* ============================================================
  * State
@@ -123,15 +132,18 @@ static double   g_last_mag_heading = 0.0;          /* radians, decl-corrected, [
 static double   g_last_optflow_v[2]    = {0, 0};   /* [vx, vy] body, m/s */
 static double   g_last_optflow_clarity = 0.0;
 static double   g_last_optflow_range_m = 0.0;
+static uint64_t g_last_optflow_range_us = 0;       /* 0 = no frame yet */
+/* Latest optflow rate snapshot for the LOG_CLASS_OPTFLOW_DEROT stream.
+ * Both raw and gyro-derotated values are in rad/s. NaN until a frame with a
+ * valid dt_us has been seen. */
+static double   g_last_optflow_flow_raw[2]   = {NAN, NAN};
+static double   g_last_optflow_flow_derot[2] = {NAN, NAN};
 
 /* Latest baro snapshot (NED metres on p.z, after sign flip + unit convert). */
 static double   g_last_baro_z_ned_m    = 0.0;
-static double   g_last_baro_innov_m    = 0.0;   /* z_meas − p.z (m), 0 if rejected */
 static int      g_have_baro            = 0;    /* set on first accepted frame */
 
 static uint8_t  g_log_class      = 0;
-
-static void publish_state(void);
 
 /* ============================================================
  * Helpers
@@ -155,27 +167,6 @@ static inline void map_mag(const vector3d_t *sensor_unit, double out_body_unit[3
 	mag_axis_map(sensor_unit->x, sensor_unit->y, sensor_unit->z, out_body_unit);
 }
 
-static void update_mag_diagnostics(void) {
-	/* Diagnostic-only: tilt-compensated magnetic heading. The body-yaw-aligned
-	 * level-frame mag vector m_lvl = Rz(-yaw) · R(q) · m_body has roll & pitch
-	 * removed, so atan2(-m_lvl.y, m_lvl.x) gives the magnetic heading. We only
-	 * need its two horizontal components, then drop it. Nothing here mutates
-	 * the ESKF. */
-	vector3d_t m_b = { g_last_mag_meas[0], g_last_mag_meas[1], g_last_mag_meas[2] };
-	vector3d_t m_e;
-	quat_rotate_vector(&m_e, &g_f.q, &m_b);
-
-	vector3d_t eul;
-	quat_to_euler(&eul, &g_f.q);
-	double cy = cos(eul.z);
-	double sy = sin(eul.z);
-	double lvl_x =  cy * m_e.x + sy * m_e.y;
-	double lvl_y = -sy * m_e.x + cy * m_e.y;
-
-	double heading = atan2(-lvl_y, lvl_x) - MAG_DIAG_DECLINATION_RAD;
-	g_last_mag_heading = atan2(sin(heading), cos(heading));
-}
-
 static void static_init_step(void) {
 	fusion6_static_init_sample(&g_f, g_last_accel_body, g_last_gyro_body);
 	g_static_count++;
@@ -186,6 +177,44 @@ static void static_init_step(void) {
 			g_static_count = 0;
 		}
 	}
+}
+
+/* ============================================================
+ * Publish helpers
+ * ============================================================ */
+
+static void publish_state(void) {
+	if (!g_init_started) return;
+
+	fusion6_state_t s;
+	fusion6_get_state(&g_f, &s);
+
+	nav_state_t out;
+	memset(&out, 0, sizeof(out));
+	out.position    = s.pos;
+	out.velocity    = s.vel;
+	out.q[0]        = s.q.w;
+	out.q[1]        = s.q.x;
+	out.q[2]        = s.q.y;
+	out.q[3]        = s.q.z;
+	out.euler.roll  = s.euler.x * (double)RAD2DEG;
+	out.euler.pitch = s.euler.y * (double)RAD2DEG;
+	out.euler.yaw   = s.euler.z * (double)RAD2DEG;
+	out.accel_body  = s.accel_body;
+	out.accel_earth = s.accel_earth;
+	out.gyro_bias   = s.gyro_bias;
+	out.accel_bias  = s.accel_bias;
+	out.baro_bias   = 0.0;          /* baro fused without an explicit bias
+	                                   state; air_pressure.c zeros the offset
+	                                   at startup which suffices for now. */
+	out.trace_P_pos = s.trace_P_pos;
+	out.trace_P_vel = s.trace_P_vel;
+	out.trace_P_att = s.trace_P_att;
+	out.health_flags = s.health_flags;
+	out.init_done   = (s.health_flags & FUSION6_HF_INIT_DONE) ? 1 : 0;
+	out._pad        = 0;
+
+	publish(STATE_UPDATE, (uint8_t *)&out, sizeof(out));
 }
 
 /* ============================================================
@@ -210,6 +239,7 @@ static void on_gyro(uint8_t *data, size_t size) {
 	if (dt < 0.0001 || dt > 0.02) return;
 
 	fusion6_predict(&g_f, g_last_gyro_body, g_last_accel_body, dt);
+	publish_state();
 }
 
 static void on_accel(uint8_t *data, size_t size) {
@@ -224,7 +254,6 @@ static void on_accel(uint8_t *data, size_t size) {
 	}
 
 	fusion6_update_accel(&g_f, g_last_accel_body);
-	publish_state();
 }
 
 static void on_compass(uint8_t *data, size_t size) {
@@ -233,7 +262,24 @@ static void on_compass(uint8_t *data, size_t size) {
 	map_mag(m, g_last_mag_meas);
 
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
-	update_mag_diagnostics();
+
+	/* Tilt-compensated magnetic heading. The body-yaw-aligned level-frame
+	 * mag vector m_lvl = Rz(-yaw) · R(q) · m_body has roll & pitch removed,
+	 * so atan2(-m_lvl.y, m_lvl.x) gives the magnetic heading. */
+	vector3d_t m_b = { g_last_mag_meas[0], g_last_mag_meas[1], g_last_mag_meas[2] };
+	vector3d_t m_e;
+	quat_rotate_vector(&m_e, &g_f.q, &m_b);
+
+	vector3d_t eul;
+	quat_to_euler(&eul, &g_f.q);
+	double cy = cos(eul.z);
+	double sy = sin(eul.z);
+	double lvl_x =  cy * m_e.x + sy * m_e.y;
+	double lvl_y = -sy * m_e.x + cy * m_e.y;
+
+	double heading = atan2(-lvl_y, lvl_x) - MAG_DIAG_DECLINATION_RAD;
+	g_last_mag_heading = atan2(sin(heading), cos(heading));
+
 	fusion6_update_mag_heading(&g_f, g_last_mag_heading);
 }
 
@@ -266,13 +312,14 @@ static void on_optflow(uint8_t *data, size_t size) {
 	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
 
 	/* Always cache the raw clarity + range as reported by the camera so the
-	 * VEL_FUSION viewer can tell "camera silent" from "camera publishing but
-	 * gated out". This MUST stay above all gate-and-return paths below
+	 * OPTFLOW_DEROT viewer can tell "camera silent" from "camera publishing
+	 * but gated out". This MUST stay above all gate-and-return paths below
 	 * (dt_us, range, clarity, outlier) — otherwise the diagnostic strips
 	 * freeze on every gated frame. v_meas, by contrast, is invalidated to
 	 * NaN whenever we don't fuse, so the viewer leaves a gap instead of
 	 * holding a stale value that would look like a fresh measurement. */
 	g_last_optflow_clarity = msg.clarity;
+	g_last_optflow_range_us = platform_time_us();
 	g_last_optflow_range_m = (double)msg.z * 1e-3;   /* mm → m */
 	g_last_optflow_v[0] = NAN;
 	g_last_optflow_v[1] = NAN;
@@ -306,6 +353,14 @@ static void on_optflow(uint8_t *data, size_t size) {
 	double wy = g_last_gyro_body[1];
 	double flow_lin_x = flow_x + wy;
 	double flow_lin_y = flow_y - wx;
+
+	/* Cache raw + derotated flow rates for the OPTFLOW_DEROT diagnostic.
+	 * Updated even when the frame is later dropped by the clarity / outlier
+	 * gates so the viewer can show the derotation quality continuously. */
+	g_last_optflow_flow_raw[0]   = flow_x;
+	g_last_optflow_flow_raw[1]   = flow_y;
+	g_last_optflow_flow_derot[0] = flow_lin_x;
+	g_last_optflow_flow_derot[1] = flow_lin_y;
 
 	/* Translate to body horizontal velocity (m/s). All inputs above are
 	 * finite by construction (dt_us bounded by FC bridge, range bounded by
@@ -352,56 +407,21 @@ static void on_baro(uint8_t *data, size_t size) {
 		g_f.v.z = 0.0;
 		g_f.health_flags |= FUSION6_HF_BARO_OK;
 		g_have_baro = 1;
-		g_last_baro_innov_m = 0.0;
 		return;
 	}
 
-	double innov = z_ned_m - g_f.p.z;
-	if (fabs(innov) > BARO_SANITY_GATE_M) {
-		g_last_baro_innov_m = innov;   /* keep diagnostic; do not fuse */
+	if (fabs(z_ned_m - g_f.p.z) > BARO_SANITY_GATE_M) return;
+
+	/* Ground-effect gate: skip if a recent downward range reading shows we
+	 * are within 1 m of the ground. */
+	if (g_last_optflow_range_us != 0 &&
+	    (platform_time_us() - g_last_optflow_range_us) < BARO_RANGE_FRESH_US &&
+	    g_last_optflow_range_m > 0.0 &&
+	    g_last_optflow_range_m < BARO_GROUND_EFFECT_M) {
 		return;
 	}
 
-	g_last_baro_innov_m = innov;
 	fusion6_update_baro_z(&g_f, z_ned_m);
-}
-
-/* ============================================================
- * Publish helpers
- * ============================================================ */
-
-static void publish_state(void) {
-	if (!g_init_started) return;
-
-	fusion6_state_t s;
-	fusion6_get_state(&g_f, &s);
-
-	nav_state_t out;
-	memset(&out, 0, sizeof(out));
-	out.position    = s.pos;
-	out.velocity    = s.vel;
-	out.q[0]        = s.q.w;
-	out.q[1]        = s.q.x;
-	out.q[2]        = s.q.y;
-	out.q[3]        = s.q.z;
-	out.euler.roll  = s.euler.x * (double)RAD2DEG;
-	out.euler.pitch = s.euler.y * (double)RAD2DEG;
-	out.euler.yaw   = s.euler.z * (double)RAD2DEG;
-	out.accel_body  = s.accel_body;
-	out.accel_earth = s.accel_earth;
-	out.gyro_bias   = s.gyro_bias;
-	out.accel_bias  = s.accel_bias;
-	out.baro_bias   = 0.0;          /* baro fused without an explicit bias
-	                                   state; air_pressure.c zeros the offset
-	                                   at startup which suffices for now. */
-	out.trace_P_pos = s.trace_P_pos;
-	out.trace_P_vel = s.trace_P_vel;
-	out.trace_P_att = s.trace_P_att;
-	out.health_flags = s.health_flags;
-	out.init_done   = (s.health_flags & FUSION6_HF_INIT_DONE) ? 1 : 0;
-	out._pad        = 0;
-
-	publish(STATE_UPDATE, (uint8_t *)&out, sizeof(out));
 }
 
 /* ============================================================
@@ -478,19 +498,47 @@ static void on_mag_fusion_log_25hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
- * Optflow velocity fusion log stream (LOG_CLASS_VEL_FUSION = 0x20)
+ * Baro fusion log stream (LOG_CLASS_BARO_FUSION = 0x21)
  *
- * 6-float / 24-byte payload @ 25 Hz, consumed by tools/optflow_velocity_view.py.
- *   float[0..1] = v_meas DOWN  (vx, vy, body, m/s)
- *   float[2..3] = v_pred       (vx, vy from current ESKF, body, m/s)
- *   float[4]    = clarity DOWN
- *   float[5]    = range DOWN (m)
- * Cached values are zero until a sample passes the gates. Only the
- * downward-pointing camera is fused (UP has no range finder).
+ * 4-float / 16-byte payload @ 25 Hz, consumed by tools/baro_fusion_view.py.
+ *   float[0] = z_meas       (NED metres on p.z; +down, after sign flip)
+ *   float[1] = p_z          (current ESKF p.z, NED, m)
+ *   float[2] = v_z          (current ESKF v.z, NED, m/s)
+ *   float[3] = baro_ok      (1.0 if FUSION6_HF_BARO_OK set, else 0.0)
+ * Cached values are zero until the first SENSOR_AIR_PRESSURE arrives.
  * ============================================================ */
-static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
+static void on_baro_fusion_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
-	if (g_log_class != LOG_CLASS_VEL_FUSION) return;
+	if (g_log_class != LOG_CLASS_BARO_FUSION) return;
+	if (!g_init_started) return;
+
+	float payload[4];
+	payload[0] = (float)g_last_baro_z_ned_m;
+	payload[1] = (float)g_f.p.z;
+	payload[2] = (float)g_f.v.z;
+	payload[3] = (g_f.health_flags & FUSION6_HF_BARO_OK) ? 1.0f : 0.0f;
+
+	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
+}
+
+/* ============================================================
+ * Optflow derotation log stream (LOG_CLASS_OPTFLOW_DEROT = 0x22)
+ *
+ * 10-float / 40-byte payload @ 25 Hz, consumed by tools/optflow_derot_view.py.
+ * Single source of truth for the optflow → velocity pipeline:
+ *   float[0..1] = flow_raw   (rad/s, body, before gyro derotation)
+ *   float[2..3] = flow_derot (rad/s, body, after gyro derotation)
+ *   float[4..5] = v_meas     (m/s,  body, = flow_derot · range, what we fuse)
+ *   float[6..7] = v_pred     (m/s,  body, current ESKF prediction)
+ *   float[8]    = range      (m,    downward lidar; also lets the viewer
+ *                                    convert rad/s ↔ m/s for overlay scaling)
+ *   float[9]    = clarity    (camera quality metric, 0..~100)
+ * Flow fields are NaN until on_optflow has processed a frame with valid dt_us;
+ * v_meas is NaN whenever the frame was gated out so the viewer shows a gap.
+ * ============================================================ */
+static void on_optflow_derot_log_25hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_OPTFLOW_DEROT) return;
 	if (!g_init_started) return;
 
 	/* Predicted body velocity from current ESKF state: v_body = R^T · v_ned. */
@@ -501,39 +549,17 @@ static void on_vel_fusion_log_25hz(uint8_t *data, size_t size) {
 	matrix_t R; quat_to_rot_matrix(&R, &s.q);
 	matrix_mult_transpose_vec3(&v_body_pred, &R, &v_ned);
 
-	float payload[6];
-	payload[0] = (float)g_last_optflow_v[0];
-	payload[1] = (float)g_last_optflow_v[1];
-	payload[2] = (float)v_body_pred.x;
-	payload[3] = (float)v_body_pred.y;
-	payload[4] = (float)g_last_optflow_clarity;
-	payload[5] = (float)g_last_optflow_range_m;
-
-	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
-}
-
-/* ============================================================
- * Baro fusion log stream (LOG_CLASS_BARO_FUSION = 0x21)
- *
- * 5-float / 20-byte payload @ 25 Hz, consumed by tools/baro_fusion_view.py.
- *   float[0] = z_meas       (NED metres on p.z; +down, after sign flip)
- *   float[1] = p_z          (current ESKF p.z, NED, m)
- *   float[2] = v_z          (current ESKF v.z, NED, m/s)
- *   float[3] = innovation   (z_meas − p_z, m; non-zero even when gated)
- *   float[4] = baro_ok      (1.0 if FUSION6_HF_BARO_OK set, else 0.0)
- * Cached values are zero until the first SENSOR_AIR_PRESSURE arrives.
- * ============================================================ */
-static void on_baro_fusion_log_25hz(uint8_t *data, size_t size) {
-	(void)data; (void)size;
-	if (g_log_class != LOG_CLASS_BARO_FUSION) return;
-	if (!g_init_started) return;
-
-	float payload[5];
-	payload[0] = (float)g_last_baro_z_ned_m;
-	payload[1] = (float)g_f.p.z;
-	payload[2] = (float)g_f.v.z;
-	payload[3] = (float)g_last_baro_innov_m;
-	payload[4] = (g_f.health_flags & FUSION6_HF_BARO_OK) ? 1.0f : 0.0f;
+	float payload[10];
+	payload[0] = (float)g_last_optflow_flow_raw[0];
+	payload[1] = (float)g_last_optflow_flow_raw[1];
+	payload[2] = (float)g_last_optflow_flow_derot[0];
+	payload[3] = (float)g_last_optflow_flow_derot[1];
+	payload[4] = (float)g_last_optflow_v[0];
+	payload[5] = (float)g_last_optflow_v[1];
+	payload[6] = (float)v_body_pred.x;
+	payload[7] = (float)v_body_pred.y;
+	payload[8] = (float)g_last_optflow_range_m;
+	payload[9] = (float)g_last_optflow_clarity;
 
 	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
 }
@@ -555,6 +581,6 @@ void state_estimation_setup(void) {
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
-	subscribe(SCHEDULER_25HZ, on_vel_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_optflow_derot_log_25hz);
 }
