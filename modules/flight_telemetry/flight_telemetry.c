@@ -85,7 +85,7 @@ static void on_notify_log_class(uint8_t *data, size_t size) {
 	g_log_class = data[0];
 }
 
-static void loop_10hz(uint8_t *data, size_t size) {
+static void loop_25hz(uint8_t *data, size_t size) {
 	if (g_log_class != LOG_CLASS_FLIGHT_TELEMETRY) return;
 
 	uint8_t buf[TELEMETRY_FRAME_SIZE];
@@ -143,5 +143,5 @@ void flight_telemetry_setup(void) {
 	subscribe(FLIGHT_STATE_UPDATE, on_flight_state);
 	subscribe(SENSOR_HEALTH_UPDATE, on_sensor_health);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
-	subscribe(SCHEDULER_10HZ, loop_10hz);
+	subscribe(SCHEDULER_25HZ, loop_25hz);
 }

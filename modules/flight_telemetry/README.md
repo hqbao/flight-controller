@@ -2,11 +2,11 @@
 
 ## Overview
 
-Centralizes key flight data into a single 66-byte frame sent via `SEND_LOG` at 10 Hz. Designed for real-time dashboard monitoring over the 38400 baud UART link.
+Centralizes key flight data into a single 66-byte frame sent via `SEND_LOG` at 25 Hz. Designed for real-time dashboard monitoring over the 38400 baud UART link.
 
 ## Bandwidth
 
-At 38400 baud (3840 bytes/sec): 66 payload + 8 overhead = 74 bytes/frame × 10 Hz = **740 bytes/sec** (19% utilization, plenty of margin).
+At 38400 baud (3840 bytes/sec): 66 payload + 8 overhead = 74 bytes/frame × 25 Hz = **1850 bytes/sec** (~48% utilization).
 
 ## Frame Layout
 
@@ -66,9 +66,9 @@ Both viewers use a full-screen 3D aircraft model as the main background with sem
 | `FLIGHT_STATE_UPDATE` | Event | Flight state enum |
 | `SENSOR_HEALTH_UPDATE` | 1 Hz | Sensor health bitmask |
 | `NOTIFY_LOG_CLASS` | Event | Runtime log class activation |
-| `SCHEDULER_10HZ` | 10 Hz | Pack and send telemetry frame |
+| `SCHEDULER_25HZ` | 25 Hz | Pack and send telemetry frame |
 
 ### Publications
 | Topic | Data | Rate |
 |-------|------|------|
-| `SEND_LOG` | 66 bytes (see frame layout) | 10 Hz (when logging active) |
+| `SEND_LOG` | 66 bytes (see frame layout) | 25 Hz (when logging active) |
