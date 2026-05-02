@@ -19,6 +19,19 @@
  *   Baro      (25 Hz, mm above startup) → on_baro → mm→m + sign flip (NED)
  *                                                 → fusion6_update_baro_z
  *                                                   (1-D scalar on p.z)
+ *   GPS pos   (NAV-PVT, ~5 Hz)  → on_gps_position → lazy-init local NED
+ *                                                    origin → equirect LLA→NED
+ *                                                 → fusion6_update_pos_ned
+ *                                                   (3 sequential scalars
+ *                                                    on δp[0..2])
+ *   GPS vel   (NAV-PVT, ~5 Hz)  → on_gps_velocity → mm/s → m/s NED
+ *                                                 → fusion6_update_vel_ned
+ *                                                   (3 sequential scalars
+ *                                                    on δv[3..5])
+ *   GPS qual  (NAV-PVT)        → on_gps_quality  → gate pos+vel updates by
+ *                                                  fix_type ≥ 3 AND
+ *                                                  num_sv ≥ MIN AND
+ *                                                  h_acc / v_acc finite
  *
  * Magnetometer feeds yaw only (1-D, decl-corrected heading). Roll/pitch are
  * still driven by the gravity update; mag does NOT touch the horizontal
@@ -111,6 +124,23 @@
 #define BARO_GROUND_EFFECT_M     1.0
 #define BARO_RANGE_FRESH_US      500000ULL   /* 0.5 s */
 
+/* --- GPS gates ---
+ * Reject fixes that are obviously degraded. h_acc/v_acc come from
+ * gps_quality_t in millimetres; we convert to metres before comparing.
+ * Position sanity gate is wide because the equirectangular projection
+ * preserves accuracy to <1% out to ~10 km, and we don't want to lock
+ * GPS out after a brief glitch — the per-axis innovation gate inside
+ * fusion6 (via R) does the fine-grained noise rejection. */
+#define GPS_MIN_NUM_SV           6
+#define GPS_MIN_FIX_TYPE         3       /* 3D fix */
+#define GPS_MAX_H_ACC_M          15.0
+#define GPS_MAX_V_ACC_M          25.0
+#define GPS_POS_SANITY_GATE_M    1000.0  /* skip a single frame if it claims
+                                            we teleported >1 km from current
+                                            estimate — typical sign of a
+                                            corrupted NAV-PVT */
+#define GPS_QUALITY_FRESH_US     2000000ULL   /* 2 s */
+
 /* ============================================================
  * State
  * ============================================================ */
@@ -142,6 +172,21 @@ static double   g_last_optflow_flow_raw[2]   = {NAN, NAN};
 /* Latest baro snapshot (NED metres on p.z, after sign flip + unit convert). */
 static double   g_last_baro_z_ned_m    = 0.0;
 static int      g_have_baro            = 0;    /* set on first accepted frame */
+
+/* GPS local NED origin (lazy-initialised on first usable fix). */
+static int      g_gps_origin_set       = 0;
+static int32_t  g_gps_origin_lat_e7    = 0;
+static int32_t  g_gps_origin_lon_e7    = 0;
+static int32_t  g_gps_origin_alt_mm    = 0;
+
+/* GPS quality gate state. g_gps_quality_ok is the boolean OR of all
+ * acceptance conditions — checked by both pos and vel handlers. */
+static int      g_gps_quality_ok       = 0;
+static uint64_t g_gps_quality_us       = 0;     /* time of last quality frame */
+
+/* Latest GPS snapshots for telemetry / debugging. */
+static double   g_last_gps_pos_ned[3]  = {0, 0, 0};
+static double   g_last_gps_vel_ned[3]  = {0, 0, 0};
 
 static uint8_t  g_log_class      = 0;
 
@@ -425,6 +470,97 @@ static void on_baro(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * GPS — quality, position, velocity.
+ *
+ * gps module publishes three topics from each NAV-PVT solution:
+ *   EXTERNAL_SENSOR_GPS_QUALITY (gps_quality_t)  — fix type, satellite
+ *                                                  count, accuracy
+ *                                                  estimates.
+ *   EXTERNAL_SENSOR_GPS         (gps_position_t) — lat/lon (deg×1e7),
+ *                                                  altitude (mm MSL).
+ *   EXTERNAL_SENSOR_GPS_VELOC   (gps_velocity_t) — N/E/D velocity (mm/s).
+ *
+ * Quality is OR-gated against fix type, satellite count and accuracy
+ * estimates. The flag stays valid for GPS_QUALITY_FRESH_US so a single
+ * dropped quality frame doesn't lock GPS out instantly. The first
+ * accepted position frame seeds the local NED origin (so subsequent
+ * position fixes are reported relative to "where we got our first
+ * fix"). Vertical position is intentionally fed through GPS as well as
+ * baro — the per-axis R values let baro dominate vertical (R_baro=0.25
+ * vs R_gps_pos_d=25.0) while GPS still corrects for long-term baro
+ * drift. fusion6 owns R_gps_*.
+ * ============================================================ */
+static void on_gps_quality(uint8_t *data, size_t size) {
+	if (size < sizeof(gps_quality_t)) return;
+	gps_quality_t q;
+	memcpy(&q, data, sizeof(q));
+
+	g_gps_quality_us = platform_time_us();
+	g_gps_quality_ok = (q.fix_type >= GPS_MIN_FIX_TYPE)
+	                && (q.num_sv   >= GPS_MIN_NUM_SV)
+	                && (q.h_acc * 1e-3 <= GPS_MAX_H_ACC_M)
+	                && (q.v_acc * 1e-3 <= GPS_MAX_V_ACC_M)
+	                && (q.reliable != 0);
+}
+
+static int gps_quality_fresh_and_ok(void) {
+	if (!g_gps_quality_ok) return 0;
+	if (g_gps_quality_us == 0) return 0;
+	return (platform_time_us() - g_gps_quality_us) < GPS_QUALITY_FRESH_US;
+}
+
+static void on_gps_position(uint8_t *data, size_t size) {
+	if (size < sizeof(gps_position_t)) return;
+	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+	if (!gps_quality_fresh_and_ok()) return;
+
+	gps_position_t p;
+	memcpy(&p, data, sizeof(p));
+
+	gps_origin_capture(&g_gps_origin_set,
+	                   &g_gps_origin_lat_e7, &g_gps_origin_lon_e7,
+	                   &g_gps_origin_alt_mm,
+	                   p.lat, p.lon, p.alt);
+
+	double pos_ned[3];
+	gps_lla_to_ned(p.lat, p.lon, p.alt,
+	               g_gps_origin_lat_e7, g_gps_origin_lon_e7, g_gps_origin_alt_mm,
+	               pos_ned);
+
+	g_last_gps_pos_ned[0] = pos_ned[0];
+	g_last_gps_pos_ned[1] = pos_ned[1];
+	g_last_gps_pos_ned[2] = pos_ned[2];
+
+	/* Sanity gate: drop a single frame if it claims a >1 km jump from the
+	 * current estimate. The fusion gain takes care of small jumps; this
+	 * only catches obviously corrupt NAV-PVTs. */
+	double dN = pos_ned[0] - g_f.p.x;
+	double dE = pos_ned[1] - g_f.p.y;
+	double dD = pos_ned[2] - g_f.p.z;
+	if (fmax(fmax(fabs(dN), fabs(dE)), fabs(dD)) > GPS_POS_SANITY_GATE_M) return;
+
+	fusion6_update_pos_ned(&g_f, pos_ned);
+}
+
+static void on_gps_velocity(uint8_t *data, size_t size) {
+	if (size < sizeof(gps_velocity_t)) return;
+	if (!(g_f.health_flags & FUSION6_HF_INIT_DONE)) return;
+	if (!gps_quality_fresh_and_ok()) return;
+
+	gps_velocity_t v;
+	memcpy(&v, data, sizeof(v));
+
+	double vel_ned[3];
+	gps_vel_mm_per_s_to_m_per_s(v.velN, v.velE, v.velD, vel_ned);
+
+	g_last_gps_vel_ned[0] = vel_ned[0];
+	g_last_gps_vel_ned[1] = vel_ned[1];
+	g_last_gps_vel_ned[2] = vel_ned[2];
+
+	fusion6_update_vel_ned(&g_f, vel_ned);
+}
+
+/* ============================================================
  * Attitude-debug log stream (LOG_CLASS_ATTITUDE = 0x03)
  *
  * 9-float / 36-byte payload @ 50 Hz, consumed by tools/attitude_view.py.
@@ -581,6 +717,9 @@ void state_estimation_setup(void) {
 	subscribe(SENSOR_COMPASS, on_compass);
 	subscribe(EXTERNAL_SENSOR_OPTFLOW, on_optflow);
 	subscribe(SENSOR_AIR_PRESSURE, on_baro);
+	subscribe(EXTERNAL_SENSOR_GPS_QUALITY, on_gps_quality);
+	subscribe(EXTERNAL_SENSOR_GPS, on_gps_position);
+	subscribe(EXTERNAL_SENSOR_GPS_VELOC, on_gps_velocity);
 	subscribe(NOTIFY_LOG_CLASS, on_notify_log_class);
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);

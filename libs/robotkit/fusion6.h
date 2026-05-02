@@ -13,8 +13,10 @@
  * yaw pseudo-measurement from a tilt-compensated magnetic heading
  * (`fusion6_update_mag_heading`), a 2-D horizontal body-velocity update
  * (`fusion6_update_velocity_xy_body`) for optical-flow / camera-derived
- * velocity, and a 1-D barometric altitude update (`fusion6_update_baro_z`)
- * on p.z. Vertical velocity and GPS are not wired here yet.
+ * velocity, a 1-D barometric altitude update (`fusion6_update_baro_z`)
+ * on p.z, and 3-D GPS position/velocity updates in NED
+ * (`fusion6_update_pos_ned`, `fusion6_update_vel_ned`) using per-axis
+ * (NE / D) variances from the config block.
  *
  * State (NED frame, +X=N, +Y=E, +Z=Down):
  *   Nominal: p[3], v[3], q, b_a[3], b_g[3]
@@ -37,6 +39,7 @@
  * BARO_OK today; the rest are produced by the FC glue when it has the
  * sensor wired. */
 #define FUSION6_HF_BARO_OK       (1u << 3)
+#define FUSION6_HF_GPS_OK        (1u << 7)
 
 typedef struct {
     /* Process noise PSDs */
@@ -51,6 +54,10 @@ typedef struct {
     double R_vel_xy_body;     /* (m/s)² (horizontal body-velocity variance,
                                  applied to both axes — diag R_meas) */
     double R_baro;            /* m² (barometric altitude variance, NED p.z) */
+    double R_gps_pos_ne;      /* m² per horizontal axis (GPS pos N, E)   */
+    double R_gps_pos_d;       /* m² (GPS pos D — vertical, typically larger) */
+    double R_gps_vel_ne;      /* (m/s)² per horizontal axis (GPS vel N, E) */
+    double R_gps_vel_d;       /* (m/s)² (GPS vel D — vertical)            */
     /* Bias sanity bounds */
     double bias_clamp_gyro;   /* rad/s */
     double bias_clamp_accel;  /* m/s² */
@@ -139,6 +146,21 @@ void fusion6_update_velocity_xy_body(fusion6_t *f,
  *  Uses cfg.R_baro. Skipped if INIT_DONE not set or innovation-cov is
  *  non-positive. Sets FUSION6_HF_BARO_OK on success. */
 void fusion6_update_baro_z(fusion6_t *f, double z_ned_m);
+
+/** GPS 3-D position update in NED metres (local origin, +Z=Down).
+ *  Decomposed as three independent scalar updates on δp[0..2] using
+ *  cfg.R_gps_pos_ne for N and E, cfg.R_gps_pos_d for D. Sequential
+ *  scalar updates are exact for a diagonal R when the H rows are
+ *  orthogonal (here each row is a coordinate basis vector). Skipped if
+ *  INIT_DONE is not set or if any innovation covariance is non-positive.
+ *  Sets FUSION6_HF_GPS_OK on success. */
+void fusion6_update_pos_ned(fusion6_t *f, const double pos_ned_m[3]);
+
+/** GPS 3-D velocity update in NED m/s. Sequential scalar updates on
+ *  δv[3..5] with cfg.R_gps_vel_ne (N, E) and cfg.R_gps_vel_d (D).
+ *  Skipped if INIT_DONE is not set or if any innovation covariance is
+ *  non-positive. Sets FUSION6_HF_GPS_OK on success. */
+void fusion6_update_vel_ned(fusion6_t *f, const double vel_ned_mps[3]);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
 
