@@ -105,6 +105,19 @@ static void on_db_message(uint8_t *data, size_t size) {
 		return;
 	}
 
+	// Loopback echo: re-publish the received payload via SEND_LOG so it goes
+	// back over the same TX queue / UART path used by telemetry.  Used by
+	// tools/test_dblink_echo.py to measure round-trip throughput and drops.
+	if (data[0] == DB_CMD_ECHO) {
+		uint16_t length;
+		memcpy(&length, &data[2], sizeof(uint16_t));
+		if (length > 0 && length <= LOGGER_MAX_PAYLOAD &&
+		    (size_t)(4 + length) <= size) {
+			publish(SEND_LOG, &data[4], length);
+		}
+		return;
+	}
+
 	if (data[0] != DB_CMD_LOG_CLASS) return;
 
 	g_log_class = data[4];

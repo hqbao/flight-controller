@@ -529,6 +529,7 @@ typedef struct {
 #define DB_CMD_CALIBRATE_GYRO_TEMP      0x08
 #define DB_CMD_CHIP_ID                  0x09
 #define DB_CMD_TUNING                   0x0A
+#define DB_CMD_ECHO                     0x0B  // Loopback test: re-emit payload via SEND_LOG (round-trip throughput / drop benchmark)
 
 // UART frame constants
 // Sized to fit the largest SEND_LOG payload (FFT dual spectrum = 223 B)
