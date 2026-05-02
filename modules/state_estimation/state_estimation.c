@@ -11,10 +11,11 @@
  *                                             → fusion6_update_mag_heading
  *                                                (1-D yaw pseudo-meas)
  *                                             → diagnostic stream
- *   Optflow   (~25 Hz, DOWN only) → on_optflow → derotate (gyro)
- *                                             → range·flow → v_body_xy
+ *   Optflow   (~25 Hz, DOWN only) → on_optflow → range·flow → v_body_xy
  *                                             → fusion6_update_velocity_xy_body
  *                                             → diagnostic stream
+ *                                             (gyro derotation TBD — see
+ *                                              on_optflow comment block)
  *   Baro      (25 Hz, mm above startup) → on_baro → mm→m + sign flip (NED)
  *                                                 → fusion6_update_baro_z
  *                                                   (1-D scalar on p.z)
@@ -37,7 +38,7 @@
  *   LOG_CLASS_ATTITUDE    (50 Hz, 9×float)     — tools/attitude_view.py
  *   LOG_CLASS_MAG_FUSION  (25 Hz, 7×float)     — mag diagnostics
  *   LOG_CLASS_BARO_FUSION (25 Hz, 4×float)     — baro altitude diagnostics
- *   LOG_CLASS_OPTFLOW_DEROT (25 Hz, 10×float)  — raw/derot/v_meas/v_pred + range + clarity
+ *   LOG_CLASS_OPTFLOW       (25 Hz, 8×float)     — raw flow / v_meas / v_pred / range / clarity
  */
 
 #include "state_estimation.h"
@@ -133,11 +134,10 @@ static double   g_last_optflow_v[2]    = {0, 0};   /* [vx, vy] body, m/s */
 static double   g_last_optflow_clarity = 0.0;
 static double   g_last_optflow_range_m = 0.0;
 static uint64_t g_last_optflow_range_us = 0;       /* 0 = no frame yet */
-/* Latest optflow rate snapshot for the LOG_CLASS_OPTFLOW_DEROT stream.
- * Both raw and gyro-derotated values are in rad/s. NaN until a frame with a
- * valid dt_us has been seen. */
+/* Latest optflow rate snapshot for the LOG_CLASS_OPTFLOW stream.
+ * Raw angular flow rate in rad/s, body frame, before any derotation.
+ * NaN until a frame with a valid dt_us has been seen. */
 static double   g_last_optflow_flow_raw[2]   = {NAN, NAN};
-static double   g_last_optflow_flow_derot[2] = {NAN, NAN};
 
 /* Latest baro snapshot (NED metres on p.z, after sign flip + unit convert). */
 static double   g_last_baro_z_ned_m    = 0.0;
@@ -294,12 +294,13 @@ static void on_compass(uint8_t *data, size_t size) {
  * Pinhole geometry (downward looking at static surface at range r):
  *   flow_rate_x_image ≈ vx_body / r  −  ω_y_body
  *   flow_rate_y_image ≈ vy_body / r  +  ω_x_body
- * Inverting:
- *   vx_body = r · (flow_rate_x + ω_y)
- *   vy_body = r · (flow_rate_y − ω_x)
+ * Inverting (no derotation — pure-translation approximation):
+ *   vx_body ≈ r · flow_rate_x
+ *   vy_body ≈ r · flow_rate_y
  *
- * Sign convention is to be confirmed on bench (cart slide test) — flip the
- * wy / wx signs here if estimator velocity moves opposite to truth.
+ * Gyro derotation is intentionally OFF for now: bench tests showed the
+ * camera barely tracks rotation at the current clarity, so subtracting
+ * ω just synthesised phantom velocity. Will be revisited.
  *
  * ZUPT branch: when the rangefinder is below the gate, fuse v_body=(0,0)
  * instead of skipping. See OPTFLOW_ZUPT_RANGE_MAX_MM.
@@ -327,13 +328,16 @@ static void on_optflow(uint8_t *data, size_t size) {
 	if (msg.dt_us == 0) return;   /* FC-side dt outside [10ms, 500ms] sanity band */
 
 	int32_t z_mm = (int32_t)msg.z;
-	if (!lidar_valid_mm(z_mm, OPTFLOW_RANGE_MIN_MM, OPTFLOW_RANGE_MAX_MM)) {
-		/* Below the optflow gate — try a ZUPT. The VL53L1X reports z=0
-		 * when the target is closer than its minimum range (camera
-		 * resting on / very close to the ground), so we accept z in
-		 * [0, 200) as "close to the ground" and pin the horizontal
-		 * velocity to zero. */
-		if (z_mm >= 0 && z_mm < OPTFLOW_ZUPT_RANGE_MAX_MM) {
+	if (z_mm <= 0 || z_mm < OPTFLOW_RANGE_MIN_MM) {
+		/* Below the optflow gate. Two cases:
+		 *   z_mm > 0  but < MIN  → sensor sees ground, very close: ZUPT
+		 *                          (camera resting / about-to-touch).
+		 *   z_mm <= 0           → sensor reported no valid range (out of
+		 *                          range, signal fail, etc.). DO NOT ZUPT —
+		 *                          we have no idea how high we are; pinning
+		 *                          v_xy=0 would be dangerous if the craft is
+		 *                          actually drifting at altitude. Skip. */
+		if (z_mm > 0 && z_mm < OPTFLOW_ZUPT_RANGE_MAX_MM) {
 			double v_zero[2] = { 0.0, 0.0 };
 			fusion6_update_velocity_xy_body(&g_f, v_zero);
 			g_last_optflow_v[0] = 0.0;
@@ -341,6 +345,10 @@ static void on_optflow(uint8_t *data, size_t size) {
 		}
 		return;
 	}
+	/* No upper-range gate: above OPTFLOW_RANGE_MAX_MM the lidar may be
+	 * less accurate but the camera flow rate is still informative; we
+	 * accept whatever range the sensor reports and let the increased
+	 * R_vel_xy_body absorb the extra noise. */
 	double range_m = lidar_mm_to_m(z_mm);
 
 	if (msg.clarity < OPTFLOW_CLARITY_MIN) return;   /* below clarity floor — skip */
@@ -348,26 +356,18 @@ static void on_optflow(uint8_t *data, size_t size) {
 	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, /*upward=*/0);
 	double flow_y = optflow_to_rad_per_s(msg.dy, msg.dt_us, /*upward=*/0);
 
-	/* Derotate using the most recent body angular rate. */
-	double wx = g_last_gyro_body[0];
-	double wy = g_last_gyro_body[1];
-	double flow_lin_x = flow_x + wy;
-	double flow_lin_y = flow_y - wx;
-
-	/* Cache raw + derotated flow rates for the OPTFLOW_DEROT diagnostic.
-	 * Updated even when the frame is later dropped by the clarity / outlier
-	 * gates so the viewer can show the derotation quality continuously. */
-	g_last_optflow_flow_raw[0]   = flow_x;
-	g_last_optflow_flow_raw[1]   = flow_y;
-	g_last_optflow_flow_derot[0] = flow_lin_x;
-	g_last_optflow_flow_derot[1] = flow_lin_y;
+	/* Cache raw flow rate for the OPTFLOW diagnostic stream. Updated even
+	 * when the frame is later dropped by the outlier gate so the viewer
+	 * keeps showing the camera's live output. */
+	g_last_optflow_flow_raw[0] = flow_x;
+	g_last_optflow_flow_raw[1] = flow_y;
 
 	/* Translate to body horizontal velocity (m/s). All inputs above are
 	 * finite by construction (dt_us bounded by FC bridge, range bounded by
-	 * lidar gate, gyro bounded by IMU full-scale), so no NaN/Inf gate is
-	 * needed here — only the physical-plausibility outlier reject. */
-	double v_body_x = range_m * flow_lin_x;
-	double v_body_y = range_m * flow_lin_y;
+	 * lidar gate), so no NaN/Inf gate is needed here — only the
+	 * physical-plausibility outlier reject. */
+	double v_body_x = range_m * flow_x;
+	double v_body_y = range_m * flow_y;
 
 	if (fmax(fabs(v_body_x), fabs(v_body_y)) > OPTFLOW_VEL_MAX_MPS) return;
 
@@ -522,23 +522,19 @@ static void on_baro_fusion_log_25hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
- * Optflow derotation log stream (LOG_CLASS_OPTFLOW_DEROT = 0x22)
+ * Optflow log stream (LOG_CLASS_OPTFLOW = 0x22)
  *
- * 10-float / 40-byte payload @ 25 Hz, consumed by tools/optflow_derot_view.py.
- * Single source of truth for the optflow → velocity pipeline:
- *   float[0..1] = flow_raw   (rad/s, body, before gyro derotation)
- *   float[2..3] = flow_derot (rad/s, body, after gyro derotation)
- *   float[4..5] = v_meas     (m/s,  body, = flow_derot · range, what we fuse)
- *   float[6..7] = v_pred     (m/s,  body, current ESKF prediction)
- *   float[8]    = range      (m,    downward lidar; also lets the viewer
- *                                    convert rad/s ↔ m/s for overlay scaling)
- *   float[9]    = clarity    (camera quality metric, 0..~100)
- * Flow fields are NaN until on_optflow has processed a frame with valid dt_us;
- * v_meas is NaN whenever the frame was gated out so the viewer shows a gap.
+ * 8-float / 32-byte payload @ 25 Hz, consumed by tools/optflow_view.py.
+ *   float[0..1] = flow_raw   (rad/s, body, no derotation)
+ *   float[2..3] = v_meas     (m/s,  body, = flow_raw · range, what we fuse)
+ *   float[4..5] = v_pred     (m/s,  body, current ESKF prediction)
+ *   float[6]    = range      (m,    downward lidar)
+ *   float[7]    = clarity    (camera quality metric, 0..~100)
+ * Flow / v_meas are NaN until on_optflow has accepted a frame.
  * ============================================================ */
-static void on_optflow_derot_log_25hz(uint8_t *data, size_t size) {
+static void on_optflow_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
-	if (g_log_class != LOG_CLASS_OPTFLOW_DEROT) return;
+	if (g_log_class != LOG_CLASS_OPTFLOW) return;
 	if (!g_init_started) return;
 
 	/* Predicted body velocity from current ESKF state: v_body = R^T · v_ned. */
@@ -549,17 +545,15 @@ static void on_optflow_derot_log_25hz(uint8_t *data, size_t size) {
 	matrix_t R; quat_to_rot_matrix(&R, &s.q);
 	matrix_mult_transpose_vec3(&v_body_pred, &R, &v_ned);
 
-	float payload[10];
+	float payload[8];
 	payload[0] = (float)g_last_optflow_flow_raw[0];
 	payload[1] = (float)g_last_optflow_flow_raw[1];
-	payload[2] = (float)g_last_optflow_flow_derot[0];
-	payload[3] = (float)g_last_optflow_flow_derot[1];
-	payload[4] = (float)g_last_optflow_v[0];
-	payload[5] = (float)g_last_optflow_v[1];
-	payload[6] = (float)v_body_pred.x;
-	payload[7] = (float)v_body_pred.y;
-	payload[8] = (float)g_last_optflow_range_m;
-	payload[9] = (float)g_last_optflow_clarity;
+	payload[2] = (float)g_last_optflow_v[0];
+	payload[3] = (float)g_last_optflow_v[1];
+	payload[4] = (float)v_body_pred.x;
+	payload[5] = (float)v_body_pred.y;
+	payload[6] = (float)g_last_optflow_range_m;
+	payload[7] = (float)g_last_optflow_clarity;
 
 	publish(SEND_LOG, (uint8_t *)payload, sizeof(payload));
 }
@@ -571,6 +565,15 @@ static void on_optflow_derot_log_25hz(uint8_t *data, size_t size) {
 void state_estimation_setup(void) {
 	fusion6_config_t cfg;
 	fusion6_config_default(&cfg);
+	/* De-weight the optical-flow body-velocity measurement.
+	 * Default is 0.01 = (0.10 m/s)² per axis, which is too tight given
+	 * (a) no gyro derotation yet — rotation injects phantom velocity
+	 *     (~ω·range, e.g. 0.2 rad/s × 1 m = 0.2 m/s of bogus signal), and
+	 * (b) clarity often sits in the 10–30 band where the camera output is
+	 *     noisy enough that ±0.3 m/s residuals are normal.
+	 * Raising to (0.30 m/s)² = 0.09 keeps optflow as a soft anchor without
+	 * letting it (or rotation-induced phantoms) dominate the prediction. */
+	cfg.R_vel_xy_body = 0.09;
 	fusion6_init(&g_f, &cfg);
 
 	subscribe(SENSOR_IMU1_GYRO_FILTERED_UPDATE, on_gyro);
@@ -582,5 +585,5 @@ void state_estimation_setup(void) {
 	subscribe(SCHEDULER_50HZ, on_attitude_log_50hz);
 	subscribe(SCHEDULER_25HZ, on_mag_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
-	subscribe(SCHEDULER_25HZ, on_optflow_derot_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_optflow_log_25hz);
 }

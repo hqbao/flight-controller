@@ -1,29 +1,21 @@
 """
-Optflow Derotation Viewer
-=========================
+Optflow Viewer
+==============
 
-Shows the entire optical-flow → body-velocity pipeline on a single chart so
-you can see exactly where each stage takes the signal:
+Live view of body-frame horizontal velocity from the downward optical-flow
+camera (= flow_raw · range, no derotation) overlaid with the ESKF's current
+velocity prediction. When camera and ESKF agree the lines track; when they
+diverge the filter is rejecting the camera (or vice-versa).
 
-  raw flow            (rad/s, body)         — what the camera measured
-  derotated flow      (rad/s, body)         — after gyro derotation
-  range-scaled flow   (m/s,  body) = v_meas — what gets fused (= derot · range)
-  ESKF predicted vel  (m/s,  body) = v_pred — current filter estimate
+  green = v_meas  (m/s, body) — what the camera reports this frame
+  blue  = v_pred  (m/s, body) — ESKF current estimate
 
-To put rad/s and m/s on the same axis, the rad/s series are multiplied by
-the latest downward range (m) to give "would-be velocity" — i.e. what the
-fused velocity *would* be if we trusted that stage as-is. When derotation
-is correct, raw·range and v_meas should diverge during pure rotation
-(raw responds to gyro, v_meas does not). v_meas and v_pred should track
-during translation.
-
-Wire format (10 floats / 40 B, LOG_CLASS_OPTFLOW_DEROT = 0x22):
-    [0..1] flow_raw   (rad/s, body)
-    [2..3] flow_derot (rad/s, body)
-    [4..5] v_meas     (m/s,  body, NaN if frame was gated out)
-    [6..7] v_pred     (m/s,  body, current ESKF prediction)
-    [8]    range      (m,    downward lidar; 0 if no fresh frame)
-    [9]    clarity    (camera quality metric, 0..~100)
+Wire format (8 floats / 32 B, LOG_CLASS_OPTFLOW = 0x22):
+    [0..1] flow_raw  (rad/s, body)        — not plotted
+    [2..3] v_meas    (m/s,  body)         ← plotted (green)
+    [4..5] v_pred    (m/s,  body)         ← plotted (blue)
+    [6]    range     (m)                  — status only
+    [7]    clarity   (0..~100)            ← plotted
 """
 
 import math
@@ -65,10 +57,10 @@ DB_CMD_CHIP_ID = 0x09
 
 LOG_CLASS_NONE = 0x00
 LOG_CLASS_HEART_BEAT = 0x09
-LOG_CLASS_OPTFLOW_DEROT = 0x22
+LOG_CLASS_OPTFLOW = 0x22
 
-DEROT_FRAME_SIZE = 40           # 10 floats
-DEROT_FRAME_FORMAT = "<10f"
+FRAME_SIZE = 32           # 8 floats
+FRAME_FORMAT = "<8f"
 
 # --- UI palette (shared with other tools/*.py viewers) ---
 BG_COLOR = "#1e1e1e"
@@ -194,13 +186,11 @@ def serial_reader():
                 if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
                     g_chip_id = payload[:8].hex().upper()
                     print(f"Chip ID: {g_chip_id}")
-                elif msg_id == SEND_LOG_ID and length == DEROT_FRAME_SIZE:
-                    vals = struct.unpack(DEROT_FRAME_FORMAT, payload)
-                    # Flow / v_meas fields can legitimately be NaN (no frame
-                    # yet, or gated out). Only require v_pred + range +
-                    # clarity to be finite — those are always set from the
-                    # live ESKF / latest camera frame.
-                    if all(math.isfinite(v) for v in (vals[6], vals[7], vals[8], vals[9])):
+                elif msg_id == SEND_LOG_ID and length == FRAME_SIZE:
+                    vals = struct.unpack(FRAME_FORMAT, payload)
+                    # Flow can legitimately be NaN before the first frame.
+                    # Only require clarity to be finite.
+                    if math.isfinite(vals[7]):
                         g_rx_frame_count += 1
                         push_latest(vals)
     except Exception as e:
@@ -227,20 +217,19 @@ def main():
 
     fig = plt.figure(figsize=screen_fit_figsize(14, 9))
     fig.patch.set_facecolor(BG_COLOR)
-    fig.canvas.manager.set_window_title("Optflow Derotation Viewer")
-    fig.suptitle("State Estimation — Optical-Flow Pipeline (raw → derot → v_meas → v_pred)",
+    fig.canvas.manager.set_window_title("Optflow Viewer")
+    fig.suptitle("Optflow — v_meas (camera, green) vs v_pred (ESKF, blue), m/s",
                  fontsize=14, color=TEXT_COLOR, fontweight="bold", y=0.99)
 
-    # Three stacked strips: body X, body Y, clarity. The two velocity strips
-    # overlay all four pipeline stages on a shared m/s scale (rad/s flows are
-    # multiplied by the latest range to give "would-be velocity").
-    gs = fig.add_gridspec(3, 1, left=0.07, right=0.97, top=0.93, bottom=0.18,
-                          hspace=0.28, height_ratios=[3, 3, 1])
+    # Four stacked strips: body X (m/s), body Y (m/s), range (m), clarity.
+    gs = fig.add_gridspec(4, 1, left=0.07, right=0.97, top=0.93, bottom=0.18,
+                          hspace=0.28, height_ratios=[3, 3, 1, 1])
     ax_x = fig.add_subplot(gs[0, 0])
     ax_y = fig.add_subplot(gs[1, 0], sharex=ax_x)
-    ax_q = fig.add_subplot(gs[2, 0], sharex=ax_x)
+    ax_r = fig.add_subplot(gs[2, 0], sharex=ax_x)
+    ax_q = fig.add_subplot(gs[3, 0], sharex=ax_x)
 
-    for axp in (ax_x, ax_y, ax_q):
+    for axp in (ax_x, ax_y, ax_r, ax_q):
         axp.set_facecolor(BG_COLOR)
         axp.grid(True, color=GRID_COLOR, alpha=0.4, linewidth=0.5)
         for sp in axp.spines.values():
@@ -252,47 +241,38 @@ def main():
 
     ax_x.set_ylabel("body X (m/s)", color=TEXT_COLOR, fontsize=9)
     ax_y.set_ylabel("body Y (m/s)", color=TEXT_COLOR, fontsize=9)
+    ax_r.set_ylabel("range (m)",    color=TEXT_COLOR, fontsize=9)
     ax_q.set_ylabel("clarity",      color=TEXT_COLOR, fontsize=9)
     ax_q.set_xlabel("time (s)",     color=TEXT_COLOR, fontsize=9)
     plt.setp(ax_x.get_xticklabels(), visible=False)
     plt.setp(ax_y.get_xticklabels(), visible=False)
+    plt.setp(ax_r.get_xticklabels(), visible=False)
 
     # Buffers
     maxlen = int(WINDOW_S * RATE_HZ) + 8
-    t_buf = deque(maxlen=maxlen)
-    raw_x   = deque(maxlen=maxlen); raw_y   = deque(maxlen=maxlen)
+    t_buf   = deque(maxlen=maxlen)
     vmeas_x = deque(maxlen=maxlen); vmeas_y = deque(maxlen=maxlen)
     vpred_x = deque(maxlen=maxlen); vpred_y = deque(maxlen=maxlen)
+    range_q = deque(maxlen=maxlen)
     clarity = deque(maxlen=maxlen)
 
-    # Lines — same colour per stage on both strips so the legend reads cleanly.
-    # NOTE: derot·range is intentionally not plotted because the FC computes
-    # v_meas = flow_derot · range, so the two series would overlap exactly
-    # every frame (modulo the rare 6 m/s outlier gate, which then NaN's
-    # v_meas — a gap, not a different value). The useful comparisons are:
-    #   red ↔ green : derotation quality (diverges under pure rotation)
-    #   green ↔ blue : ESKF tracking quality (should match under translation)
-    l_raw_x,   = ax_x.plot([], [], color=ACCENT_RED,    lw=1.0, alpha=0.8,
-                           label="raw·range  (rad/s · m)")
-    l_vmeas_x, = ax_x.plot([], [], color=ACCENT_GREEN,  lw=1.6,
-                           label="v_meas (m/s)")
-    l_vpred_x, = ax_x.plot([], [], color=ACCENT_BLUE,   lw=1.8, alpha=0.9,
-                           label="v_pred ESKF (m/s)")
-
-    l_raw_y,   = ax_y.plot([], [], color=ACCENT_RED,    lw=1.0, alpha=0.8,
-                           label="raw·range  (rad/s · m)")
-    l_vmeas_y, = ax_y.plot([], [], color=ACCENT_GREEN,  lw=1.6,
-                           label="v_meas (m/s)")
-    l_vpred_y, = ax_y.plot([], [], color=ACCENT_BLUE,   lw=1.8, alpha=0.9,
-                           label="v_pred ESKF (m/s)")
-
+    l_vmeas_x, = ax_x.plot([], [], color=ACCENT_GREEN, lw=1.4,
+                           label="v_meas (camera)")
+    l_vpred_x, = ax_x.plot([], [], color=ACCENT_BLUE,  lw=1.6, alpha=0.9,
+                           label="v_pred (ESKF)")
+    l_vmeas_y, = ax_y.plot([], [], color=ACCENT_GREEN, lw=1.4,
+                           label="v_meas (camera)")
+    l_vpred_y, = ax_y.plot([], [], color=ACCENT_BLUE,  lw=1.6, alpha=0.9,
+                           label="v_pred (ESKF)")
+    l_range,   = ax_r.plot([], [], color=ACCENT_ORANGE, lw=1.2,
+                           label="range")
     l_clarity, = ax_q.plot([], [], color=ACCENT_PURPLE, lw=1.2,
                            label="clarity")
 
     for axp in (ax_x, ax_y):
-        axp.legend(loc="upper right", fontsize=7, framealpha=0.3,
+        axp.legend(loc="upper right", fontsize=8, framealpha=0.3,
                    facecolor=PANEL_COLOR, edgecolor=GRID_COLOR,
-                   labelcolor=TEXT_COLOR, ncol=3)
+                   labelcolor=TEXT_COLOR, ncol=2)
 
     # --- Bottom info row -----------------------------------------------
     chip_text   = fig.text(0.02, 0.06, "", fontsize=8, ha="left",
@@ -326,7 +306,7 @@ def main():
             btn_toggle.hovercolor = BTN_GREEN_HOV
             ax_toggle.set_facecolor(BTN_GREEN)
         else:
-            send_log_class(g_serial, LOG_CLASS_OPTFLOW_DEROT)
+            send_log_class(g_serial, LOG_CLASS_OPTFLOW)
             g_logging_active = True
             btn_toggle.label.set_text("Stop Log")
             btn_toggle.color = BTN_RED
@@ -351,8 +331,7 @@ def main():
         btn_toggle.color = BTN_GREEN
         btn_toggle.hovercolor = BTN_GREEN_HOV
         ax_toggle.set_facecolor(BTN_GREEN)
-        for d in (t_buf, raw_x, raw_y,
-                  vmeas_x, vmeas_y, vpred_x, vpred_y, clarity):
+        for d in (t_buf, vmeas_x, vmeas_y, vpred_x, vpred_y, range_q, clarity):
             d.clear()
         t0[0] = None
 
@@ -372,11 +351,10 @@ def main():
     btn_clear.label.set_fontsize(8)
 
     def on_clear(_event):
-        for d in (t_buf, raw_x, raw_y,
-                  vmeas_x, vmeas_y, vpred_x, vpred_y, clarity):
+        for d in (t_buf, vmeas_x, vmeas_y, vpred_x, vpred_y, range_q, clarity):
             d.clear()
         t0[0] = None
-        for axp in (ax_x, ax_y, ax_q):
+        for axp in (ax_x, ax_y, ax_r, ax_q):
             axp.relim()
             axp.set_autoscaley_on(True)
             axp.autoscale_view(scalex=False, scaley=True)
@@ -411,48 +389,35 @@ def main():
             t0[0] = now
         t = now - t0[0]
 
-        flow_raw_x, flow_raw_y = latest[0], latest[1]
-        # latest[2..3] = flow_derot — not plotted (overlaps v_meas exactly).
-        v_meas_x, v_meas_y     = latest[4], latest[5]
-        v_pred_x, v_pred_y     = latest[6], latest[7]
-        rng                    = latest[8]
-        clr                    = latest[9]
-
-        # Scale raw rad/s flow to "would-be m/s" using the latest range so it
-        # shares the m/s axis. NaN-propagate when range is unavailable so the
-        # chart shows a gap rather than a fake zero.
-        if rng > 0.0 and math.isfinite(rng):
-            raw_mps_x = flow_raw_x * rng
-            raw_mps_y = flow_raw_y * rng
-        else:
-            raw_mps_x = raw_mps_y = float("nan")
+        v_meas_x, v_meas_y = latest[2], latest[3]
+        v_pred_x, v_pred_y = latest[4], latest[5]
+        rng                = latest[6]
+        clr                = latest[7]
 
         t_buf.append(t)
-        raw_x.append(raw_mps_x);  raw_y.append(raw_mps_y)
         vmeas_x.append(v_meas_x); vmeas_y.append(v_meas_y)
         vpred_x.append(v_pred_x); vpred_y.append(v_pred_y)
+        range_q.append(rng)
         clarity.append(clr)
 
         while t_buf and (t - t_buf[0]) > WINDOW_S:
             t_buf.popleft()
-            for d in (raw_x, raw_y,
-                      vmeas_x, vmeas_y, vpred_x, vpred_y, clarity):
+            for d in (vmeas_x, vmeas_y, vpred_x, vpred_y, range_q, clarity):
                 d.popleft()
 
         ts = list(t_buf)
-        l_raw_x.set_data(ts,   list(raw_x))
         l_vmeas_x.set_data(ts, list(vmeas_x))
         l_vpred_x.set_data(ts, list(vpred_x))
-        l_raw_y.set_data(ts,   list(raw_y))
         l_vmeas_y.set_data(ts, list(vmeas_y))
         l_vpred_y.set_data(ts, list(vpred_y))
+        l_range.set_data(ts, list(range_q))
         l_clarity.set_data(ts, list(clarity))
 
         if ts:
             x_lo = max(0.0, ts[-1] - WINDOW_S)
             x_hi = max(WINDOW_S, ts[-1])
             ax_x.set_xlim(x_lo, x_hi)
-            for axp in (ax_x, ax_y, ax_q):
+            for axp in (ax_x, ax_y, ax_r, ax_q):
                 axp.relim()
                 axp.set_autoscaley_on(True)
                 axp.autoscale_view(scalex=False, scaley=True)
@@ -462,9 +427,9 @@ def main():
             return f"{v:+6.3f}" if math.isfinite(v) else "  nan "
 
         status_text.set_text(
-            f"X raw·r={_fmt(raw_mps_x)}  v_meas={_fmt(v_meas_x)}  "
-            f"v_pred={_fmt(v_pred_x)}  "
-            f"| range={rng:5.2f} m  clarity={clr:5.1f}"
+            f"X v_meas={_fmt(v_meas_x)}  v_pred={_fmt(v_pred_x)}  "
+            f"| Y v_meas={_fmt(v_meas_y)}  v_pred={_fmt(v_pred_y)}  m/s"
+            f"  | range={rng:5.2f} m  clarity={clr:5.1f}"
         )
         if g_chip_id is not None:
             chip_text.set_text(f"Chip {g_chip_id}")
