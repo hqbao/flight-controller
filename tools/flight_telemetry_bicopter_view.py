@@ -2,7 +2,6 @@ import serial
 import serial.tools.list_ports
 import struct
 import threading
-import queue
 import numpy as np
 import sys
 import matplotlib
@@ -99,7 +98,7 @@ HEALTH_OK       = '#55cc55'
 HEALTH_BAD      = '#ff3333'
 
 # Time series history
-HISTORY_LEN = 200  # 20 seconds at 10 Hz
+HISTORY_LEN = 250  # 10 seconds at 25 Hz — keeps line plots cheap to redraw
 
 # --- Auto-detect serial port ---
 ports = serial.tools.list_ports.comports()
@@ -116,10 +115,15 @@ if not SERIAL_PORT:
     print("  \u2717 No compatible serial port found.")
 
 # --- Global State ---
-data_queue = queue.Queue()
+# Latest-only frame slot (see flight_telemetry_view.py for rationale).
+g_latest = [None]
+g_latest_lock = threading.Lock()
 g_serial = None
 g_logging_active = False
 g_chip_id = None
+
+# Counter of telemetry frames received from the FC.
+g_rx_frame_count = [0]
 
 
 def send_log_class_command(ser, log_class):
@@ -165,6 +169,43 @@ def send_chip_id_request(ser):
 _bad_data_count = 0
 _bad_data_last_log = 0
 
+# --- Outlier limits (viewer-side hardening) ---
+MAX_POS_M    = 10000.0   # 10 km from origin
+MAX_VEL_MPS  = 100.0     # 100 m/s ground/vertical speed
+
+_outlier_count = 0
+_outlier_last_log = 0
+
+def _is_outlier(pos, vel):
+    for v in pos:
+        if abs(v) > MAX_POS_M:
+            return True
+    for v in vel:
+        if abs(v) > MAX_VEL_MPS:
+            return True
+    return False
+
+
+def _robust_ylim(values, pad_frac=0.15, min_span=0.5):
+    """Return (lo, hi) y-limits using 5th/95th percentile to ignore outliers."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return (-1.0, 1.0)
+    if arr.size < 4:
+        lo, hi = float(arr.min()), float(arr.max())
+    else:
+        lo = float(np.percentile(arr, 5))
+        hi = float(np.percentile(arr, 95))
+    span = hi - lo
+    if span < min_span:
+        mid = (lo + hi) * 0.5
+        lo, hi = mid - min_span * 0.5, mid + min_span * 0.5
+        span = hi - lo
+    pad = span * pad_frac
+    return (lo - pad, hi + pad)
+
+
 def _sanitize_floats(values, label):
     """Replace NaN/Inf with 0.0 and log a warning (rate-limited)."""
     global _bad_data_count, _bad_data_last_log
@@ -208,11 +249,15 @@ def parse_telemetry(payload):
 
 
 def serial_reader():
+    """Background thread: bulk-read DB frames and park the latest one.
+    See flight_telemetry_view.py for the rationale (byte-by-byte reads at
+    38400 baud cause kernel-buffer backlog when matplotlib stalls).
+    """
     global g_serial, g_chip_id
     if not SERIAL_PORT:
         return
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.05)
         time.sleep(0.2)
         ser.reset_input_buffer()
         ser.write(b'\x00' * 32)
@@ -223,43 +268,68 @@ def serial_reader():
         send_chip_id_request(ser)
         send_log_class_command(ser, LOG_CLASS_HEART_BEAT)
 
-        while True:
-            b1 = ser.read(1)
-            if not b1:
-                continue
-            if b1[0] != 0x62 and b1[0] != 0x64:
-                continue
-            b2 = ser.read(1)
-            if not b2:
-                continue
-            if not ((b1[0] == 0x64 and b2[0] == 0x62) or
-                    (b1[0] == 0x62 and b2[0] == 0x64)):
-                continue
-            id_byte = ser.read(1)
-            if not id_byte:
-                continue
-            msg_id = id_byte[0]
-            class_byte = ser.read(1)
-            if not class_byte:
-                continue
-            len_bytes = ser.read(2)
-            if len(len_bytes) < 2:
-                continue
-            length = int.from_bytes(len_bytes, 'little')
-            if length > 1024:
-                continue
-            payload = ser.read(length)
-            if len(payload) != length:
-                continue
-            _ = ser.read(2)
+        BACKLOG_FLUSH_BYTES = 4096
+        last_backlog_log = 0.0
 
-            if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
-                g_chip_id = payload[:8].hex().upper()
-                print(f"  \u2713 Chip ID: {g_chip_id}")
-            elif msg_id == SEND_LOG_ID and length == TELEMETRY_FRAME_SIZE:
-                result = parse_telemetry(payload)
-                if result:
-                    data_queue.put(result)
+        rx = bytearray()
+
+        while True:
+            n_waiting = ser.in_waiting
+            if n_waiting > BACKLOG_FLUSH_BYTES:
+                ser.reset_input_buffer()
+                rx.clear()
+                now = time.time()
+                if now - last_backlog_log >= 1.0:
+                    print(f"  \u26a0 backlog {n_waiting} B in kernel buffer \u2014 flushed (viewer falling behind)")
+                    last_backlog_log = now
+                continue
+
+            chunk = ser.read(n_waiting if n_waiting > 0 else 1)
+            if not chunk:
+                continue
+            rx.extend(chunk)
+
+            while True:
+                i = rx.find(b'db')
+                if i < 0:
+                    if len(rx) > 1:
+                        del rx[:-1]
+                    break
+                if i > 0:
+                    del rx[:i]
+                if len(rx) < 6:
+                    break
+                length = int.from_bytes(rx[4:6], 'little')
+                if length > 1024:
+                    del rx[:2]
+                    continue
+                frame_total = 6 + length + 2
+                if len(rx) < frame_total:
+                    break
+
+                msg_id = rx[2]
+                payload = bytes(rx[6:6 + length])
+                del rx[:frame_total]
+
+                if msg_id == SEND_LOG_ID and length == 8 and g_chip_id is None:
+                    g_chip_id = payload[:8].hex().upper()
+                    print(f"  \u2713 Chip ID: {g_chip_id}")
+                elif msg_id == SEND_LOG_ID and length == TELEMETRY_FRAME_SIZE:
+                    result = parse_telemetry(payload)
+                    if not result:
+                        continue
+                    global _outlier_count, _outlier_last_log
+                    if _is_outlier(result['pos'], result['vel']):
+                        _outlier_count += 1
+                        now = time.time()
+                        if now - _outlier_last_log >= 1.0:
+                            print(f"  \u26a0 outlier dropped: pos={result['pos']} vel={result['vel']}  ({_outlier_count} dropped)")
+                            _outlier_count = 0
+                            _outlier_last_log = now
+                        continue
+                    with g_latest_lock:
+                        g_latest[0] = result
+                    g_rx_frame_count[0] += 1
     except Exception as e:
         print(f"  \u2717 Serial error: {e}")
     finally:
@@ -355,21 +425,29 @@ def main():
                 fontsize=9, ha='center', va='center', alpha=0.5)
 
     def make_rotation(roll_deg, pitch_deg, yaw_deg):
-        """Build 3D rotation matrix for display frame (X=right, Y=fwd, Z=up)
-        from NED Euler angles in degrees."""
+        """Build a 3D rotation matrix for the *display* frame
+        (X=right/East, Y=forward/North, Z=up) from FC Euler angles.
+        Body axes defined directly in display frame so:
+          + roll  rolls right wing down
+          + pitch tilts the nose up
+          + yaw   rotates nose toward east (CW from above)
+        """
         r = np.radians(roll_deg)
         p = np.radians(pitch_deg)
         y = np.radians(yaw_deg)
         cr, sr = np.cos(r), np.sin(r)
         cp, sp = np.cos(p), np.sin(p)
         cy, sy = np.cos(y), np.sin(y)
-        R_ned = np.array([
-            [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
-            [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
-            [-sp,   cp*sr,            cp*cr            ]
-        ])
-        T = np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]], dtype=float)
-        return T @ R_ned @ T
+        Rz = np.array([[ cy, -sy, 0],
+                       [ sy,  cy, 0],
+                       [  0,   0, 1]])
+        Rx = np.array([[1,  0,   0 ],
+                       [0, cp, -sp],
+                       [0, sp,  cp]])
+        Ry = np.array([[ cr, 0, sr],
+                       [  0, 1,  0],
+                       [-sr, 0, cr]])
+        return Rz @ Rx @ Ry
 
     def nacelle_tilt_matrix(angle_deg):
         """Rotation about body X-axis (left-right beam axis) by tilt angle.
@@ -442,17 +520,17 @@ def main():
     ax_data.text(0.08, 0.81, 'POSITION', **_hdr)
     ax_data.plot([0.05, 0.95], [0.805, 0.805], color=GRID_COLOR, lw=0.5,
                  alpha=0.4, transform=ax_data.transAxes, clip_on=False)
-    data_px = ax_data.text(0.08, 0.77, 'X:  0.00m', color=ACCENT_CYAN, **_val)
-    data_py = ax_data.text(0.08, 0.74, 'Y:  0.00m', color=ACCENT_CYAN, **_val)
-    data_pz = ax_data.text(0.08, 0.71, 'Z:  0.00m', color=ACCENT_YELLOW, **_val)
+    data_px = ax_data.text(0.08, 0.77, 'N:  0.00m', color=ACCENT_CYAN, **_val)
+    data_py = ax_data.text(0.08, 0.74, 'E:  0.00m', color=ACCENT_CYAN, **_val)
+    data_pz = ax_data.text(0.08, 0.71, 'Alt: 0.00m', color=ACCENT_YELLOW, **_val)
 
     # Section: Velocity
     ax_data.text(0.08, 0.66, 'VELOCITY', **_hdr)
     ax_data.plot([0.05, 0.95], [0.655, 0.655], color=GRID_COLOR, lw=0.5,
                  alpha=0.4, transform=ax_data.transAxes, clip_on=False)
-    data_vx = ax_data.text(0.08, 0.62, 'Vx: 0.00', color=ACCENT_BLUE, **_val)
-    data_vy = ax_data.text(0.08, 0.59, 'Vy: 0.00', color=ACCENT_GREEN, **_val)
-    data_vz = ax_data.text(0.08, 0.56, 'Vz: 0.00', color=ACCENT_ORANGE, **_val)
+    data_vx = ax_data.text(0.08, 0.62, 'Vn: 0.00', color=ACCENT_BLUE, **_val)
+    data_vy = ax_data.text(0.08, 0.59, 'Ve: 0.00', color=ACCENT_GREEN, **_val)
+    data_vz = ax_data.text(0.08, 0.56, 'Vu: 0.00', color=ACCENT_ORANGE, **_val)
 
     # Section: Motors + Servos
     ax_data.text(0.08, 0.51, 'MOTORS', **_hdr)
@@ -523,7 +601,7 @@ def main():
     for spine in ax_vel.spines.values():
         spine.set_edgecolor(GRID_COLOR)
         spine.set_alpha(0.5)
-    vel_labels = ['Vx', 'Vy', 'Vz']
+    vel_labels = ['Vn', 'Ve', 'Vu']
     vel_colors = [ACCENT_BLUE, ACCENT_GREEN, ACCENT_ORANGE]
     vel_lines = []
     for label, color in zip(vel_labels, vel_colors):
@@ -540,7 +618,7 @@ def main():
     ax_alt.patch.set_alpha(0.5)
     ax_alt.set_title('Altitude', color=DIM_TEXT, fontsize=9, pad=4)
     ax_alt.set_xlabel('t (s)', fontsize=7)
-    ax_alt.set_ylabel('Z (m)', fontsize=7)
+    ax_alt.set_ylabel('Alt (m)', fontsize=7)
     ax_alt.tick_params(labelsize=7)
     ax_alt.grid(True, alpha=0.2)
     for spine in ax_alt.spines.values():
@@ -565,8 +643,8 @@ def main():
         txt = fig.text(x, 0.057, f'\u25cf{name}', fontsize=7, color=DIM_TEXT)
         health_texts.append(txt)
 
-    fps_text = fig.text(0.995, 0.057, '', fontsize=8, ha='right',
-                        color=DIM_TEXT)
+    fps_text = fig.text(0.995, 0.025, 'Data:   0 Hz | UI:  0 Hz', fontsize=8,
+                        ha='right', color=DIM_TEXT)
 
     # =========================================================================
     # Toggle Log Button
@@ -676,13 +754,23 @@ def main():
 
     def update(frame_num):
         updated = []
-        latest = None
 
-        while not data_queue.empty():
-            try:
-                latest = data_queue.get_nowait()
-            except queue.Empty:
-                break
+        # --- FPS / data-rate counter (runs every UI tick, even with no data) ---
+        now_tick = time.time()
+        frame_count[0] += 1
+        elapsed_tick = now_tick - last_fps_time[0]
+        if elapsed_tick >= 1.0:
+            ui_hz = frame_count[0] / elapsed_tick
+            rx_hz = g_rx_frame_count[0] / elapsed_tick
+            g_rx_frame_count[0] = 0
+            fps_text.set_text(f'Data:{rx_hz:4.0f} Hz | UI:{ui_hz:3.0f} Hz')
+            frame_count[0] = 0
+            last_fps_time[0] = now_tick
+            updated.append(fps_text)
+
+        with g_latest_lock:
+            latest = g_latest[0]
+            g_latest[0] = None
 
         if latest is None:
             return updated
@@ -783,13 +871,16 @@ def main():
         data_yaw.set_text(f'Y:{yaw:+6.1f}\u00b0')
 
         px_ned, py_ned, pz_ned = d['pos']
-        data_px.set_text(f'X:{px_ned:+6.2f}m')
-        data_py.set_text(f'Y:{py_ned:+6.2f}m')
-        data_pz.set_text(f'Z:{pz_ned:+6.2f}m')
+        alt_up = -pz_ned  # NED Z is down; show altitude positive-up
+        data_px.set_text(f'N:{px_ned:+6.2f}m')
+        data_py.set_text(f'E:{py_ned:+6.2f}m')
+        data_pz.set_text(f'Alt:{alt_up:+6.2f}m')
 
-        data_vx.set_text(f'Vx:{d["vel"][0]:+5.2f}')
-        data_vy.set_text(f'Vy:{d["vel"][1]:+5.2f}')
-        data_vz.set_text(f'Vz:{d["vel"][2]:+5.2f}')
+        vn, ve, vd = d['vel']
+        vu = -vd  # NED Vz is down; show vertical velocity positive-up
+        data_vx.set_text(f'Vn:{vn:+5.2f}')
+        data_vy.set_text(f'Ve:{ve:+5.2f}')
+        data_vz.set_text(f'Vu:{vu:+5.2f}')
 
         data_m1.set_text(f'M1(L):{m1_speed:5d}')
         data_m2.set_text(f'M2(R):{m2_speed:5d}')
@@ -836,9 +927,9 @@ def main():
             vel_t0[0] = now
         vt = now - vel_t0[0]
         vel_history['t'].append(vt)
-        vel_history['vx'].append(d['vel'][0])
-        vel_history['vy'].append(d['vel'][1])
-        vel_history['vz'].append(d['vel'][2])
+        vel_history['vx'].append(vn)
+        vel_history['vy'].append(ve)
+        vel_history['vz'].append(vu)
         if len(vel_history['t']) > HISTORY_LEN:
             vel_history['t'] = vel_history['t'][-HISTORY_LEN:]
             vel_history['vx'] = vel_history['vx'][-HISTORY_LEN:]
@@ -849,12 +940,8 @@ def main():
         vel_lines[2].set_data(vel_history['t'], vel_history['vz'])
         if len(vel_history['t']) > 1:
             ax_vel.set_xlim(vel_history['t'][0], vel_history['t'][-1] + 0.1)
-            all_v = np.array(vel_history['vx'] + vel_history['vy'] + vel_history['vz'])
-            all_v = all_v[np.isfinite(all_v)]
-            if len(all_v) > 0:
-                vmin, vmax = all_v.min(), all_v.max()
-                vm = max(0.5, (vmax - vmin) * 0.2)
-                ax_vel.set_ylim(vmin - vm, vmax + vm)
+            all_v = vel_history['vx'] + vel_history['vy'] + vel_history['vz']
+            ax_vel.set_ylim(*_robust_ylim(all_v, pad_frac=0.2, min_span=1.0))
         updated.extend(vel_lines)
 
         # =================================================================
@@ -864,19 +951,14 @@ def main():
             alt_t0[0] = now
         t = now - alt_t0[0]
         alt_history['t'].append(t)
-        alt_history['z'].append(d['pos'][2])
+        alt_history['z'].append(alt_up)
         if len(alt_history['t']) > HISTORY_LEN:
             alt_history['t'] = alt_history['t'][-HISTORY_LEN:]
             alt_history['z'] = alt_history['z'][-HISTORY_LEN:]
         alt_line.set_data(alt_history['t'], alt_history['z'])
         if len(alt_history['t']) > 1:
             ax_alt.set_xlim(alt_history['t'][0], alt_history['t'][-1] + 0.1)
-            zarr = np.array(alt_history['z'])
-            zarr = zarr[np.isfinite(zarr)]
-            if len(zarr) > 0:
-                zmin, zmax = zarr.min(), zarr.max()
-                margin = max(0.5, (zmax - zmin) * 0.2)
-                ax_alt.set_ylim(zmin - margin, zmax + margin)
+            ax_alt.set_ylim(*_robust_ylim(alt_history['z'], pad_frac=0.2, min_span=1.0))
         updated.append(alt_line)
 
         # =================================================================
@@ -901,22 +983,11 @@ def main():
             chip_id_text.set_text(f'Chip ID: {g_chip_id}')
             updated.append(chip_id_text)
 
-        # =================================================================
-        # FPS
-        # =================================================================
-        frame_count[0] += 1
-        elapsed = now - last_fps_time[0]
-        if elapsed >= 1.0:
-            fps = frame_count[0] / elapsed
-            fps_text.set_text(f'{fps:.0f} Hz')
-            frame_count[0] = 0
-            last_fps_time[0] = now
-            updated.append(fps_text)
-
         return updated
 
     from matplotlib.animation import FuncAnimation
-    ani = FuncAnimation(fig, update, interval=50, blit=False, cache_frame_data=False)
+    # FC publishes flight telemetry at 25 Hz; match the UI tick.
+    ani = FuncAnimation(fig, update, interval=40, blit=False, cache_frame_data=False)
     plt.show()
 
 
