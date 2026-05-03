@@ -9,7 +9,7 @@ When the flight controller boots with stored tuning parameters of value `0.0` fo
 - In CubeIDE Live Expressions: `g_f11.v_true = (0, 0, -1)` constant — even when the drone is rotated.
 - `g_f11.a` (raw accel) DOES update with motion → so accel data is reaching the fusion.
 - Quaternion `g_f11.q` and `v_pred` update fine from gyro integration.
-- `attitude_estimation_view.py` shows the blue "true gravity" vector frozen.
+- `attitude_view.py` shows the blue "true gravity" vector frozen.
 - Other flight controllers (with valid tuning flash) behave normally with the same firmware.
 
 ## Root Cause

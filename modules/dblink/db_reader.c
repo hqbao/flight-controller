@@ -37,10 +37,24 @@ typedef struct {
 
 static parser_rx_t g_rx[NUM_PORTS] = {0};
 
+static int ubx_checksum_ok(const uint8_t *buf, uint16_t payload_size) {
+	/* Fletcher-8 over class | id | len_lo | len_hi | payload[] */
+	uint8_t ck_a = 0, ck_b = 0;
+	int n = 4 + (int)payload_size;
+	for (int i = 0; i < n; i++) {
+		ck_a = (uint8_t)(ck_a + buf[i]);
+		ck_b = (uint8_t)(ck_b + ck_a);
+	}
+	return (ck_a == buf[n] && ck_b == buf[n + 1]) ? 1 : 0;
+}
+
 static void handle_parsed_frame(parser_rx_t *rx) {
 	if (rx->protocol == PROTOCOL_DB) {
 		publish(DB_MESSAGE_UPDATE, rx->buffer, rx->payload_size + 6);
 	} else if (rx->protocol == PROTOCOL_UBX) {
+		/* Drop frames with bad checksum — protects downstream consumers
+		 * (gps.c parse_nav_pvt) from mis-synced or corrupted UBX. */
+		if (!ubx_checksum_ok(rx->buffer, rx->payload_size)) return;
 		publish(UBX_MESSAGE_UPDATE, rx->buffer, rx->payload_size + 6);
 	}
 }

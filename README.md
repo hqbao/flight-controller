@@ -1,6 +1,6 @@
 # Flight Controller
 
-A modular embedded flight control system for multi-rotor aircraft, written in **C** for STM32H7 and ESP32 microcontrollers. Integrates multiple sensors, performs real-time attitude and position estimation, and executes stabilization control loops.
+A modular embedded flight control system for multi-rotor aircraft, written in **C** for the STM32H7 microcontroller (`h7v1` is currently the only supported board target). Integrates multiple sensors, performs real-time attitude and position estimation, and executes stabilization control loops.
 
 ## Overview
 
@@ -21,7 +21,7 @@ The Flight Controller is the core autopilot that:
 | **Barometer** | DPS310 | I2C |
 | **GPS** | u-blox ZED-F9P (UBX) | UART |
 | **Optical Flow** | External module (flight-optflow) | UART |
-| **MCU** | STM32H7 / ESP32-S3 / ESP32-P4 | — |
+| **MCU** | STM32H7 (`h7v1`) | — |
 
 ## Getting Started
 
@@ -56,11 +56,9 @@ flight-controller/
 │   ├── air_pressure/              #   Barometer driver (DPS310)
 │   ├── gps/                       #   GPS receiver (u-blox UBX protocol)
 │   ├── optflow/                   #   Optical flow sensor interface
-│   ├── attitude_estimation/       #   Sensor fusion (Mahony/EKF/Madgwick)
-│   ├── attitude_control/          #   Attitude stabilization PID loops
+│   ├── state_estimation/          #   Unified ESKF (fusion6) — attitude + position + velocity
+│   ├── state_control/             #   Cascaded outer position → inner attitude PID loops
 │   ├── mix_control/               #   Motor/servo mixing (quad/bicopter, build-time selectable)
-│   ├── position_estimation/       #   Position/velocity estimation (Fusion5 + Fusion4 parallel, configurable)
-│   ├── position_control/          #   Position hold P-control loops
 │   ├── speed_control/             #   Motor/servo output driver (per-port DShot/PWM)
 │   ├── rc_receiver/               #   RC receiver input processing
 │   ├── calibration/               #   Sensor calibration (gyro/accel/mag)
@@ -70,7 +68,8 @@ flight-controller/
 │   ├── fault_handler/             #   Safety and error handling
 │   ├── fft/                       #   FFT vibration analysis
 │   ├── notch_filter/              #   Gyro notch filter (motor vibration rejection)
-│   ├── config/                    #   Runtime tuning parameters (71 params, flash-persistent)
+│   ├── troubleshoot/              #   Per-axis raw INT16 accel min/max + clip diagnostic
+│   ├── config/                    #   Runtime tuning parameters (flash-persistent)
 │   ├── dblink/                    #   UART protocol parser + TX queue (DB/UBX framing)
 │   └── local_storage/             #   Persistent configuration storage
 │
@@ -83,11 +82,17 @@ flight-controller/
 │   ├── fft_spectrum_view.py        #   Real-time spectrogram + peak overlay
 │   ├── fft_spectrum_dual_view.py   #   Raw vs post-notch spectrograms (side-by-side)
 │   ├── rc_receiver_view.py        #   RC receiver debug (channels + state/mode)
-│   ├── tuning_board.py            #   Parameter tuning GUI (71 params, query/upload/defaults)
+│   ├── tuning_board.py            #   Parameter tuning GUI (query/upload/defaults)
 │   ├── troubleshoot_accel_clip_view.py # Accel clip / FS-range diagnostic (raw INT16 LSB)
 │   ├── mag_diagnostic_view.py    #   Magnetometer body-frame diagnostics
-│   ├── optflow_velocity_view.py   #   Optical-flow body-velocity diagnostics + 2D body position
+│   ├── attitude_view.py           #   Attitude diagnostic (accel meas vs predicted gravity vs linear accel)
+│   ├── baro_fusion_view.py        #   Barometric altitude fusion diagnostic
+│   ├── optflow_view.py            #   Optical-flow diagnostic (flow / v_meas / v_pred / range / clarity)
+│   ├── gps_view.py                #   GPS dashboard (NED map, velocity, sats, accuracy)
+│   ├── gps_fusion_view.py         #   GPS vs ESKF position/velocity diagnostic
+│   ├── gps_config_f9p.py          #   ZED-F9P configurator (UBX-CFG-VALSET to RAM+BBR+Flash)
 │   ├── test_dblink.py             #   Automated UART data path test
+│   ├── test_dblink_echo.py        #   UART loopback round-trip / drop benchmark
 │   ├── flight_telemetry_view.py   #   Flight telemetry HUD (quadcopter)
 │   └── flight_telemetry_bicopter_view.py # Flight telemetry HUD (bicopter)
 ```
@@ -145,14 +150,13 @@ All STM32 HAL implementations are separated from CubeIDE-generated code into ded
 | `SCHEDULER_4KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_2KHZ` | *(unused — available for future use)* |
 | `SCHEDULER_1KHZ` | IMU gyro readout (1 kHz sensor read) |
-| `SCHEDULER_500HZ` | IMU accel processing, attitude PID, motor mixing |
+| `SCHEDULER_500HZ` | IMU accel processing, inner attitude PID (`state_control`), motor mixing |
 | `SCHEDULER_250HZ` | *(unused — available for future use)* |
-| `SCHEDULER_250HZ` | *(unused — available for future use)* |
-| `SCHEDULER_100HZ` | Flight state machine, position control |
-| `SCHEDULER_50HZ` | LED status indicator (fault_handler) |
-| `SCHEDULER_25HZ` | Compass readout, IMU/position/compass logging, fault detection, RC |
-| `SCHEDULER_10HZ` | Attitude/mix/telemetry logging, navigation (GPS + GPS-denied), FFT trigger flag |
-| `SCHEDULER_5HZ` | *(unused — available for future use)* |
+| `SCHEDULER_100HZ` | Flight state machine, outer position cascade (`state_control`) |
+| `SCHEDULER_50HZ` | LED status indicator (fault_handler), attitude diagnostic log |
+| `SCHEDULER_25HZ` | Compass readout, IMU/mag/baro/optflow logging, fault detection, RC |
+| `SCHEDULER_10HZ` | Mix/telemetry logging, navigation, FFT trigger flag |
+| `SCHEDULER_5HZ` | GPS-fusion diagnostic log (`state_estimation`) |
 | `SCHEDULER_1HZ` | Calibration requests, heartbeat, flash readback, sensor health |
 
 > **ISR safety warning:** All `SCHEDULER_*` callbacks run inside the TIM8 ISR (priority 0). SysTick (priority 15) cannot preempt them, so `HAL_GetTick()` is frozen during execution. Any HAL polling function that uses `HAL_GetTick()` for timeout (e.g., `HAL_I2C_Mem_Read`, `HAL_I2C_Master_Transmit`) will hang forever on a bus error. Modules that need polling I2C should subscribe to `LOOP` (main-thread context) instead, or use DMA.
@@ -166,7 +170,7 @@ The `LOOP` topic fires from `main()` (thread context) and is used by modules tha
 - `SENSOR_IMU1_GYRO_UPDATE` / `SENSOR_IMU1_ACCEL_UPDATE` — IMU data
 - `SENSOR_IMU1_GYRO_FILTERED_UPDATE` — Notch-filtered gyro (from notch_filter module)
 - `SENSOR_COMPASS` — Calibrated sensor-frame compass unit vector; `state_estimation` maps it to body NED via `sensor_unit.h` for diagnostics only (no attitude update)
-- `STATE_UPDATE` — Unified ESKF (fusion6) `nav_state_t` snapshot @ 500 Hz: position, velocity, quaternion, euler, body+earth linear accel, biases, P-trace, health
+- `STATE_UPDATE` — Unified ESKF (fusion6) `nav_state_t` snapshot, published from the gyro callback (i.e. at the gyro scheduler rate, 1 kHz on `h7v1`): position, velocity, quaternion, euler, body+earth linear accel, biases, P-trace, health. Inner attitude PID consumes the cached snapshot at 500 Hz.
 - `EXTERNAL_SENSOR_GPS` / `EXTERNAL_SENSOR_GPS_VELOC` — GPS data
 - `EXTERNAL_SENSOR_OPTFLOW` — Optical flow data (from UART → DMA → dblink)
 - `UART_RAW_RECEIVED` — Raw UART DMA bytes (from platform_uart → dblink)
@@ -356,7 +360,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_NONE` | `0x00` | — | Stops all logging |
 | `LOG_CLASS_IMU_ACCEL_RAW` | `0x01` | `imu.c` | Raw accelerometer + temperature (4 floats) |
 | `LOG_CLASS_COMPASS` | `0x02` | `compass.c` | Raw magnetometer (3 floats) |
-| `LOG_CLASS_ATTITUDE` | `0x03` | — | *(Removed — `attitude_estimation.c` deleted in Phase 4)* |
+| `LOG_CLASS_ATTITUDE` | `0x03` | `state_estimation.c` | Attitude diagnostic (9 floats / 36 B @ 50 Hz): accel_meas_body, gravity_pred_body, accel_linear_body — consumed by `tools/attitude_view.py` |
 | `LOG_CLASS_POSITION` | `0x04` | — | *(Reserved — was `position_estimation.c`, deleted in Phase 4. Will be repurposed for `state_estimation` output.)* |
 | `LOG_CLASS_FFT_GYRO_Z` | `0x05` | — | *(Removed — was host-side FFT raw gyro streaming)* |
 | `LOG_CLASS_POSITION_OPTFLOW` | `0x06` | — | *(Removed — `position_estimation.c` deleted in Phase 4)* |
@@ -388,6 +392,7 @@ Python tools send a `DB_CMD_LOG_CLASS` command over UART to activate logging fro
 | `LOG_CLASS_VEL_FUSION` | `0x20` | — | *(Removed — subsumed by `LOG_CLASS_OPTFLOW` (`0x22`).)* |
 | `LOG_CLASS_BARO_FUSION` | `0x21` | `state_estimation.c` | Barometric altitude diagnostics (4 floats / 16 B): `z_meas` (NED, +down), ESKF `p.z`, ESKF `v.z`, `baro_ok` flag. Altitude fused via 1-D scalar `fusion6_update_baro_z` with `cfg.R_baro` (default σ=0.5 m). The first baro frame after `INIT_DONE` **snaps** `p.z = z_meas` and `v.z = 0` to escape the ±50 m sanity gate. A **ground-effect gate** skips the update when a fresh downward-rangefinder reading is < 1 m, since rotor downwash compresses static pressure under the airframe. No bias state — `air_pressure.c` already zeros the offset at startup. |
 | `LOG_CLASS_OPTFLOW` | `0x22` | `state_estimation.c` | Optical-flow pipeline diagnostic (8 floats / 32 B @ 25 Hz): `flow_raw_xy` (rad/s, body, **no derotation** — gyro derotation is currently disabled in firmware), `v_meas_xy` (m/s, body, = `flow_raw · range`, what gets fused), `v_pred_xy` (m/s, body, ESKF prediction), `range` (m, downward lidar), `clarity`. Velocity is fused via `fusion6_update_velocity_xy_body` with a static per-axis variance from `cfg.R_vel_xy_body` (default σ=0.30 m/s — deliberately loose because rotation-induced phantom velocity is currently unmodelled). UP camera is not fused (no range finder). The lower range gate (`OPTFLOW_RANGE_MIN_MM = 50` mm) and ZUPT band (`< 200` mm) still apply, but there is **no upper range gate** — frames at long range are fused with whatever range the lidar reports. When the lidar reports `z ≤ 0` (out-of-range / signal fail / no valid measurement) the frame is **dropped** rather than ZUPT'd, since a phantom ZUPT at altitude would be dangerous. `flow_raw` / `v_meas` are NaN until the first accepted frame; `v_meas` is NaN whenever the frame is rejected so the viewer leaves a visible gap. |
+| `LOG_CLASS_GPS_FUSION` | `0x23` | `state_estimation.c` | GPS-vs-ESKF diagnostic (14 floats / 56 B @ 5 Hz): `gps_pos_ned`, `gps_vel_ned`, ESKF `p`, ESKF `v`, `gps_ok` flag, `num_sv`. GPS snapshots are NaN until the first accepted fix arrives. Consumed by `tools/gps_fusion_view.py`. |
 
 > **Note:** Only one log class is active at a time. Selecting a new class automatically deactivates the previous one. On power-up, `LOG_CLASS_HEART_BEAT` is active by default so the flight controller is always sending data.
 
@@ -412,8 +417,11 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 | `flight_telemetry_bicopter_view.py` | Flight telemetry HUD: 3D bicopter with tilting nacelles, motors/servos, overlays |
 | `gps_config_f9p.py` | One-shot ZED-F9P configurator (UBX-CFG-VALSET to RAM + BBR + Flash) — disables NMEA + extra UBX, enables NAV-PVT @ 10 Hz on UART1/UART2/USB at 38400 baud |
 | `gps_view.py` | GPS dashboard: 2-D NED position map with trail + velocity arrow, altitude bar with min/max history, NED + ground-speed line charts, sat-count time-series, fix / accuracy / pDOP / heading panel. Uses `LOG_CLASS_GPS` |
+| `gps_fusion_view.py` | GPS-vs-ESKF diagnostic viewer: side-by-side position (NED) and velocity (NED) traces of the GPS fix and the fused estimator state, plus `gps_ok` lamp and live satellite count. Uses `LOG_CLASS_GPS_FUSION`. |
+| `attitude_view.py` | Attitude diagnostic: per-axis traces of measured accel, predicted gravity from the fused quaternion, and the resulting linear (gravity-removed) accel. Use to confirm attitude fusion is tracking gravity correctly. Uses `LOG_CLASS_ATTITUDE`. |
 | `test_dblink.py` | Automated test of all log classes — validates full UART data path (chip ID, heartbeat, all sensor/state classes) |
-| `tuning_board.py` | Parameter tuning GUI: 71 flash-persistent params in 7 categories, query/upload/defaults with confirmation |
+| `test_dblink_echo.py` | UART loopback round-trip benchmark (DB_CMD_ECHO) — measures throughput and drop rate on the dblink TX/RX path |
+| `tuning_board.py` | Parameter tuning GUI: flash-persistent params in categorised tabs, query/upload/defaults with confirmation |
 
 > **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect. All tools use the macOS-native backend on darwin and TkAgg on other platforms.
 

@@ -75,7 +75,7 @@ LOG_CLASS_GPS   = 0x1E
 GPS_FRAME_SIZE  = 48      # struct gps_log_t
 GPS_STRUCT_FMT  = "<10fHBBBBH"  # 10 floats + u16 + 4×u8 + u16 pad
 
-HISTORY_LEN     = 600     # ~60 s at 10 Hz
+HISTORY_LEN     = 150     # ~15 s at 10 Hz / ~30 s at 5 Hz
 
 # Earth radius for the lat/lon → metres approximation around the home fix.
 EARTH_R_M = 6_378_137.0
@@ -152,11 +152,21 @@ def send_reset(ser: serial.Serial) -> None:
 
 
 def serial_reader() -> None:
+    """Bulk-read framed parser shared with all newer viewers.
+
+    Earlier byte-by-byte version with timeout=1 was both slow AND accepted
+    a swapped 'bd' sync that would lock onto false sync points inside
+    payloads (any payload byte sequence 0x62 0x64 looked like a frame
+    start). This version reads in bulk into a bytearray, finds the strict
+    'db' sync, and verifies length before unpacking.
+    """
     global g_serial
     if not SERIAL_PORT:
         return
+    HEADER_SIZE = 6
+    CHKSUM_SIZE = 2
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0)
         time.sleep(0.2)
         ser.reset_input_buffer()
         ser.write(b"\x00" * 32)
@@ -166,35 +176,60 @@ def serial_reader() -> None:
         print(f"  \u2713 Connected to {SERIAL_PORT}")
         send_log_class(ser, LOG_CLASS_HEART_BEAT)
 
+        buf = bytearray()
+        last_diag_t = time.time()
+        n_frames = 0
+        n_gps = 0
+        n_hb = 0
+        n_other = 0
         while True:
-            b1 = ser.read(1)
-            if not b1:
-                continue
-            if b1[0] not in (0x62, 0x64):
-                continue
-            b2 = ser.read(1)
-            if not b2:
-                continue
-            if not ((b1[0] == 0x64 and b2[0] == 0x62) or
-                    (b1[0] == 0x62 and b2[0] == 0x64)):
-                continue
+            n = ser.in_waiting
+            if n:
+                buf.extend(ser.read(n))
+            else:
+                time.sleep(0.001)
 
-            id_b = ser.read(1)
-            cls_b = ser.read(1)
-            len_b = ser.read(2)
-            if len(id_b) < 1 or len(cls_b) < 1 or len(len_b) < 2:
-                continue
-            length = int.from_bytes(len_b, "little")
-            if length > 1024:
-                continue
-            payload = ser.read(length)
-            if len(payload) != length:
-                continue
-            _ck = ser.read(2)
+            while True:
+                idx = buf.find(b"db")
+                if idx < 0:
+                    if len(buf) > 1:
+                        del buf[:-1]
+                    break
+                if idx > 0:
+                    del buf[:idx]
+                if len(buf) < HEADER_SIZE:
+                    break
+                length = buf[4] | (buf[5] << 8)
+                if length > 1024:
+                    del buf[:2]
+                    continue
+                frame_size = HEADER_SIZE + length + CHKSUM_SIZE
+                if len(buf) < frame_size:
+                    break
+                msg_id = buf[2]
+                payload = bytes(buf[HEADER_SIZE:HEADER_SIZE + length])
+                del buf[:frame_size]
+                n_frames += 1
 
-            if id_b[0] == SEND_LOG_ID and length == GPS_FRAME_SIZE:
-                vals = struct.unpack(GPS_STRUCT_FMT, payload)
-                data_queue.put(vals)
+                if msg_id == SEND_LOG_ID and length == GPS_FRAME_SIZE:
+                    n_gps += 1
+                    vals = struct.unpack(GPS_STRUCT_FMT, payload)
+                    try:
+                        data_queue.put_nowait(vals)
+                    except queue.Full:
+                        pass
+                elif msg_id == SEND_LOG_ID and length == 4:
+                    n_hb += 1
+                else:
+                    n_other += 1
+
+            now = time.time()
+            if now - last_diag_t >= 2.0:
+                print(f"  [rx] {n_frames:4d} frames in 2s "
+                      f"(gps={n_gps}, hb={n_hb}, other={n_other}, "
+                      f"buf={len(buf)})")
+                n_frames = n_gps = n_hb = n_other = 0
+                last_diag_t = now
     except Exception as exc:
         print(f"  \u2717 Serial error: {exc}")
     finally:
@@ -256,7 +291,7 @@ def main() -> None:
                      color=DIM_TEXT, fontsize=11)
     ax_map.set_xlabel("East (m)")
     ax_map.set_ylabel("North (m)")
-    ax_map.set_aspect("equal", adjustable="datalim")
+    ax_map.set_aspect("equal", adjustable="box")
     ax_map.grid(True, alpha=0.3)
     ax_map.axhline(y=0, color=GRID_COLOR, lw=1)
     ax_map.axvline(x=0, color=GRID_COLOR, lw=1)
@@ -543,7 +578,7 @@ def main() -> None:
     btn_reset.on_clicked(on_reset)
     btn_clear.on_clicked(on_clear)
 
-    _ani = FuncAnimation(fig, update, interval=80, blit=False,
+    _ani = FuncAnimation(fig, update, interval=200, blit=False,
                          cache_frame_data=False)
     plt.show()
 

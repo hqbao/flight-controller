@@ -247,7 +247,9 @@ BAUD_CHOICES = [("9600", 9600), ("38400", 38400), ("115200", 115200),
 EARTH_R_M = 6_378_137.0
 
 # History length for velocity / position trail (samples).
-HISTORY_LEN = 600
+# Kept short so the chart redraw stays cheap and the rolling window is
+# still meaningful at typical NAV-PVT rates (5-10 Hz → 20-40 s of history).
+HISTORY_LEN = 80
 
 
 def latlon_to_local_m(lat_deg: float, lon_deg: float,
@@ -592,6 +594,45 @@ def auto_port() -> str | None:
 # Main UI
 # ============================================================================
 
+def _style_check(chk) -> None:
+    """Make CheckButtons readable on a dark panel.
+
+    matplotlib's default check-mark / frame colors are black, which become
+    invisible on PANEL_COLOR. We recolor:
+      - the per-row frame rectangle  → grey edge
+      - the X cross-hair lines       → green when ticked
+      - newer matplotlib (>=3.7)     → uses Polygon collections via
+        `chk._checks` / `chk._frames` / `chk._crosses`; touch whatever the
+        installed version exposes.
+    """
+    # Old API: CheckButtons.rectangles + CheckButtons.lines (list of (l1,l2)).
+    rects = getattr(chk, "rectangles", None)
+    if rects:
+        for r in rects:
+            r.set_edgecolor(GRID_COLOR)
+            r.set_facecolor(BG_COLOR)
+            r.set_linewidth(1.0)
+    line_pairs = getattr(chk, "lines", None)
+    if line_pairs:
+        for pair in line_pairs:
+            for ln in pair:
+                ln.set_color(ACCENT_GREEN)
+                ln.set_linewidth(2.0)
+    # New API (matplotlib >= 3.7): single Collection for frames + checks.
+    for attr, edge_kw, face_kw in (
+        ("_frames",  GRID_COLOR, BG_COLOR),
+        ("_checks",  ACCENT_GREEN, ACCENT_GREEN),
+    ):
+        coll = getattr(chk, attr, None)
+        if coll is not None:
+            try:
+                coll.set_edgecolor(edge_kw)
+                coll.set_facecolor(face_kw)
+                coll.set_linewidth(1.5)
+            except Exception:
+                pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ZED-F9P configurator + monitor")
     parser.add_argument("port", nargs="?", default=None,
@@ -624,41 +665,44 @@ def main() -> None:
                  fontsize=15, color=TEXT_COLOR, fontweight="bold", y=0.985)
 
     # ---- Layout (manual axes) ------------------------------------------
-    # Left half: live monitor (x: 0.02 .. 0.62)
+    # Left side: live monitor (x: 0.02 .. 0.70) — wider so the velocity
+    # chart has real estate; the right config column has been compressed
+    # to 0.72..0.99 (was 0.64..0.99) since its labels/radio buttons had a
+    # lot of unused horizontal padding.
     ax_banner   = fig.add_axes([0.01, 0.925, 0.98, 0.045])  # MON-VER banner
     # Row A: Fix info | 2D map | Altitude bar
-    ax_fix      = fig.add_axes([0.02, 0.560, 0.15, 0.330])
-    ax_map      = fig.add_axes([0.21, 0.560, 0.32, 0.330])
-    ax_alt      = fig.add_axes([0.56, 0.560, 0.05, 0.330])
-    # Row B: Velocity line chart (wide, no xlabel needed)
-    ax_vel      = fig.add_axes([0.02, 0.390, 0.59, 0.115])
+    ax_fix      = fig.add_axes([0.02, 0.605, 0.15, 0.290])
+    ax_map      = fig.add_axes([0.21, 0.605, 0.37, 0.290])
+    ax_alt      = fig.add_axes([0.61, 0.605, 0.07, 0.290])
+    # Row B: Velocity line chart (full left-side width, taller)
+    ax_vel      = fig.add_axes([0.02, 0.330, 0.68, 0.235])
     # Row C: HW status | Sat C/N0 bars
-    ax_hw       = fig.add_axes([0.02, 0.110, 0.28, 0.220])
-    ax_sats     = fig.add_axes([0.33, 0.110, 0.28, 0.220])
+    ax_hw       = fig.add_axes([0.02, 0.090, 0.32, 0.205])
+    ax_sats     = fig.add_axes([0.37, 0.090, 0.33, 0.205])
 
-    # Right half: configuration form (x: 0.64 .. 0.99)
-    ax_conn_lbl = fig.add_axes([0.64, 0.860, 0.35, 0.040])
-    ax_port     = fig.add_axes([0.73, 0.812, 0.20, 0.035])
-    ax_baud     = fig.add_axes([0.73, 0.762, 0.10, 0.035])
-    ax_btn_conn = fig.add_axes([0.85, 0.762, 0.07, 0.085])
-    ax_btn_disc = fig.add_axes([0.92, 0.762, 0.07, 0.085])
+    # Right side: configuration form (x: 0.72 .. 0.99, width 0.27)
+    ax_conn_lbl = fig.add_axes([0.72, 0.860, 0.27, 0.040])
+    ax_port     = fig.add_axes([0.79, 0.812, 0.18, 0.035])
+    ax_baud     = fig.add_axes([0.79, 0.762, 0.10, 0.035])
+    ax_btn_conn = fig.add_axes([0.880, 0.762, 0.055, 0.085])
+    ax_btn_disc = fig.add_axes([0.935, 0.762, 0.055, 0.085])
 
-    ax_rate     = fig.add_axes([0.64, 0.580, 0.17, 0.150])
-    ax_uartbaud = fig.add_axes([0.82, 0.580, 0.17, 0.150])
+    ax_rate     = fig.add_axes([0.72, 0.580, 0.13, 0.150])
+    ax_uartbaud = fig.add_axes([0.86, 0.580, 0.13, 0.150])
 
-    ax_dyn      = fig.add_axes([0.64, 0.345, 0.17, 0.205])
-    ax_gnss     = fig.add_axes([0.82, 0.345, 0.17, 0.205])
+    ax_dyn      = fig.add_axes([0.72, 0.345, 0.13, 0.205])
+    ax_gnss     = fig.add_axes([0.86, 0.345, 0.13, 0.205])
 
-    ax_pvtports = fig.add_axes([0.64, 0.205, 0.17, 0.110])
-    ax_clean    = fig.add_axes([0.82, 0.205, 0.17, 0.110])
+    ax_pvtports = fig.add_axes([0.72, 0.205, 0.13, 0.110])
+    ax_clean    = fig.add_axes([0.86, 0.205, 0.13, 0.110])
 
     # Action buttons
-    ax_btn_apply  = fig.add_axes([0.64, 0.143, 0.10, 0.045])
-    ax_btn_save   = fig.add_axes([0.75, 0.143, 0.10, 0.045])
-    ax_btn_ver    = fig.add_axes([0.86, 0.143, 0.13, 0.045])
-    ax_btn_hot    = fig.add_axes([0.64, 0.090, 0.10, 0.045])
-    ax_btn_cold   = fig.add_axes([0.75, 0.090, 0.10, 0.045])
-    ax_btn_fact   = fig.add_axes([0.86, 0.090, 0.13, 0.045])
+    ax_btn_apply  = fig.add_axes([0.72, 0.143, 0.077, 0.045])
+    ax_btn_save   = fig.add_axes([0.805, 0.143, 0.077, 0.045])
+    ax_btn_ver    = fig.add_axes([0.89, 0.143, 0.10, 0.045])
+    ax_btn_hot    = fig.add_axes([0.72, 0.090, 0.077, 0.045])
+    ax_btn_cold   = fig.add_axes([0.805, 0.090, 0.077, 0.045])
+    ax_btn_fact   = fig.add_axes([0.89, 0.090, 0.10, 0.045])
 
     # Status bar (bottom)
     ax_status   = fig.add_axes([0.02, 0.020, 0.97, 0.050])
@@ -690,7 +734,10 @@ def main() -> None:
                      color=DIM_TEXT, fontsize=11)
     ax_map.set_xlabel("East (m)", color=DIM_TEXT, fontsize=9)
     ax_map.set_ylabel("North (m)", color=DIM_TEXT, fontsize=9)
-    ax_map.set_aspect("equal", adjustable="datalim")
+    # adjustable="box" so matplotlib resizes the axes rectangle (not the
+    # data limits) to keep aspect=1. refresh() sets a perfectly square
+    # window every frame so no axis area is wasted.
+    ax_map.set_aspect("equal", adjustable="box")
     ax_map.grid(True, alpha=0.3)
     ax_map.axhline(y=0, color=GRID_COLOR, lw=1)
     ax_map.axvline(x=0, color=GRID_COLOR, lw=1)
@@ -734,13 +781,14 @@ def main() -> None:
     ax_vel.set_facecolor(PANEL_COLOR)
     ax_vel.set_title("Velocity (m/s)", color=DIM_TEXT, fontsize=11)
     ax_vel.set_xlim(0, HISTORY_LEN)
-    ax_vel.set_ylim(-3, 3)
+    ax_vel.set_ylim(-0.5, 0.5)   # tight default; refresh() autoscales each frame
     ax_vel.grid(True, alpha=0.3)
     ax_vel.axhline(y=0, color=GRID_COLOR, lw=1)
     line_vN, = ax_vel.plot([], [], color=ACCENT_RED,    lw=1.4, label="vN")
     line_vE, = ax_vel.plot([], [], color=ACCENT_GREEN,  lw=1.4, label="vE")
     line_vD, = ax_vel.plot([], [], color=ACCENT_BLUE,   lw=1.4, label="vD")
-    line_gs, = ax_vel.plot([], [], color=ACCENT_YELLOW, lw=1.4, label="gnd")
+    line_gs, = ax_vel.plot([], [], color=ACCENT_YELLOW, lw=1.0, alpha=0.35,
+                           label="gnd")
     ax_vel.legend(loc="upper right", fontsize=8, facecolor=PANEL_COLOR,
                   edgecolor=GRID_COLOR, ncol=4)
     ax_vel.tick_params(axis="x", labelsize=7)
@@ -829,6 +877,7 @@ def main() -> None:
                             [enabled for _, _, enabled in GNSS_LIST])
     for lbl in gnss_chk.labels:
         lbl.set_color(TEXT_COLOR); lbl.set_fontsize(9)
+    _style_check(gnss_chk)
 
     # ---- NAV-PVT output ports ------------------------------------------
     ax_pvtports.set_facecolor(PANEL_COLOR)
@@ -839,6 +888,7 @@ def main() -> None:
                            [True, True, True])
     for lbl in pvt_chk.labels:
         lbl.set_color(TEXT_COLOR); lbl.set_fontsize(9)
+    _style_check(pvt_chk)
 
     # ---- Drone-clean toggle --------------------------------------------
     ax_clean.set_facecolor(PANEL_COLOR)
@@ -850,6 +900,7 @@ def main() -> None:
                              [True])
     for lbl in clean_chk.labels:
         lbl.set_color(TEXT_COLOR); lbl.set_fontsize(8)
+    _style_check(clean_chk)
 
     # ---- Action buttons -------------------------------------------------
     btn_apply = Button(ax_btn_apply, "Apply Config",
@@ -1200,10 +1251,18 @@ def main() -> None:
             line_vE.set_data(x_axis, hist_vE)
             line_vD.set_data(x_axis, hist_vD)
             line_gs.set_data(x_axis, hist_gs)
-            v_max = max(2.0,
-                        float(np.max(np.abs(np.stack([hist_vN, hist_vE,
-                                                      hist_vD, hist_gs])))))
-            ax_vel.set_ylim(-v_max * 1.2, v_max * 1.2)
+            # Auto-scale to actual data range. Only consider valid samples
+            # (the head of each buffer is zero-padding before n_valid hits
+            # HISTORY_LEN, which would clamp the floor at 0 and hide tight
+            # scaling). Use a small minimum span so a perfectly stationary
+            # receiver still gets a visible y-axis instead of collapsing.
+            vw = np.stack([hist_vN[-n_valid:], hist_vE[-n_valid:],
+                           hist_vD[-n_valid:], hist_gs[-n_valid:]])
+            v_lo = float(np.min(vw))
+            v_hi = float(np.max(vw))
+            mid  = 0.5 * (v_lo + v_hi)
+            half = max(0.10, 0.55 * (v_hi - v_lo))   # ≥ ±0.10 m/s window
+            ax_vel.set_ylim(mid - half, mid + half)
 
         # Hardware panel
         if have_hw:
