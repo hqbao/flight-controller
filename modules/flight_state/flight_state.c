@@ -90,10 +90,10 @@ static void on_state_update(uint8_t *data, size_t size) {
 	}
 
 	if (g_state == ARMED) {
-		char stick1_most_left 	= g_rc_att_ctl.yaw == STICK_MIN;
-		char stich1_most_bottom = g_rc_att_ctl.alt == STICK_MIN;
-		char stick2_most_right 	= g_rc_att_ctl.roll == STICK_MAX;
-		char stich2_most_bottom = g_rc_att_ctl.pitch == STICK_MIN;
+		char stick1_most_left 	= g_rc_att_ctl.yaw <= STICK_MIN;
+		char stich1_most_bottom = g_rc_att_ctl.alt <= STICK_MIN;
+		char stick2_most_right 	= g_rc_att_ctl.roll >= STICK_MAX;
+		char stich2_most_bottom = g_rc_att_ctl.pitch <= STICK_MIN;
 		if (stick1_most_left && stich1_most_bottom &&
 				stick2_most_right && stich2_most_bottom) {
 			g_state = READY;
