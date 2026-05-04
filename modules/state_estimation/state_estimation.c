@@ -116,14 +116,22 @@
  * sanity gate rejects DPS310 read glitches (single-frame jumps of many
  * tens of metres). R_baro is configured inside fusion6 (cfg.R_baro).
  *
- * Ground-effect gate: rotor downwash compresses static pressure under the
- * airframe near the ground, biasing the baro low (apparent altitude high)
- * by 0.5..2 m depending on throttle and prop diameter. When the downward
- * rangefinder reports < 1 m we trust the lidar and skip the baro update
- * entirely. The gate is freshness-protected so a stale cache from before
- * takeoff doesn't lock baro out forever after the lidar saturates. */
+/* Lidar / baro hand-off:
+ * Rotor downwash compresses static pressure under the airframe near the
+ * ground, biasing the baro low (apparent altitude high) by 0.5..2 m
+ * depending on throttle and prop diameter. When the downward rangefinder
+ * reports a valid AGL within (LIDAR_REGIME_MIN_M, LIDAR_REGIME_MAX_M] we
+ * fuse the lidar directly into p.z (fusion6_update_lidar_z) and skip the
+ * baro update for the duration of the lidar's freshness window. Outside
+ * the regime, baro is fused normally.
+ *
+ * LIDAR_REGIME_MAX_M = 1.0 m matches the original ground-effect gate;
+ * raise it when a longer-range lidar (e.g. TFmini-S at 12 m) is fitted.
+ * LIDAR_REGIME_MIN_M = 0.05 m guards against the VL53L1X dead-zone (and
+ * the producer's bogus 1 mm "in dead zone" sentinel). */
 #define BARO_SANITY_GATE_M       50.0
-#define BARO_GROUND_EFFECT_M     1.0
+#define LIDAR_REGIME_MIN_M       0.05
+#define LIDAR_REGIME_MAX_M       1.0
 #define BARO_RANGE_FRESH_US      500000ULL   /* 0.5 s */
 
 /* --- GPS gates ---
@@ -174,6 +182,19 @@ static double   g_last_optflow_flow_raw[2]   = {NAN, NAN};
 /* Latest baro snapshot (NED metres on p.z, after sign flip + unit convert). */
 static double   g_last_baro_z_ned_m    = 0.0;
 static int      g_have_baro            = 0;    /* set on first accepted frame */
+
+/* Lidar (downward range-finder) fusion state.
+ * Lidar measures slant AGL (m) along the body z-axis. We fuse as p.z by
+ * pinning a one-shot "lidar origin" (NED p.z value at first valid
+ * sample): origin_z = p.z + AGL_tilt. Subsequent samples become
+ * z_ned_meas = origin_z - AGL_tilt. Origin is recaptured if the lidar
+ * has been gated out for longer than LIDAR_ORIGIN_GAP_US so that a
+ * takeoff/land at a different ground height doesn't carry a stale
+ * offset. */
+static int      g_lidar_origin_set     = 0;
+static double   g_lidar_origin_z_ned   = 0.0;
+static uint64_t g_last_lidar_fuse_us   = 0;
+#define LIDAR_ORIGIN_GAP_US      2000000ULL   /* 2 s */
 
 /* GPS local NED origin (lazy-initialised on first usable fix). */
 static int      g_gps_origin_set       = 0;
@@ -402,6 +423,35 @@ static void on_optflow(uint8_t *data, size_t size) {
 	 * R_vel_xy_body absorb the extra noise. */
 	double range_m = lidar_mm_to_m(z_mm);
 
+	/* Lidar fusion (vertical p.z) — runs independently of clarity / flow,
+	 * since clarity gates the optical-flow velocity update only and has
+	 * nothing to do with the time-of-flight range measurement. We fuse
+	 * any AGL inside (LIDAR_REGIME_MIN_M, LIDAR_REGIME_MAX_M]; outside
+	 * that band the baro path owns p.z. Tilt-compensate by projecting
+	 * the slant range onto the local vertical with cos(roll)*cos(pitch)
+	 * — adequate for the ±15° envelope where the lidar regime is
+	 * useful in the first place. */
+	if (range_m > LIDAR_REGIME_MIN_M && range_m <= LIDAR_REGIME_MAX_M) {
+		vector3d_t eul_l;
+		quat_to_euler(&eul_l, &g_f.q);
+		double tilt = cos(eul_l.x) * cos(eul_l.y);
+		if (tilt < 0.5) tilt = 0.5;   /* don't divide-by-near-zero on extreme tilt */
+		double agl_m = range_m * tilt;
+
+		uint64_t now_us = platform_time_us();
+		if (!g_lidar_origin_set ||
+		    (g_last_lidar_fuse_us != 0 &&
+		     (now_us - g_last_lidar_fuse_us) > LIDAR_ORIGIN_GAP_US)) {
+			/* (Re)pin the lidar origin so the first sample after a gap
+			 * doesn't yank p.z by a meter. */
+			g_lidar_origin_z_ned = g_f.p.z + agl_m;
+			g_lidar_origin_set = 1;
+		}
+		double z_ned_meas = g_lidar_origin_z_ned - agl_m;
+		fusion6_update_lidar_z(&g_f, z_ned_meas);
+		g_last_lidar_fuse_us = now_us;
+	}
+
 	if (msg.clarity < OPTFLOW_CLARITY_MIN) return;   /* below clarity floor — skip */
 
 	double flow_x = optflow_to_rad_per_s(msg.dx, msg.dt_us, /*upward=*/0);
@@ -463,12 +513,13 @@ static void on_baro(uint8_t *data, size_t size) {
 
 	if (fabs(z_ned_m - g_f.p.z) > BARO_SANITY_GATE_M) return;
 
-	/* Ground-effect gate: skip if a recent downward range reading shows we
-	 * are within 1 m of the ground. */
-	if (g_last_optflow_range_us != 0 &&
-	    (platform_time_us() - g_last_optflow_range_us) < BARO_RANGE_FRESH_US &&
-	    g_last_optflow_range_m > 0.0 &&
-	    g_last_optflow_range_m < BARO_GROUND_EFFECT_M) {
+	/* Lidar / baro hand-off: when the lidar has fused recently, it owns
+	 * p.z and we skip baro to avoid the ground-effect bias (rotor
+	 * downwash compresses static pressure under the airframe). The
+	 * freshness check uses BARO_RANGE_FRESH_US so a stale lidar cache
+	 * cannot lock baro out forever after the lidar saturates. */
+	if (g_last_lidar_fuse_us != 0 &&
+	    (platform_time_us() - g_last_lidar_fuse_us) < BARO_RANGE_FRESH_US) {
 		return;
 	}
 
@@ -576,9 +627,15 @@ static void on_gps_velocity(uint8_t *data, size_t size) {
  *   float[3..5] = gravity_pred_body  (from fused quaternion only)
  *   float[6..8] = accel_linear_body  (= accel_meas - gravity_pred_body)
  * ============================================================ */
+static void eskf_pager_reset_all(void);
+
 static void on_notify_log_class(uint8_t *data, size_t size) {
 	if (size < 1) return;
 	g_log_class = data[0];
+	/* Reset all ESKF pagers so a fresh class starts at row 0 with a new
+	 * snapshot — avoids the viewer reassembling rows from a stale prior
+	 * snapshot whose seq it would otherwise treat as new. */
+	eskf_pager_reset_all();
 }
 
 static void on_attitude_log_50hz(uint8_t *data, size_t size) {
@@ -743,10 +800,12 @@ static void on_gps_fusion_log_5hz(uint8_t *data, size_t size) {
 /* ============================================================
  * ESKF matrix introspection log streams (LOG_CLASS_ESKF_{P,F,K,H})
  *
- * Streams a single matrix at a time (the active LOG_CLASS) row-by-row,
- * one row per dblink frame, full matrix per scheduler tick (1 Hz). The
- * Python side reassembles rows into a (rows × cols) matrix per snapshot
- * using the seq counter.
+ * Streams a single matrix at a time (the active LOG_CLASS) **paged**
+ * one row per scheduler tick at 25 Hz. A 15×15 matrix completes in
+ * 15·40 ms = 600 ms (~1.7 snapshot/s); K/H complete faster (m≤3 rows
+ * for K, 1 row for H). Pacing is required because the dblink TX queue
+ * is only 8 slots deep — bursting all 15 rows at 1 Hz overran it and
+ * the Python side never saw a full snapshot.
  *
  * Per-row payload layout (12 B header + 4·cols B data, max 12+60 = 72 B):
  *   uint8  matrix_id       0=P, 1=F, 2=K, 3=H
@@ -756,74 +815,94 @@ static void on_gps_fusion_log_5hz(uint8_t *data, size_t size) {
  *   uint8  update_type     fusion6_update_id_t (K/H only); 0xFF for P/F
  *   uint8  pad             reserved (0)
  *   uint16 seq_le          monotonic per-class snapshot id
- *   uint32 t_ms_le         platform_time_ms() at burst start
+ *   uint32 t_ms_le         platform_time_ms() at snapshot start
  *   float32 row[cols]      row data, little-endian, row-major
  *
  * Read-only: pulls fusion6_get_matrix() snapshots; does not mutate filter
- * state. Cost is one matrix_copy per emitted matrix (≤ 1 KB at 1 Hz).
+ * state. A fresh matrix_copy is taken on row 0 of each snapshot so the
+ * paged rows of one snapshot are mutually consistent even if the filter
+ * mutates between row emissions.
  * ============================================================ */
+typedef struct {
+	matrix_t snap;
+	uint16_t seq;
+	uint32_t t_ms;
+	uint8_t  rows;
+	uint8_t  cols;
+	uint8_t  row_idx;       /* next row to emit; 0 ⇒ take fresh snapshot */
+	uint8_t  update_type;
+} eskf_pager_t;
+
 static uint16_t g_eskf_seq[4] = { 0, 0, 0, 0 };
+static eskf_pager_t g_eskf_pager[4];
 
-static void publish_eskf_matrix_rows(fusion6_matrix_id_t which, uint8_t class_idx) {
-	matrix_t M;
-	uint8_t update_type = FUSION6_UPDATE_NONE;
-	if (!fusion6_get_matrix(&g_f, which, &M, &update_type)) return;
-	if (M.rows <= 0 || M.cols <= 0) return;
-	if (M.rows > 15 || M.cols > 15) return;  /* defensive */
-
-	uint16_t seq = ++g_eskf_seq[class_idx];
-	uint32_t t_ms = platform_time_ms();
-
-	/* Worst-case payload size: 12 + 4*15 = 72 B */
-	uint8_t buf[12 + 4 * 15];
-	buf[0] = (uint8_t)which;
-	buf[1] = (uint8_t)M.rows;
-	buf[2] = (uint8_t)M.cols;
-	/* buf[3] = row_idx (filled per row) */
-	buf[4] = update_type;
-	buf[5] = 0;
-	memcpy(&buf[6], &seq,  sizeof(uint16_t));
-	memcpy(&buf[8], &t_ms, sizeof(uint32_t));
-
-	const size_t hdr = 12;
-	const size_t row_bytes = (size_t)M.cols * sizeof(float);
-
-	for (int r = 0; r < M.rows; r++) {
-		buf[3] = (uint8_t)r;
-		float *row = (float *)&buf[hdr];
-		for (int c = 0; c < M.cols; c++) {
-			row[c] = (float)M.data[r][c];
-		}
-		publish(SEND_LOG, buf, hdr + row_bytes);
-	}
+static void eskf_pager_reset_all(void) {
+	for (int i = 0; i < 4; i++) g_eskf_pager[i].row_idx = 0;
 }
 
-static void on_eskf_P_log_1hz(uint8_t *data, size_t size) {
+static void eskf_pager_tick(fusion6_matrix_id_t which, uint8_t class_idx) {
+	eskf_pager_t *p = &g_eskf_pager[class_idx];
+
+	if (p->row_idx == 0) {
+		/* Start a new snapshot. */
+		uint8_t ut = FUSION6_UPDATE_NONE;
+		if (!fusion6_get_matrix(&g_f, which, &p->snap, &ut)) return;
+		if (p->snap.rows <= 0 || p->snap.cols <= 0) return;
+		if (p->snap.rows > 15 || p->snap.cols > 15) return;
+		p->rows = (uint8_t)p->snap.rows;
+		p->cols = (uint8_t)p->snap.cols;
+		p->update_type = ut;
+		p->seq  = ++g_eskf_seq[class_idx];
+		p->t_ms = platform_time_ms();
+	}
+
+	/* Emit one row. */
+	uint8_t buf[12 + 4 * 15];
+	buf[0] = (uint8_t)which;
+	buf[1] = p->rows;
+	buf[2] = p->cols;
+	buf[3] = p->row_idx;
+	buf[4] = p->update_type;
+	buf[5] = 0;
+	memcpy(&buf[6], &p->seq,  sizeof(uint16_t));
+	memcpy(&buf[8], &p->t_ms, sizeof(uint32_t));
+
+	float *row = (float *)&buf[12];
+	for (int c = 0; c < p->cols; c++) {
+		row[c] = (float)p->snap.data[p->row_idx][c];
+	}
+	publish(SEND_LOG, buf, 12 + (size_t)p->cols * sizeof(float));
+
+	p->row_idx++;
+	if (p->row_idx >= p->rows) p->row_idx = 0;
+}
+
+static void on_eskf_P_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 	if (g_log_class != LOG_CLASS_ESKF_P) return;
 	if (!g_init_started) return;
-	publish_eskf_matrix_rows(FUSION6_MATRIX_P, 0);
+	eskf_pager_tick(FUSION6_MATRIX_P, 0);
 }
 
-static void on_eskf_F_log_1hz(uint8_t *data, size_t size) {
+static void on_eskf_F_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 	if (g_log_class != LOG_CLASS_ESKF_F) return;
 	if (!g_init_started) return;
-	publish_eskf_matrix_rows(FUSION6_MATRIX_F, 1);
+	eskf_pager_tick(FUSION6_MATRIX_F, 1);
 }
 
-static void on_eskf_K_log_1hz(uint8_t *data, size_t size) {
+static void on_eskf_K_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 	if (g_log_class != LOG_CLASS_ESKF_K) return;
 	if (!g_init_started) return;
-	publish_eskf_matrix_rows(FUSION6_MATRIX_K, 2);
+	eskf_pager_tick(FUSION6_MATRIX_K, 2);
 }
 
-static void on_eskf_H_log_1hz(uint8_t *data, size_t size) {
+static void on_eskf_H_log_25hz(uint8_t *data, size_t size) {
 	(void)data; (void)size;
 	if (g_log_class != LOG_CLASS_ESKF_H) return;
 	if (!g_init_started) return;
-	publish_eskf_matrix_rows(FUSION6_MATRIX_H, 3);
+	eskf_pager_tick(FUSION6_MATRIX_H, 3);
 }
 
 /* ============================================================
@@ -858,8 +937,8 @@ void state_estimation_setup(void) {
 	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_optflow_log_25hz);
 	subscribe(SCHEDULER_5HZ,  on_gps_fusion_log_5hz);
-	subscribe(SCHEDULER_1HZ,  on_eskf_P_log_1hz);
-	subscribe(SCHEDULER_1HZ,  on_eskf_F_log_1hz);
-	subscribe(SCHEDULER_1HZ,  on_eskf_K_log_1hz);
-	subscribe(SCHEDULER_1HZ,  on_eskf_H_log_1hz);
+	subscribe(SCHEDULER_25HZ, on_eskf_P_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_eskf_F_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_eskf_K_log_25hz);
+	subscribe(SCHEDULER_25HZ, on_eskf_H_log_25hz);
 }

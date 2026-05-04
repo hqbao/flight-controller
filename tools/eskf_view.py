@@ -138,13 +138,18 @@ g_rx_snapshot_count = 0
 
 # Reassembled snapshots (one per matrix label). Each entry:
 #   { "rows": int, "cols": int, "update_type": int, "seq": int,
-#     "t_ms": int, "data": np.ndarray (rows, cols) }
+#     "t_ms": int, "row_idx": int, "data": np.ndarray (rows, cols) }
+# Buffers are persistent: rows arrive one-per-frame at ~25 Hz and overwrite
+# the previous snapshot in place. A new snapshot is signalled by row_idx=0
+# (not by the seq counter), so partial snapshots render immediately and a
+# dropped row leaves its previous value visible until the next pass.
 g_latest = {k: None for k in MATRIX_NAMES.values()}
 g_latest_lock = threading.Lock()
 
-# Per-matrix in-progress assembly buffer (keyed by seq).
+# Per-matrix in-progress assembly buffer (keyed by name). Persistent across
+# snapshots — see g_latest comment above.
 _assembly = {k: {"seq": None, "rows": 0, "cols": 0, "update_type": 0xFF,
-                 "t_ms": 0, "data": None, "filled": None} for k in MATRIX_NAMES.values()}
+                 "t_ms": 0, "data": None} for k in MATRIX_NAMES.values()}
 
 
 def _send_db(ser, msg_id, payload_byte):
@@ -170,8 +175,10 @@ def send_chip_id(ser):
 
 
 def _parse_eskf_row(payload):
-    """Decode one row-frame; insert into the per-matrix assembly buffer.
-    When the row completes a snapshot, copy it into g_latest."""
+    """Decode one row-frame; update the persistent per-matrix buffer and
+    push it to g_latest immediately so the heatmap reflects every arrived
+    row — partial snapshots still render, and a dropped row just leaves
+    the previous value in place until the next pass overwrites it."""
     global g_rx_snapshot_count
     if len(payload) < 12:
         return
@@ -189,31 +196,32 @@ def _parse_eskf_row(payload):
     row_vals = struct.unpack_from(f"<{cols}f", payload, 12)
 
     a = _assembly[name]
-    if a["seq"] != seq or a["rows"] != rows or a["cols"] != cols:
-        a["seq"] = seq
+    # Re-allocate when the matrix shape changes (e.g. K toggling between
+    # m=1, 2, 3 cols as the active update type changes).
+    if a["data"] is None or a["rows"] != rows or a["cols"] != cols:
         a["rows"] = rows
         a["cols"] = cols
-        a["update_type"] = update_type
-        a["t_ms"] = t_ms
         a["data"] = np.zeros((rows, cols), dtype=np.float32)
-        a["filled"] = np.zeros(rows, dtype=bool)
 
     a["data"][row_idx, :] = row_vals
-    a["filled"][row_idx] = True
+    a["seq"] = seq
+    a["t_ms"] = t_ms
+    a["update_type"] = update_type
 
-    if a["filled"].all():
-        snap = {
-            "rows": rows,
-            "cols": cols,
-            "update_type": update_type,
-            "seq": seq,
-            "t_ms": t_ms,
-            "data": a["data"].copy(),
-        }
-        with g_latest_lock:
-            g_latest[name] = snap
+    snap = {
+        "rows": rows,
+        "cols": cols,
+        "update_type": update_type,
+        "seq": seq,
+        "t_ms": t_ms,
+        "row_idx": row_idx,
+        "data": a["data"].copy(),
+    }
+    with g_latest_lock:
+        g_latest[name] = snap
+    # Count a "snapshot" each time the FC starts a new pass (row 0).
+    if row_idx == 0:
         g_rx_snapshot_count += 1
-        a["seq"] = None  # ready for next snapshot
 
 
 def serial_reader():
@@ -466,9 +474,11 @@ def main():
                                  f"({'streaming' if g_logging_active else 'stopped'})")
             return ()
 
-        # New snapshot? Update the heatmap.
-        if last_seq[active] != snap["seq"]:
-            last_seq[active] = snap["seq"]
+        # New row arrived? Update the heatmap. Key on (seq, row_idx) so
+        # every paged row triggers a redraw, not just snapshot completion.
+        snap_id = (snap["seq"], snap.get("row_idx", -1))
+        if last_seq[active] != snap_id:
+            last_seq[active] = snap_id
             data = snap["data"]
             rows, cols = data.shape
 

@@ -39,6 +39,7 @@
  * BARO_OK today; the rest are produced by the FC glue when it has the
  * sensor wired. */
 #define FUSION6_HF_BARO_OK       (1u << 3)
+#define FUSION6_HF_LIDAR_OK      (1u << 4)
 #define FUSION6_HF_GPS_OK        (1u << 7)
 
 /* Diagnostic accessor IDs — see fusion6_get_matrix(). */
@@ -60,6 +61,7 @@ typedef enum {
     FUSION6_UPDATE_BARO        = 3,
     FUSION6_UPDATE_GPS_POS     = 4,
     FUSION6_UPDATE_GPS_VEL     = 5,
+    FUSION6_UPDATE_LIDAR       = 6,
 } fusion6_update_id_t;
 
 typedef struct {
@@ -75,6 +77,11 @@ typedef struct {
     double R_vel_xy_body;     /* (m/s)² (horizontal body-velocity variance,
                                  applied to both axes — diag R_meas) */
     double R_baro;            /* m² (barometric altitude variance, NED p.z) */
+    double R_lidar;           /* m² (lidar AGL variance, NED p.z; expected
+                                 to be much tighter than R_baro — used as
+                                 the primary vertical sensor near the
+                                 ground, gated by the FC's lidar-regime
+                                 policy) */
     double R_gps_pos_ne;      /* m² per horizontal axis (GPS pos N, E)   */
     double R_gps_pos_d;       /* m² (GPS pos D — vertical, typically larger) */
     double R_gps_vel_ne;      /* (m/s)² per horizontal axis (GPS vel N, E) */
@@ -179,6 +186,14 @@ void fusion6_update_velocity_xy_body(fusion6_t *f,
  *  Uses cfg.R_baro. Skipped if INIT_DONE not set or innovation-cov is
  *  non-positive. Sets FUSION6_HF_BARO_OK on success. */
 void fusion6_update_baro_z(fusion6_t *f, double z_ned_m);
+
+/** Lidar (downward range-finder) altitude update. 1-D scalar measurement on
+ *  p.z (NED, +Down). Caller must convert sensor reading to NED p.z metres
+ *  before calling — typically `z_ned = lidar_origin_z - tilt_compensated_AGL`,
+ *  where `lidar_origin_z` was captured at the first valid lidar sample as
+ *  `f->p.z + AGL`. Uses cfg.R_lidar. Skipped if INIT_DONE not set or
+ *  innovation-cov is non-positive. Sets FUSION6_HF_LIDAR_OK on success. */
+void fusion6_update_lidar_z(fusion6_t *f, double z_ned_m);
 
 /** GPS 3-D position update in NED metres (local origin, +Z=Down).
  *  Decomposed as three independent scalar updates on δp[0..2] using
