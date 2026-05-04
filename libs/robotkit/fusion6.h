@@ -41,6 +41,27 @@
 #define FUSION6_HF_BARO_OK       (1u << 3)
 #define FUSION6_HF_GPS_OK        (1u << 7)
 
+/* Diagnostic accessor IDs — see fusion6_get_matrix(). */
+typedef enum {
+    FUSION6_MATRIX_P = 0,   /* 15×15 covariance (always valid post-init)   */
+    FUSION6_MATRIX_F = 1,   /* 15×15 last predict-step error-state Jacobian */
+    FUSION6_MATRIX_K = 2,   /* 15×m   last update Kalman gain               */
+    FUSION6_MATRIX_H = 3,   /* m×15   last update measurement Jacobian      */
+} fusion6_matrix_id_t;
+
+/* Update-type tags, attached to the cached K / H so the diagnostic viewer
+ * can label which sensor produced the last update. Values are stable wire
+ * IDs — do not renumber. */
+typedef enum {
+    FUSION6_UPDATE_NONE        = 0xFF,
+    FUSION6_UPDATE_ACCEL       = 0,
+    FUSION6_UPDATE_MAG         = 1,
+    FUSION6_UPDATE_VEL_XY_BODY = 2,
+    FUSION6_UPDATE_BARO        = 3,
+    FUSION6_UPDATE_GPS_POS     = 4,
+    FUSION6_UPDATE_GPS_VEL     = 5,
+} fusion6_update_id_t;
+
 typedef struct {
     /* Process noise PSDs */
     double sigma_accel;       /* m/s² /√Hz */
@@ -111,6 +132,18 @@ typedef struct {
     /* Status */
     uint16_t health_flags;
 
+    /* Diagnostic caches — populated by predict / update_* for read-back via
+     * fusion6_get_matrix(). They do not feed back into the filter math; the
+     * cost is one matrix_copy per step. F_last is 15×15, K_last is 15×m_last,
+     * H_last is m_last×15. last_update_type / last_m_dim describe K & H.
+     * For sequential scalar updates (baro, gps_pos, gps_vel) only the last
+     * scalar's K/H of the burst is retained. */
+    matrix_t F_last;
+    matrix_t K_last;
+    matrix_t H_last;
+    uint8_t  last_update_type;   /* fusion6_update_id_t; FUSION6_UPDATE_NONE on init */
+    uint8_t  last_m_dim;         /* m for K/H (1..3); 0 on init */
+
     fusion6_config_t cfg;
 } fusion6_t;
 
@@ -163,5 +196,15 @@ void fusion6_update_pos_ned(fusion6_t *f, const double pos_ned_m[3]);
 void fusion6_update_vel_ned(fusion6_t *f, const double vel_ned_mps[3]);
 
 void fusion6_get_state(const fusion6_t *f, fusion6_state_t *out);
+
+/** Diagnostic accessor — copies one of the cached internal matrices into
+ *  *out (sets out->rows / out->cols accordingly). Returns 1 on success, 0
+ *  if the requested matrix has not been populated yet (e.g. K/H before any
+ *  update has run, F before any predict). For K/H, *update_type_out (when
+ *  non-NULL) is set to the fusion6_update_id_t of the last-cached update;
+ *  for P/F it is set to FUSION6_UPDATE_NONE. Read-only — no filter state
+ *  is mutated. */
+int fusion6_get_matrix(const fusion6_t *f, fusion6_matrix_id_t which,
+                       matrix_t *out, uint8_t *update_type_out);
 
 #endif /* FUSION6_H */

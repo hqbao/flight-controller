@@ -50,6 +50,10 @@ LOG_CLASS_FFT_SPECTRUM_X    = 0x18
 LOG_CLASS_FFT_SPECTRUM_Y    = 0x19
 LOG_CLASS_FFT_SPECTRUM_Z    = 0x1A
 LOG_CLASS_RC_RECEIVER       = 0x1B
+LOG_CLASS_ESKF_P            = 0x24
+LOG_CLASS_ESKF_F            = 0x25
+LOG_CLASS_ESKF_K            = 0x26
+LOG_CLASS_ESKF_H            = 0x27
 
 CHIP_ID_SIZE   = 8
 HEARTBEAT_SIZE = 4
@@ -74,6 +78,12 @@ LOG_CLASS_TESTS = [
     (LOG_CLASS_FFT_SPECTRUM_DUAL_Y, "FFT Dual Y",     231, 5.0),
     (LOG_CLASS_FFT_SPECTRUM_DUAL_Z, "FFT Dual Z",     231, 5.0),
     (LOG_CLASS_STORAGE,          "Storage",          None, 5.0),  # 4 pages of 104 bytes
+    # ESKF matrix introspection — paged (1 row/frame), full matrix at 1 Hz.
+    # Per-frame size is 12 B header + 4·cols B (P/F = 72, K/H variable).
+    (LOG_CLASS_ESKF_P,           "ESKF P",           72,   3.0),
+    (LOG_CLASS_ESKF_F,           "ESKF F",           72,   3.0),
+    (LOG_CLASS_ESKF_K,           "ESKF K",           None, 3.0),  # cols = m_dim of last update
+    (LOG_CLASS_ESKF_H,           "ESKF H",           72,   3.0),
 ]
 
 

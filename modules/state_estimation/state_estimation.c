@@ -65,6 +65,7 @@
 #include <fusion6.h>
 #include <vector3d.h>
 #include <quat.h>
+#include <matrix.h>
 #include <math.h>
 #include <string.h>
 
@@ -740,6 +741,92 @@ static void on_gps_fusion_log_5hz(uint8_t *data, size_t size) {
 }
 
 /* ============================================================
+ * ESKF matrix introspection log streams (LOG_CLASS_ESKF_{P,F,K,H})
+ *
+ * Streams a single matrix at a time (the active LOG_CLASS) row-by-row,
+ * one row per dblink frame, full matrix per scheduler tick (1 Hz). The
+ * Python side reassembles rows into a (rows × cols) matrix per snapshot
+ * using the seq counter.
+ *
+ * Per-row payload layout (12 B header + 4·cols B data, max 12+60 = 72 B):
+ *   uint8  matrix_id       0=P, 1=F, 2=K, 3=H
+ *   uint8  rows            total rows in matrix
+ *   uint8  cols            total cols in matrix
+ *   uint8  row_idx         which row this frame contains (0..rows-1)
+ *   uint8  update_type     fusion6_update_id_t (K/H only); 0xFF for P/F
+ *   uint8  pad             reserved (0)
+ *   uint16 seq_le          monotonic per-class snapshot id
+ *   uint32 t_ms_le         platform_time_ms() at burst start
+ *   float32 row[cols]      row data, little-endian, row-major
+ *
+ * Read-only: pulls fusion6_get_matrix() snapshots; does not mutate filter
+ * state. Cost is one matrix_copy per emitted matrix (≤ 1 KB at 1 Hz).
+ * ============================================================ */
+static uint16_t g_eskf_seq[4] = { 0, 0, 0, 0 };
+
+static void publish_eskf_matrix_rows(fusion6_matrix_id_t which, uint8_t class_idx) {
+	matrix_t M;
+	uint8_t update_type = FUSION6_UPDATE_NONE;
+	if (!fusion6_get_matrix(&g_f, which, &M, &update_type)) return;
+	if (M.rows <= 0 || M.cols <= 0) return;
+	if (M.rows > 15 || M.cols > 15) return;  /* defensive */
+
+	uint16_t seq = ++g_eskf_seq[class_idx];
+	uint32_t t_ms = platform_time_ms();
+
+	/* Worst-case payload size: 12 + 4*15 = 72 B */
+	uint8_t buf[12 + 4 * 15];
+	buf[0] = (uint8_t)which;
+	buf[1] = (uint8_t)M.rows;
+	buf[2] = (uint8_t)M.cols;
+	/* buf[3] = row_idx (filled per row) */
+	buf[4] = update_type;
+	buf[5] = 0;
+	memcpy(&buf[6], &seq,  sizeof(uint16_t));
+	memcpy(&buf[8], &t_ms, sizeof(uint32_t));
+
+	const size_t hdr = 12;
+	const size_t row_bytes = (size_t)M.cols * sizeof(float);
+
+	for (int r = 0; r < M.rows; r++) {
+		buf[3] = (uint8_t)r;
+		float *row = (float *)&buf[hdr];
+		for (int c = 0; c < M.cols; c++) {
+			row[c] = (float)M.data[r][c];
+		}
+		publish(SEND_LOG, buf, hdr + row_bytes);
+	}
+}
+
+static void on_eskf_P_log_1hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_ESKF_P) return;
+	if (!g_init_started) return;
+	publish_eskf_matrix_rows(FUSION6_MATRIX_P, 0);
+}
+
+static void on_eskf_F_log_1hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_ESKF_F) return;
+	if (!g_init_started) return;
+	publish_eskf_matrix_rows(FUSION6_MATRIX_F, 1);
+}
+
+static void on_eskf_K_log_1hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_ESKF_K) return;
+	if (!g_init_started) return;
+	publish_eskf_matrix_rows(FUSION6_MATRIX_K, 2);
+}
+
+static void on_eskf_H_log_1hz(uint8_t *data, size_t size) {
+	(void)data; (void)size;
+	if (g_log_class != LOG_CLASS_ESKF_H) return;
+	if (!g_init_started) return;
+	publish_eskf_matrix_rows(FUSION6_MATRIX_H, 3);
+}
+
+/* ============================================================
  * Setup
  * ============================================================ */
 
@@ -771,4 +858,8 @@ void state_estimation_setup(void) {
 	subscribe(SCHEDULER_25HZ, on_baro_fusion_log_25hz);
 	subscribe(SCHEDULER_25HZ, on_optflow_log_25hz);
 	subscribe(SCHEDULER_5HZ,  on_gps_fusion_log_5hz);
+	subscribe(SCHEDULER_1HZ,  on_eskf_P_log_1hz);
+	subscribe(SCHEDULER_1HZ,  on_eskf_F_log_1hz);
+	subscribe(SCHEDULER_1HZ,  on_eskf_K_log_1hz);
+	subscribe(SCHEDULER_1HZ,  on_eskf_H_log_1hz);
 }

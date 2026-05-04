@@ -521,6 +521,10 @@ typedef struct {
 #define LOG_CLASS_BARO_FUSION          0x21  // 4×float (16 B) baro altitude diagnostic: z_meas, p.z, v.z, baro_ok flag
 #define LOG_CLASS_OPTFLOW              0x22  // 8×float (32 B) optflow diagnostic: flow_raw_xy (rad/s), v_meas_xy + v_pred_xy (m/s), range (m), clarity
 #define LOG_CLASS_GPS_FUSION           0x23  // 14×float (56 B) GPS fusion diagnostic: gps_pos_ned, gps_vel_ned, eskf_p, eskf_v, gps_ok, num_sv
+#define LOG_CLASS_ESKF_P               0x24  // ESKF covariance P (15×15) — paged, 1 row/frame, full matrix @ 1 Hz
+#define LOG_CLASS_ESKF_F               0x25  // ESKF predict Jacobian F (15×15) — paged, 1 row/frame, full matrix @ 1 Hz
+#define LOG_CLASS_ESKF_K               0x26  // ESKF last update Kalman gain K (15×m) — paged, 1 row/frame, full matrix @ 1 Hz
+#define LOG_CLASS_ESKF_H               0x27  // ESKF last update measurement Jacobian H (m×15) — paged, 1 row/frame, full matrix @ 1 Hz
 
 // DB message command IDs (from Python tools via UART)
 #define DB_CMD_LOG_CLASS                0x03
