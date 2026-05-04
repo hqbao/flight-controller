@@ -424,6 +424,10 @@ Install dependencies: `pip install pyserial matplotlib numpy`
 
 > **Common controls:** All tools include **Start/Stop Log** (toggles data streaming) and **Reset FC** (hardware-resets the flight controller via `DB_CMD_RESET`). Calibration tools include **Upload** (send calibration to flash), **Query FC** (read back stored coefficients), **Default** (upload identity/zero calibration), and **Save/Load CSV** (persist data to `tools/.calibration_data/` with chip ID in filename). Chip ID is auto-detected on connect. All tools use the macOS-native backend on darwin and TkAgg on other platforms.
 
+> **Window sizing:** Every viewer auto-fits its figure to the **primary monitor's height** at startup (preserving the original aspect ratio). On macOS this uses `CGDisplayBounds` via `ctypes` (no Tk dependency, avoids Tk 9.0 / NSApplication crashes); on Windows / Linux it uses Tk's `winfo_screenheight`. If the figure is dragged to a smaller secondary monitor, the bottom may be clipped — use the OS window controls to resize.
+
+> **3D view buttons:** Every tool with a 3D plot (`attitude_estimation_view`, `attitude_estimation_mag_view`, `flight_telemetry_view`, `flight_telemetry_bicopter_view`, `calibration_accel`, `calibration_compass`) shows a row of six face-view buttons — **Top, Bottom, Front, Back, Left, Right** — and starts in the **Back** view by default (looking at the drone's tail, +X forward, +Y right).
+
 ## Related Projects
 
 | Project | Description |

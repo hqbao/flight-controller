@@ -8,6 +8,87 @@ import sys
 import matplotlib
 matplotlib.use('macosx' if sys.platform == 'darwin' else 'TkAgg')
 import matplotlib.pyplot as plt
+# --- inlined view helpers (no external dependency) ---
+FACE_VIEWS = {
+    'Top':    (90, 180),
+    'Bottom': (-90, 0),
+    'Front':  (0, 0),
+    'Back':   (0, 180),
+    'Left':   (0, 90),
+    'Right':  (0, -90),
+}
+
+def fit_to_screen_height(fig, margin_px=80):
+    """Resize ``fig`` so its height matches the host screen height
+    (preserving the original ``figsize`` aspect ratio).  No-op if the
+    screen size cannot be determined."""
+    import sys as _sys
+    sw = sh = 0
+    try:
+        if _sys.platform == 'darwin':
+            import ctypes as _c, ctypes.util as _cu
+            _lib = _c.CDLL(_cu.find_library('ApplicationServices'))
+            class _Sz(_c.Structure):
+                _fields_ = [('w', _c.c_double), ('h', _c.c_double)]
+            class _Pt(_c.Structure):
+                _fields_ = [('x', _c.c_double), ('y', _c.c_double)]
+            class _Rc(_c.Structure):
+                _fields_ = [('o', _Pt), ('s', _Sz)]
+            _lib.CGMainDisplayID.restype = _c.c_uint32
+            _lib.CGDisplayBounds.restype = _Rc
+            _lib.CGDisplayBounds.argtypes = [_c.c_uint32]
+            r = _lib.CGDisplayBounds(_lib.CGMainDisplayID())
+            sw, sh = int(r.s.w), int(r.s.h)
+        else:
+            import tkinter as _tk
+            _r = _tk.Tk(); _r.withdraw()
+            sw = _r.winfo_screenwidth(); sh = _r.winfo_screenheight()
+            _r.destroy()
+    except Exception:
+        return
+    if sh <= 0 or sw <= 0:
+        return
+    th = max(400, sh - margin_px)
+    wi, hi = fig.get_size_inches()
+    if hi <= 0:
+        return
+    asp = wi / hi
+    tw = int(th * asp)
+    if tw > sw - margin_px:
+        tw = max(400, sw - margin_px)
+        th = int(tw / asp)
+    # Use rc logical DPI (not fig.get_dpi(), which doubles on HiDPI/retina
+    # and would halve the resulting window).
+    import matplotlib as _mpl
+    _ldpi = _mpl.rcParams.get("figure.dpi", 100) or 100
+    try:
+        fig.set_size_inches(tw / _ldpi, th / _ldpi, forward=True)
+    except Exception:
+        pass
+
+def add_3d_view_buttons(fig, ax, default='Back',
+                        rect=(0.02, 0.05, 0.06, 0.035), gap=0.005,
+                        color='#2a3140', hover='#3a4255',
+                        text_color='#cfd6e4', fontsize=7):
+    """Add a row of 6 face-view buttons (Top, Bottom, Front, Back, Left,
+    Right) to ``fig`` controlling the 3D ``ax``.  Sets ``default`` view."""
+    from matplotlib.widgets import Button as _Btn
+    x0, y0, w, h = rect
+    btns = []
+    for i, (label, (elev, azim)) in enumerate(FACE_VIEWS.items()):
+        bx = fig.add_axes([x0 + i * (w + gap), y0, w, h])
+        b = _Btn(bx, label, color=color, hovercolor=hover)
+        b.label.set_color(text_color)
+        b.label.set_fontsize(fontsize)
+        b.on_clicked(
+            lambda event, e=elev, a=azim:
+            (ax.view_init(elev=e, azim=a), fig.canvas.draw_idle()))
+        btns.append(b)
+    if default in FACE_VIEWS:
+        e, a = FACE_VIEWS[default]
+        ax.view_init(elev=e, azim=a)
+    return btns
+# --- end inlined view helpers ---
 from matplotlib.widgets import Button
 from matplotlib.animation import FuncAnimation
 import time
@@ -213,6 +294,7 @@ def main():
     })
 
     fig = plt.figure(figsize=(16, 9))
+    fit_to_screen_height(fig)
     fig.patch.set_facecolor(BG_COLOR)
     fig.suptitle('Position Estimation \u2014 2D + Altitude', fontsize=14,
                  color=TEXT_COLOR, fontweight='bold', y=0.99)
