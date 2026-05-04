@@ -51,25 +51,13 @@
 fly_sitl
 
 # ----------------------------------------------------------------------
-# ESP-IDF (ESP32)
+# Build artifacts
 # ----------------------------------------------------------------------
-# Build directory
 build/
 # SITL Logs
 bridge.log
 gz_server.log
 sitl_storage.bin
-
-# Configuration files (sdkconfig.defaults should be committed instead)
-sdkconfig
-sdkconfig.old
-
-# Managed components (downloaded by component manager)
-managed_components/
-dependencies.lock
-
-# ESP-IDF editor support
-.esp-idf/
 
 # ----------------------------------------------------------------------
 # STM32 (CubeIDE / CubeMX)
