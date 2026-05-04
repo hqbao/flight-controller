@@ -8,20 +8,26 @@
 
 static optflow_data_t g_optflow_msg;
 
-/* Inter-arrival timing per direction. The wire format does NOT carry dt,
- * and the previous hardcode of 40 ms (25 Hz) was wrong whenever the
- * actual camera/dblink rate differed — the divisor in optflow_to_rad_per_s
- * scales velocity linearly, so an under-stated dt amplifies the reported
- * v_body by (true_dt / hardcoded_dt). We instead time-stamp messages on
- * arrival and report the true gap. First sample of each direction has no
- * prior reference and is published with dt_us=0 (state_estimation.c
- * already drops samples with dt_us==0). */
-static uint32_t g_last_us[2] = { 0, 0 };
+/* Per-direction record of the most recent camera ms-counter, used to derive
+ * the true frame interval. The wire now carries a uint32 free-running ms
+ * counter sampled by the camera at packing time, so the FC just diffs
+ * consecutive values (32-bit unsigned subtraction wraps cleanly every
+ * ~49.7 days). The previous arrival-gap heuristic was unreliable: UART
+ * batching on the ESP32 or RX FIFO drain bursts on the FC could collapse
+ * the measured gap to a few hundred μs, producing a 100× velocity spike
+ * that the state_estimation outlier gate would silently drop — exactly the
+ * "sparse green v_meas" symptom in optflow_view.
+ *
+ * g_have_last[dir] is 0 until the first counter has been recorded; the
+ * first sample of each direction is published with dt_us=0 so
+ * state_estimation skips it (no prior reference to diff against). */
+static uint32_t g_last_t_ms[2] = { 0, 0 };
+static uint8_t  g_have_last[2] = { 0, 0 };
 
 static void on_message_received(uint8_t *data, size_t size) {
 	//platform_toggle_led(0);
 	if (data[0] == 0x01) { // Optical flow
-		if (size < 22) return;
+		if (size < 26) return;
 
         // Verify checksum
         uint8_t ck_a = 0, ck_b = 0;
@@ -33,12 +39,14 @@ static void on_message_received(uint8_t *data, size_t size) {
             return;
         }
 
-		int32_t raw_dx, raw_dy, raw_z, raw_clarity;
-		memcpy(&raw_dx, &data[4], sizeof(int32_t));
-		memcpy(&raw_dy, &data[8], sizeof(int32_t));
-		memcpy(&raw_z, &data[12], sizeof(int32_t));
+		int32_t  raw_dx, raw_dy, raw_z, raw_clarity;
+		uint32_t raw_t_ms;
+		memcpy(&raw_dx,      &data[4],  sizeof(int32_t));
+		memcpy(&raw_dy,      &data[8],  sizeof(int32_t));
+		memcpy(&raw_z,       &data[12], sizeof(int32_t));
 		memcpy(&raw_clarity, &data[16], sizeof(int32_t));
-		
+		memcpy(&raw_t_ms,    &data[20], sizeof(uint32_t));
+
 		// Convert from scaled int (×100000) back to radians
 		float dx_rad = (float)raw_dx / 100000.0f;
 		float dy_rad = (float)raw_dy / 100000.0f;
@@ -47,29 +55,24 @@ static void on_message_received(uint8_t *data, size_t size) {
 		optflow_direction_t dir = (optflow_direction_t)data[1];
 		int dir_idx = (dir == OPTFLOW_UPWARD) ? 1 : 0;
 
-		/* Measure true inter-arrival from previous frame in this direction.
+		/* Derive the true frame interval from the camera-stamped ms counter.
 		 *
-		 * Caveat: this is the UART-arrival gap on the FC, not the camera's
-		 * frame-capture interval. If two frames arrive back-to-back because
-		 * the ESP32 batched them or the UART RX FIFO drained in one go, the
-		 * gap collapses to a few hundred μs. Velocity is range × dx_rad /
-		 * dt, so a 100× under-stated dt produces a 100× velocity spike.
-		 *
-		 * The camera nominally runs ~5..30 Hz (33..200 ms). Anything outside
-		 * a generous [10 ms, 500 ms] band is treated as untrustworthy and
-		 * we publish dt_us=0 so state_estimation drops the frame instead of
-		 * fusing a huge garbage velocity. The ZUPT branch in
-		 * state_estimation also requires dt_us != 0 (via the guard at the
-		 * top of on_optflow), so a gated frame neither fuses nor ZUPTs. */
-		uint32_t now_us = (uint32_t)platform_time_us();
+		 * Sanity band [10 ms, 500 ms] catches the same failure modes as the
+		 * old arrival-gap path (frozen counter, repeated frame, multi-second
+		 * stalls): anything outside is published with dt_us=0 so
+		 * state_estimation drops the frame instead of fusing a garbage
+		 * velocity. The ZUPT branch in state_estimation also requires
+		 * dt_us != 0 (via the guard at the top of on_optflow), so a gated
+		 * frame neither fuses nor ZUPTs. */
 		uint32_t dt_us = 0;
-		if (g_last_us[dir_idx] != 0) {
-			uint32_t gap = now_us - g_last_us[dir_idx];   /* wraps at 32-bit, OK */
-			if (gap >= 10000u && gap <= 500000u) {
-				dt_us = gap;
+		if (g_have_last[dir_idx]) {
+			uint32_t dt_ms = raw_t_ms - g_last_t_ms[dir_idx];   /* wraps at 32-bit, OK */
+			if (dt_ms >= 10u && dt_ms <= 500u) {
+				dt_us = dt_ms * 1000u;
 			}
 		}
-		g_last_us[dir_idx] = now_us;
+		g_last_t_ms[dir_idx] = raw_t_ms;
+		g_have_last[dir_idx] = 1;
 
 		g_optflow_msg.dx = dx_rad;
 		g_optflow_msg.dy = dy_rad;
