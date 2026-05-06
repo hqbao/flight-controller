@@ -94,16 +94,15 @@
 #define OPTFLOW_RANGE_MIN_MM     50
 #define OPTFLOW_RANGE_MAX_MM     4000
 #define OPTFLOW_CLARITY_MIN      5.0
-#define OPTFLOW_VEL_MAX_MPS      6.0
+#define OPTFLOW_VEL_MAX_MPS      6.0       /* worst-case glitch reject; sane
+                                              indoor flight is well below */
 
-/* Zero-velocity update (ZUPT): when the rangefinder reports below the
- * optflow gate (taxi / takeoff / landing inside the optflow blind zone),
- * fuse v_body=(0,0) instead of leaving the estimator open-loop. Without
- * this, accel-bias + tilt-error integration walks the velocity by
- * ~0.15 m/s/s every second the camera is gated out. With it, the
- * estimator is pinned at zero on the ground and bias states keep getting
- * observed. ZUPT shares cfg.R_vel_xy_body with regular optflow updates. */
-#define OPTFLOW_ZUPT_RANGE_MAX_MM   200    /* trigger only if 0 ≤ z_mm < this */
+/* Zero-velocity update (ZUPT): when the rangefinder reports a valid but
+ * sub-OPTFLOW_RANGE_MIN_MM reading (taxi / takeoff / landing inside the
+ * optflow blind zone), fuse v_body=(0,0) instead of leaving the estimator
+ * open-loop. Without this, accel-bias + tilt-error integration walks the
+ * velocity by ~0.15 m/s/s every second the camera is gated out. ZUPT
+ * shares cfg.R_vel_xy_body with regular optflow updates. */
 
 /* --- Barometer ---
  * air_pressure module publishes a `double` payload at ~25 Hz containing
@@ -202,7 +201,7 @@ static int32_t  g_gps_origin_lat_e7    = 0;
 static int32_t  g_gps_origin_lon_e7    = 0;
 static int32_t  g_gps_origin_alt_mm    = 0;
 
-/* GPS quality gate state. g_gps_quality_ok is the boolean OR of all
+/* GPS quality gate state. g_gps_quality_ok is the boolean AND of all
  * acceptance conditions — checked by both pos and vel handlers. */
 static int      g_gps_quality_ok       = 0;
 static uint64_t g_gps_quality_us       = 0;     /* time of last quality frame */
@@ -400,16 +399,16 @@ static void on_optflow(uint8_t *data, size_t size) {
 	if (msg.dt_us == 0) return;   /* FC-side dt outside [10ms, 500ms] sanity band */
 
 	int32_t z_mm = (int32_t)msg.z;
-	if (z_mm <= 0 || z_mm < OPTFLOW_RANGE_MIN_MM) {
+	if (z_mm < OPTFLOW_RANGE_MIN_MM) {
 		/* Below the optflow gate. Two cases:
-		 *   z_mm > 0  but < MIN  → sensor sees ground, very close: ZUPT
-		 *                          (camera resting / about-to-touch).
-		 *   z_mm <= 0           → sensor reported no valid range (out of
-		 *                          range, signal fail, etc.). DO NOT ZUPT —
-		 *                          we have no idea how high we are; pinning
-		 *                          v_xy=0 would be dangerous if the craft is
-		 *                          actually drifting at altitude. Skip. */
-		if (z_mm > 0 && z_mm < OPTFLOW_ZUPT_RANGE_MAX_MM) {
+		 *   z_mm > 0  → sensor sees ground, very close: ZUPT
+		 *               (camera resting / about-to-touch).
+		 *   z_mm <= 0 → sensor reported no valid range (out of range,
+		 *               signal fail, etc.). DO NOT ZUPT — we have no
+		 *               idea how high we are; pinning v_xy=0 would be
+		 *               dangerous if the craft is actually drifting at
+		 *               altitude. Skip. */
+		if (z_mm > 0) {
 			double v_zero[2] = { 0.0, 0.0 };
 			fusion6_update_velocity_xy_body(&g_f, v_zero);
 			g_last_optflow_v[0] = 0.0;
@@ -537,7 +536,7 @@ static void on_baro(uint8_t *data, size_t size) {
  *                                                  altitude (mm MSL).
  *   EXTERNAL_SENSOR_GPS_VELOC   (gps_velocity_t) — N/E/D velocity (mm/s).
  *
- * Quality is OR-gated against fix type, satellite count and accuracy
+ * Quality is AND-gated against fix type, satellite count and accuracy
  * estimates. The flag stays valid for GPS_QUALITY_FRESH_US so a single
  * dropped quality frame doesn't lock GPS out instantly. The first
  * accepted position frame seeds the local NED origin (so subsequent
@@ -586,17 +585,19 @@ static void on_gps_position(uint8_t *data, size_t size) {
 	               g_gps_origin_lat_e7, g_gps_origin_lon_e7, g_gps_origin_alt_mm,
 	               pos_ned);
 
-	g_last_gps_pos_ned[0] = pos_ned[0];
-	g_last_gps_pos_ned[1] = pos_ned[1];
-	g_last_gps_pos_ned[2] = pos_ned[2];
-
 	/* Sanity gate: drop a single frame if it claims a >1 km jump from the
 	 * current estimate. The fusion gain takes care of small jumps; this
-	 * only catches obviously corrupt NAV-PVTs. */
+	 * only catches obviously corrupt NAV-PVTs. The cache below this gate
+	 * holds last-fused values only, so the GPS-fusion viewer never sees
+	 * the spike from a rejected frame. */
 	double dN = pos_ned[0] - g_f.p.x;
 	double dE = pos_ned[1] - g_f.p.y;
 	double dD = pos_ned[2] - g_f.p.z;
 	if (fmax(fmax(fabs(dN), fabs(dE)), fabs(dD)) > GPS_POS_SANITY_GATE_M) return;
+
+	g_last_gps_pos_ned[0] = pos_ned[0];
+	g_last_gps_pos_ned[1] = pos_ned[1];
+	g_last_gps_pos_ned[2] = pos_ned[2];
 
 	fusion6_update_pos_ned(&g_f, pos_ned);
 }
